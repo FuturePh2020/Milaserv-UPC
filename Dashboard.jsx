@@ -4,7 +4,10 @@ import {
   CheckCircle2, XCircle, Clock, Plus, Search, ChevronDown,
   Headphones, Settings2, Banknote, ArrowUpRight, Filter,
   Star, Award, Target, AlertCircle, MoreHorizontal, X, Check,
-  UserCircle2, LogOut, Sparkles
+  UserCircle2, LogOut, Sparkles,
+  UserPlus, BookOpen, Building2, Pill as PillIcon, Truck,
+  BarChart3, Gauge, FileText, Settings, Globe, PhoneCall,
+  Megaphone, Briefcase, Wrench
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -52,30 +55,35 @@ const FontStyles = () => (
 // ─────────────────────────────────────────────────────────────
 // MOCK DATA
 // ─────────────────────────────────────────────────────────────
+// Master Teams — الفرق الأساسية المثبتة في النظام.
+// إضافة أي فريق جديد مستقبلاً تتم بإضافة سطر هنا فقط، بدون أي تعديل في الكود.
 const TEAMS = {
-  cs:    { id: 'cs',    name: 'خدمة العملاء', color: '#2d5d6e', soft: '#dfe9ec', icon: Headphones },
-  ops:   { id: 'ops',   name: 'الأوبريشن',     color: '#a86b2c', soft: '#f0e3d2', icon: Settings2 },
-  sales: { id: 'sales', name: 'المبيعات',      color: '#8b3a4e', soft: '#ecd9de', icon: Banknote },
+  cc:  { id: 'cc',  name: 'فريق خدمة العملاء',      nameEn: 'Customer Care Team',    color: '#2d5d6e', soft: '#dfe9ec', icon: Headphones },
+  oo:  { id: 'oo',  name: 'فريق العمليات الأونلاين', nameEn: 'Online Operation Team', color: '#a86b2c', soft: '#f0e3d2', icon: Globe },
+  ts:  { id: 'ts',  name: 'فريق التيلي سيلز',        nameEn: 'Telesales Team',        color: '#8b3a4e', soft: '#ecd9de', icon: PhoneCall },
+  ost: { id: 'ost', name: 'فريق OST',                nameEn: 'OST',                   color: '#3d7a4f', soft: '#dce8df', icon: Briefcase },
+  bex: { id: 'bex', name: 'تميز الأعمال',            nameEn: 'Business Excellence',   color: '#4f5d8b', soft: '#dfe2ee', icon: Award },
+  mkt: { id: 'mkt', name: 'فريق التسويق',            nameEn: 'Marketing Team',        color: '#b0583d', soft: '#f2ded5', icon: Megaphone },
 };
 
 const EMPLOYEES = [
-  { id: 1, name: 'محمد أحمد',     team: 'cs',    role: 'أخصائي خدمة عملاء', avatar: 'م.أ', score: 92, joined: '2023' },
-  { id: 2, name: 'سارة إبراهيم',  team: 'cs',    role: 'مشرفة دعم',         avatar: 'س.إ', score: 88, joined: '2022' },
-  { id: 3, name: 'عمر خالد',      team: 'ops',   role: 'منسق عمليات',       avatar: 'ع.خ', score: 76, joined: '2024' },
-  { id: 4, name: 'ليلى حسن',      team: 'ops',   role: 'أخصائي جودة',       avatar: 'ل.ح', score: 95, joined: '2021' },
-  { id: 5, name: 'يوسف منصور',    team: 'sales', role: 'مندوب مبيعات',      avatar: 'ي.م', score: 81, joined: '2023' },
-  { id: 6, name: 'هدى ناصر',      team: 'sales', role: 'كبير المبيعات',     avatar: 'ه.ن', score: 89, joined: '2020' },
+  { id: 1, name: 'محمد أحمد',     team: 'cc',  role: 'أخصائي خدمة عملاء', avatar: 'م.أ', score: 92, joined: '2023' },
+  { id: 2, name: 'سارة إبراهيم',  team: 'cc',  role: 'مشرفة دعم',         avatar: 'س.إ', score: 88, joined: '2022' },
+  { id: 3, name: 'عمر خالد',      team: 'oo',  role: 'منسق عمليات',       avatar: 'ع.خ', score: 76, joined: '2024' },
+  { id: 4, name: 'ليلى حسن',      team: 'oo',  role: 'أخصائي جودة',       avatar: 'ل.ح', score: 95, joined: '2021' },
+  { id: 5, name: 'يوسف منصور',    team: 'ts',  role: 'مندوب تيلي سيلز',   avatar: 'ي.م', score: 81, joined: '2023' },
+  { id: 6, name: 'هدى ناصر',      team: 'ts',  role: 'كبير التيلي سيلز',  avatar: 'ه.ن', score: 89, joined: '2020' },
 ];
 
 const INITIAL_TASKS = [
-  { id: 1, title: 'مراجعة شكاوى العملاء لشهر مايو',         assignee: 1, team: 'cs',    priority: 'عالية',  status: 'قيد التنفيذ', due: '٢٨ مايو' },
-  { id: 2, title: 'إعداد تقرير رضا العملاء الأسبوعي',       assignee: 2, team: 'cs',    priority: 'متوسطة', status: 'قيد التنفيذ', due: '٣٠ مايو' },
-  { id: 3, title: 'تحديث دليل إجراءات التشغيل',             assignee: 3, team: 'ops',   priority: 'منخفضة', status: 'لم تبدأ',     due: '٥ يونيو' },
-  { id: 4, title: 'فحص جودة الشحنات الواردة',               assignee: 4, team: 'ops',   priority: 'عالية',  status: 'مكتملة',      due: '٢٥ مايو' },
-  { id: 5, title: 'متابعة عملاء الشهر الحاليين',           assignee: 5, team: 'sales', priority: 'عالية',  status: 'قيد التنفيذ', due: '٢٩ مايو' },
-  { id: 6, title: 'إعداد عرض تقديمي للعميل الجديد',        assignee: 6, team: 'sales', priority: 'متوسطة', status: 'قيد التنفيذ', due: '٢ يونيو' },
-  { id: 7, title: 'الرد على تذاكر الدعم المتأخرة',          assignee: 1, team: 'cs',    priority: 'عالية',  status: 'لم تبدأ',     due: '٢٧ مايو' },
-  { id: 8, title: 'تحليل أداء فريق المبيعات',              assignee: 6, team: 'sales', priority: 'متوسطة', status: 'مكتملة',      due: '٢٤ مايو' },
+  { id: 1, title: 'مراجعة شكاوى العملاء لشهر مايو',         assignee: 1, team: 'cc', priority: 'عالية',  status: 'قيد التنفيذ', due: '٢٨ مايو' },
+  { id: 2, title: 'إعداد تقرير رضا العملاء الأسبوعي',       assignee: 2, team: 'cc', priority: 'متوسطة', status: 'قيد التنفيذ', due: '٣٠ مايو' },
+  { id: 3, title: 'تحديث دليل إجراءات التشغيل',             assignee: 3, team: 'oo', priority: 'منخفضة', status: 'لم تبدأ',     due: '٥ يونيو' },
+  { id: 4, title: 'فحص جودة الشحنات الواردة',               assignee: 4, team: 'oo', priority: 'عالية',  status: 'مكتملة',      due: '٢٥ مايو' },
+  { id: 5, title: 'متابعة عملاء الشهر الحاليين',           assignee: 5, team: 'ts', priority: 'عالية',  status: 'قيد التنفيذ', due: '٢٩ مايو' },
+  { id: 6, title: 'إعداد عرض تقديمي للعميل الجديد',        assignee: 6, team: 'ts', priority: 'متوسطة', status: 'قيد التنفيذ', due: '٢ يونيو' },
+  { id: 7, title: 'الرد على تذاكر الدعم المتأخرة',          assignee: 1, team: 'cc', priority: 'عالية',  status: 'لم تبدأ',     due: '٢٧ مايو' },
+  { id: 8, title: 'تحليل أداء فريق التيلي سيلز',           assignee: 6, team: 'ts', priority: 'متوسطة', status: 'مكتملة',      due: '٢٤ مايو' },
 ];
 
 const INITIAL_LEAVES = [
@@ -214,7 +222,7 @@ const ModeratorOverview = ({ tasks, leaves }) => {
           { label: 'إجمالي المهام',    value: tasks.length,    sub: `${inProgress} قيد التنفيذ`, color: '#1a1d2e' },
           { label: 'نسبة الإنجاز',    value: `${completionRate}%`, sub: `${completed} مكتملة`,    color: '#3d7a4f' },
           { label: 'طلبات إجازة معلقة', value: pendingLeaves,   sub: 'تحتاج مراجعة',                color: '#a86b2c' },
-          { label: 'إجمالي الموظفين',  value: EMPLOYEES.length, sub: '٣ فرق',                       color: '#8b3a4e' },
+          { label: 'إجمالي الموظفين',  value: EMPLOYEES.length, sub: `${Object.keys(TEAMS).length} فرق`,  color: '#8b3a4e' },
         ].map((kpi, i) => (
           <Card key={i} className="p-5 anim-slide" style={{ animationDelay: `${i * 80}ms` }}>
             <div className="text-xs text-[#857961] mb-3 font-body">{kpi.label}</div>
@@ -1003,49 +1011,619 @@ const EmployeePerformance = () => {
 };
 
 // ─────────────────────────────────────────────────────────────
-// SHELL  (Sidebar + Header + Content)
+// SIDEBAR STRUCTURE  — الهيكل الرئيسي للتنقل
+// كل قسم: { id, labelAr, labelEn, icon, items }
+// كل عنصر: { id, labelAr, labelEn, children?, soon? }
+// soon: ميزة مؤجلة (لاحقًا) — تظهر بشارة «قريباً»
 // ─────────────────────────────────────────────────────────────
-const NAV = {
-  moderator: [
-    { id: 'overview', label: 'النظرة العامة', icon: LayoutDashboard },
-    { id: 'tasks',    label: 'المهام',        icon: ListTodo },
-    { id: 'leaves',   label: 'طلبات الإجازة', icon: CalendarDays },
-    { id: 'teams',    label: 'الفرق',         icon: Users },
-  ],
-  employee: [
-    { id: 'overview',    label: 'الصفحة الرئيسية', icon: LayoutDashboard },
-    { id: 'leave',       label: 'الإجازات',         icon: CalendarDays },
-    { id: 'performance', label: 'تقييمي وأدائي',    icon: TrendingUp },
-  ],
+const SIDEBAR_SECTIONS = [
+  {
+    id: 'customer-care', labelAr: 'خدمة العملاء', labelEn: 'Customer Care', icon: Headphones,
+    items: [
+      { id: 'cc-shift-dashboard',  labelAr: 'لوحة الوردية',         labelEn: 'Shift Dashboard' },
+      { id: 'cc-interactions',     labelAr: 'تفاعلات العملاء',      labelEn: 'Customer Interactions' },
+      { id: 'cc-inbound-calls',    labelAr: 'المكالمات الواردة',    labelEn: 'Inbound Calls' },
+      { id: 'cc-outbound-calls',   labelAr: 'المكالمات الصادرة',    labelEn: 'Outbound Calls' },
+      { id: 'cc-tickets',          labelAr: 'التذاكر',              labelEn: 'Tickets' },
+      { id: 'cc-complaints',       labelAr: 'الشكاوى',              labelEn: 'Complaints' },
+      { id: 'cc-order-followup',   labelAr: 'متابعة الطلبات',       labelEn: 'Order Follow-up' },
+      { id: 'cc-availability',     labelAr: 'فحص التوفر',           labelEn: 'Availability Checks' },
+      { id: 'cc-customer-history', labelAr: 'سجل العميل',           labelEn: 'Customer History' },
+      { id: 'cc-csat',             labelAr: 'رضا العملاء (CSAT)',   labelEn: 'CSAT' },
+      { id: 'cc-agent-productivity', labelAr: 'إنتاجية الموظفين',   labelEn: 'Agent Productivity' },
+    ],
+  },
+  {
+    id: 'crm', labelAr: 'إدارة العملاء (CRM)', labelEn: 'CRM', icon: UserPlus,
+    items: [
+      { id: 'crm-leads',             labelAr: 'العملاء المحتملون',      labelEn: 'Leads' },
+      { id: 'crm-lead-upload',       labelAr: 'رفع الـ Leads',          labelEn: 'Lead Upload' },
+      { id: 'crm-lead-distribution', labelAr: 'توزيع الـ Leads',        labelEn: 'Lead Distribution' },
+      { id: 'crm-shift-sessions',    labelAr: 'جلسات الورديات',         labelEn: 'Shift Sessions' },
+      { id: 'crm-called-leads',      labelAr: 'Leads تم الاتصال بها',   labelEn: 'Called Leads' },
+      { id: 'crm-followups',         labelAr: 'المتابعات',              labelEn: 'Follow-ups' },
+      { id: 'crm-call-reschedule',   labelAr: 'إعادة جدولة المكالمات',  labelEn: 'Call Reschedule' },
+      { id: 'crm-refill-reminder',   labelAr: 'تذكير إعادة الصرف',      labelEn: 'Refill Reminder' },
+      { id: 'crm-customer-profile',  labelAr: 'ملف العميل',             labelEn: 'Customer Profile' },
+      { id: 'crm-segments',          labelAr: 'شرائح العملاء',          labelEn: 'Customer Segments' },
+      { id: 'crm-retention',         labelAr: 'الاحتفاظ بالعملاء',      labelEn: 'Retention' },
+      { id: 'crm-opportunities',     labelAr: 'فرص البيع',              labelEn: 'Sales Opportunities' },
+      { id: 'crm-conversion-rate',   labelAr: 'معدل التحويل',           labelEn: 'Conversion Rate' },
+      { id: 'crm-telesales-orders',  labelAr: 'طلبات التيلي سيلز',      labelEn: 'Telesales Orders' },
+      { id: 'crm-insurance-partners', labelAr: 'شركاء التأمين',         labelEn: 'Insurance Partners' },
+    ],
+  },
+  {
+    id: 'knowledge-base', labelAr: 'قاعدة المعرفة', labelEn: 'Knowledge Base', icon: BookOpen,
+    items: [
+      { id: 'kb-articles',        labelAr: 'المقالات',                    labelEn: 'Articles' },
+      { id: 'kb-policies',        labelAr: 'السياسات',                    labelEn: 'Policies' },
+      { id: 'kb-faqs',            labelAr: 'الأسئلة الشائعة',             labelEn: 'FAQs' },
+      { id: 'kb-scripts',         labelAr: 'نصوص المكالمات',              labelEn: 'Scripts' },
+      { id: 'kb-call-guidelines', labelAr: 'إرشادات التعامل مع المكالمات', labelEn: 'Call Handling Guidelines' },
+      { id: 'kb-product',         labelAr: 'معرفة المنتجات',              labelEn: 'Product Knowledge' },
+      { id: 'kb-insurance',       labelAr: 'إرشادات التأمين',             labelEn: 'Insurance Guidelines' },
+      { id: 'kb-wasfaty',         labelAr: 'إرشادات وصفتي',               labelEn: 'Wasfaty Guidelines' },
+      { id: 'kb-training',        labelAr: 'مواد التدريب',                labelEn: 'Training Materials' },
+      { id: 'kb-announcements',   labelAr: 'الإعلانات',                   labelEn: 'Announcements' },
+      { id: 'kb-versions',        labelAr: 'سجل الإصدارات',               labelEn: 'Version History' },
+      { id: 'kb-approval',        labelAr: 'سير الموافقات',               labelEn: 'Approval Workflow' },
+    ],
+  },
+  {
+    id: 'branches', labelAr: 'مركز الفروع', labelEn: 'Branches Center', icon: Building2,
+    items: [
+      { id: 'br-database',    labelAr: 'قاعدة بيانات الفروع', labelEn: 'Branches Database' },
+      { id: 'br-details',     labelAr: 'تفاصيل الفرع',        labelEn: 'Branch Details' },
+      { id: 'br-hours',       labelAr: 'ساعات عمل الفروع',    labelEn: 'Branch Working Hours' },
+      { id: 'br-contacts',    labelAr: 'جهات اتصال الفروع',   labelEn: 'Branch Contacts' },
+      { id: 'br-supervisors', labelAr: 'المشرفون',            labelEn: 'Supervisors' },
+      { id: 'br-structure',   labelAr: 'هيكل الفرع',          labelEn: 'Branch Structure' },
+      { id: 'br-services',    labelAr: 'الخدمات المتاحة',     labelEn: 'Available Services' },
+      { id: 'br-tickets',     labelAr: 'تذاكر الفروع',        labelEn: 'Branch Tickets' },
+      { id: 'br-complaints',  labelAr: 'شكاوى الفروع',        labelEn: 'Branch Complaints' },
+      { id: 'br-escalations', labelAr: 'تصعيدات الفروع',      labelEn: 'Branch Escalations' },
+      { id: 'br-documents',   labelAr: 'مستندات الفروع',      labelEn: 'Branch Documents' },
+      { id: 'br-stock',       labelAr: 'ربط مخزون الفروع',    labelEn: 'Branch Stock Integration', soon: true },
+    ],
+  },
+  {
+    id: 'dic', labelAr: 'United Pharmacy DIC', labelEn: 'United Pharmacy DIC',
+    subtitle: 'Drug Information Center', icon: PillIcon,
+    items: [
+      { id: 'dic-drugs-db',        labelAr: 'قاعدة بيانات الأدوية',   labelEn: 'Drugs Database' },
+      { id: 'dic-trade-search',    labelAr: 'البحث بالاسم التجاري',   labelEn: 'Trade Name Search' },
+      { id: 'dic-scientific-search', labelAr: 'البحث بالاسم العلمي',  labelEn: 'Scientific Name Search' },
+      { id: 'dic-ingredients',     labelAr: 'المواد الفعالة',         labelEn: 'Active Ingredients' },
+      { id: 'dic-alternatives',    labelAr: 'البدائل',                labelEn: 'Alternatives' },
+      {
+        id: 'dic-classification',  labelAr: 'تصنيف الأدوية',          labelEn: 'Drug Classification',
+        children: [
+          { id: 'dic-class-normal',  labelAr: 'عادي',  labelEn: 'Normal' },
+          { id: 'dic-class-special', labelAr: 'خاص',   labelEn: 'Special' },
+          { id: 'dic-class-raqeeb',  labelAr: 'رقيب',  labelEn: 'Raqeeb' },
+        ],
+      },
+      { id: 'dic-insurance-coverage', labelAr: 'التغطية التأمينية',   labelEn: 'Insurance Coverage' },
+      { id: 'dic-meena-coverage',  labelAr: 'تغطية مشروع مينا',       labelEn: 'Project Meena Coverage' },
+      { id: 'dic-wasfaty-coverage', labelAr: 'تغطية وصفتي',           labelEn: 'Wasfaty Coverage' },
+      { id: 'dic-interactions',    labelAr: 'التداخلات الدوائية',     labelEn: 'Drug Interactions' },
+      { id: 'dic-info-requests',   labelAr: 'طلبات المعلومات الدوائية', labelEn: 'Drug Information Requests' },
+      { id: 'dic-availability',    labelAr: 'توفر المنتجات',          labelEn: 'Product Availability' },
+      { id: 'dic-tickets',         labelAr: 'تذاكر DIC',              labelEn: 'DIC Tickets' },
+      { id: 'dic-references',      labelAr: 'المراجع الطبية',         labelEn: 'Medical References' },
+    ],
+  },
+  {
+    id: 'delivery', labelAr: 'التوصيل واللوجستيات', labelEn: 'Delivery & Logistics', icon: Truck,
+    items: [
+      { id: 'dl-orders',      labelAr: 'طلبات التوصيل', labelEn: 'Delivery Orders' },
+      {
+        id: 'dl-status',      labelAr: 'حالة التوصيل',  labelEn: 'Delivery Status',
+        children: [
+          { id: 'dl-status-ready',     labelAr: 'جاهز للاستلام',  labelEn: 'Ready for Pickup' },
+          { id: 'dl-status-picked',    labelAr: 'تم الاستلام',    labelEn: 'Picked Up' },
+          { id: 'dl-status-on-way',    labelAr: 'في الطريق',      labelEn: 'On the Way' },
+          { id: 'dl-status-delivered', labelAr: 'تم التوصيل',     labelEn: 'Delivered' },
+          { id: 'dl-status-failed',    labelAr: 'توصيل فاشل',     labelEn: 'Failed Delivery' },
+          { id: 'dl-status-holded',    labelAr: 'معلّق',          labelEn: 'Holded' },
+        ],
+      },
+      { id: 'dl-time-slots',  labelAr: 'فترات التوصيل',      labelEn: 'Delivery Time Slots' },
+      { id: 'dl-cities',      labelAr: 'المدن',              labelEn: 'Cities' },
+      { id: 'dl-districts',   labelAr: 'الأحياء',            labelEn: 'Districts' },
+      { id: 'dl-store-pickup', labelAr: 'الاستلام من الفرع', labelEn: 'Store Pickup' },
+      { id: 'dl-exceptions',  labelAr: 'استثناءات التوصيل',  labelEn: 'Delivery Exceptions' },
+      { id: 'dl-courier-perf', labelAr: 'أداء المناديب',     labelEn: 'Courier Performance' },
+      { id: 'dl-escalations', labelAr: 'تصعيدات لوجستية',    labelEn: 'Logistics Escalations' },
+    ],
+  },
+  {
+    id: 'reporting', labelAr: 'التقارير', labelEn: 'Reporting', icon: BarChart3,
+    items: [
+      { id: 'rp-customer-care', labelAr: 'تقارير خدمة العملاء',   labelEn: 'Customer Care Reports' },
+      { id: 'rp-telesales',     labelAr: 'تقارير التيلي سيلز',    labelEn: 'Telesales Reports' },
+      { id: 'rp-operations',    labelAr: 'تقارير العمليات',       labelEn: 'Operations Reports' },
+      { id: 'rp-tickets',       labelAr: 'تقارير التذاكر',        labelEn: 'Ticket Reports' },
+      { id: 'rp-calls',         labelAr: 'تقارير المكالمات',      labelEn: 'Calls Reports' },
+      { id: 'rp-orders',        labelAr: 'تقارير الطلبات',        labelEn: 'Order Reports' },
+      { id: 'rp-leads',         labelAr: 'تقارير الـ Leads',      labelEn: 'Lead Reports' },
+      { id: 'rp-branches',      labelAr: 'تقارير الفروع',         labelEn: 'Branch Reports' },
+      { id: 'rp-delivery',      labelAr: 'تقارير التوصيل',        labelEn: 'Delivery Reports' },
+      { id: 'rp-csat',          labelAr: 'تقارير رضا العملاء',    labelEn: 'CSAT Reports' },
+      { id: 'rp-partners',      labelAr: 'تقارير الشركاء',        labelEn: 'Partner Reports' },
+      { id: 'rp-builder',       labelAr: 'منشئ التقارير المخصصة', labelEn: 'Custom Report Builder' },
+      { id: 'rp-export',        labelAr: 'تصدير Excel / PDF',     labelEn: 'Export Excel / PDF' },
+    ],
+  },
+  {
+    id: 'performance', labelAr: 'الأداء ومؤشرات القياس', labelEn: 'Performance & KPIs', icon: Gauge,
+    items: [
+      { id: 'pf-agent-kpis',     labelAr: 'مؤشرات الموظف',          labelEn: 'Agent KPIs' },
+      { id: 'pf-team-kpis',      labelAr: 'مؤشرات الفريق',          labelEn: 'Team KPIs' },
+      { id: 'pf-monthly-targets', labelAr: 'الأهداف الشهرية',       labelEn: 'Monthly Targets' },
+      { id: 'pf-annual-targets', labelAr: 'الأهداف السنوية',        labelEn: 'Annual Targets' },
+      { id: 'pf-conversion',     labelAr: 'معدل التحويل',           labelEn: 'Conversion Rate' },
+      { id: 'pf-aht',            labelAr: 'متوسط وقت المكالمة (AHT)', labelEn: 'AHT' },
+      { id: 'pf-talking-time',   labelAr: 'إجمالي وقت التحدث',      labelEn: 'Total Talking Time' },
+      { id: 'pf-attendance',     labelAr: 'أداء الحضور',            labelEn: 'Attendance Performance' },
+      { id: 'pf-call-quality',   labelAr: 'جودة المكالمات',         labelEn: 'Call Quality' },
+      { id: 'pf-orders-completed', labelAr: 'الطلبات المكتملة',     labelEn: 'Orders Completed' },
+      { id: 'pf-orders-closed',  labelAr: 'الطلبات المغلقة',        labelEn: 'Orders Closed' },
+      { id: 'pf-lead-productivity', labelAr: 'إنتاجية الـ Leads',   labelEn: 'Lead Productivity' },
+      { id: 'pf-ticket-resolution', labelAr: 'وقت حل التذاكر',      labelEn: 'Ticket Resolution Time' },
+      { id: 'pf-sla',            labelAr: 'أداء اتفاقيات SLA',      labelEn: 'SLA Performance' },
+      { id: 'pf-csat-score',     labelAr: 'درجة رضا العملاء',       labelEn: 'CSAT Score' },
+      { id: 'pf-ranking',        labelAr: 'الترتيب',                labelEn: 'Ranking' },
+      { id: 'pf-achievement',    labelAr: 'نسبة الإنجاز',           labelEn: 'Achievement Percentage' },
+    ],
+  },
+  {
+    id: 'hr', labelAr: 'الطلبات الإدارية', labelEn: 'HR Request', icon: FileText,
+    items: [
+      { id: 'hr-vacation',    labelAr: 'طلب إجازة',          labelEn: 'Vacation Request' },
+      { id: 'hr-permission',  labelAr: 'طلب استئذان',        labelEn: 'Permission Request' },
+      { id: 'hr-shift-change', labelAr: 'تغيير الوردية',     labelEn: 'Shift Change' },
+      { id: 'hr-overtime',    labelAr: 'طلب عمل إضافي',      labelEn: 'Overtime Request' },
+      { id: 'hr-attendance',  labelAr: 'تصحيح الحضور',       labelEn: 'Attendance Correction' },
+      { id: 'hr-wfh',         labelAr: 'طلب عمل من المنزل',  labelEn: 'Work From Home Request' },
+      { id: 'hr-equipment',   labelAr: 'طلب معدات',          labelEn: 'Equipment Request' },
+      { id: 'hr-salary-cert', labelAr: 'شهادة راتب',         labelEn: 'Salary Certificate' },
+      { id: 'hr-letter',      labelAr: 'خطاب تعريف',         labelEn: 'Employee Letter' },
+      { id: 'hr-resignation', labelAr: 'طلب استقالة',        labelEn: 'Resignation Request' },
+      { id: 'hr-grievance',   labelAr: 'شكوى / تظلم',        labelEn: 'Complaint / Grievance' },
+      { id: 'hr-other',       labelAr: 'طلبات أخرى',         labelEn: 'Other Requests' },
+      { id: 'hr-approval-flow', labelAr: 'مسار الموافقات',   labelEn: 'Request Approval Flow' },
+    ],
+  },
+  {
+    id: 'team-mgmt', labelAr: 'إدارة الفرق', labelEn: 'Team Management', icon: Users,
+    items: [
+      { id: 'tm-teams',           labelAr: 'الفرق',                  labelEn: 'Teams' },
+      { id: 'tm-employees',       labelAr: 'الموظفون',               labelEn: 'Employees' },
+      { id: 'tm-roles',           labelAr: 'الأدوار',                labelEn: 'Roles' },
+      { id: 'tm-supervisors',     labelAr: 'المشرفون',               labelEn: 'Supervisors' },
+      { id: 'tm-team-leaders',    labelAr: 'قادة الفرق',             labelEn: 'Team Leaders' },
+      { id: 'tm-shift-supervisors', labelAr: 'مشرفو الورديات',       labelEn: 'Shift Supervisors' },
+      { id: 'tm-agents',          labelAr: 'الأخصائيون (Agents)',    labelEn: 'Agents' },
+      { id: 'tm-shift-scheduling', labelAr: 'جدولة الورديات',        labelEn: 'Shift Scheduling' },
+      { id: 'tm-shift-sessions',  labelAr: 'جلسات الورديات',         labelEn: 'Shift Sessions' },
+      { id: 'tm-agent-categories', labelAr: 'فئات الموظفين',         labelEn: 'Agent Categories' },
+      { id: 'tm-skills',          labelAr: 'المهارات',               labelEn: 'Skills' },
+      { id: 'tm-task-assignment', labelAr: 'إسناد المهام',           labelEn: 'Task Assignment' },
+      { id: 'tm-workload',        labelAr: 'توزيع عبء العمل',        labelEn: 'Workload Distribution' },
+      { id: 'tm-hierarchy',       labelAr: 'الهيكل التنظيمي للفريق', labelEn: 'Team Hierarchy' },
+      { id: 'tm-performance-assign', labelAr: 'إسناد الأداء',        labelEn: 'Performance Assignment' },
+      { id: 'tm-branch-assign',   labelAr: 'إسناد الفروع',           labelEn: 'Branch Assignment' },
+      { id: 'tm-partner-assign',  labelAr: 'إسناد الشركاء',          labelEn: 'Partner Assignment' },
+    ],
+  },
+  {
+    id: 'settings', labelAr: 'الإعدادات', labelEn: 'Settings', icon: Settings,
+    items: [
+      {
+        id: 'st-general', labelAr: 'الإعدادات العامة', labelEn: 'General Settings',
+        children: [
+          { id: 'st-gen-company',   labelAr: 'معلومات الشركة',   labelEn: 'Company Information' },
+          { id: 'st-gen-logo',      labelAr: 'الشعار',           labelEn: 'Logo' },
+          { id: 'st-gen-platform',  labelAr: 'اسم المنصة',       labelEn: 'Platform Name' },
+          { id: 'st-gen-languages', labelAr: 'اللغات',           labelEn: 'Languages' },
+          { id: 'st-gen-timezone',  labelAr: 'المنطقة الزمنية',  labelEn: 'Timezone' },
+          { id: 'st-gen-date',      labelAr: 'تنسيق التاريخ',    labelEn: 'Date Format' },
+        ],
+      },
+      {
+        id: 'st-partner', labelAr: 'إعدادات الشركاء', labelEn: 'Partner Settings',
+        children: [
+          { id: 'st-pt-branding',  labelAr: 'هوية الشريك',        labelEn: 'Partner Branding' },
+          { id: 'st-pt-logo',      labelAr: 'شعار الشريك',        labelEn: 'Partner Logo' },
+          { id: 'st-pt-colors',    labelAr: 'ألوان الشريك',       labelEn: 'Partner Colors' },
+          { id: 'st-pt-sms',       labelAr: 'قوالب SMS',          labelEn: 'SMS Templates' },
+          { id: 'st-pt-email',     labelAr: 'قوالب البريد',       labelEn: 'Email Templates' },
+          { id: 'st-pt-complaint', labelAr: 'تنسيق رقم الشكوى',   labelEn: 'Complaint Number Format' },
+          { id: 'st-pt-csat',      labelAr: 'إعدادات CSAT',       labelEn: 'CSAT Settings' },
+        ],
+      },
+      {
+        id: 'st-communication', labelAr: 'إعدادات الاتصالات', labelEn: 'Communication Settings',
+        children: [
+          { id: 'st-cm-sms',      labelAr: 'مزود SMS',          labelEn: 'SMS Provider' },
+          { id: 'st-cm-email',    labelAr: 'مزود البريد',       labelEn: 'Email Provider' },
+          { id: 'st-cm-yeastar',  labelAr: 'Yeastar',           labelEn: 'Yeastar' },
+          { id: 'st-cm-whatsapp', labelAr: 'واتساب',            labelEn: 'WhatsApp', soon: true },
+          { id: 'st-cm-notifications', labelAr: 'قواعد الإشعارات', labelEn: 'Notification Rules' },
+        ],
+      },
+      {
+        id: 'st-operational', labelAr: 'الإعدادات التشغيلية', labelEn: 'Operational Settings',
+        children: [
+          { id: 'st-op-cities',    labelAr: 'المدن',              labelEn: 'Cities' },
+          { id: 'st-op-districts', labelAr: 'الأحياء',            labelEn: 'Districts' },
+          { id: 'st-op-slots',     labelAr: 'فترات التوصيل',      labelEn: 'Delivery Slots' },
+          { id: 'st-op-order-types', labelAr: 'أنواع الطلبات',    labelEn: 'Order Types' },
+          { id: 'st-op-ticket-cats', labelAr: 'تصنيفات التذاكر',  labelEn: 'Ticket Categories' },
+          { id: 'st-op-lead-sources', labelAr: 'مصادر الـ Leads', labelEn: 'Lead Sources' },
+          { id: 'st-op-call-outcomes', labelAr: 'نتائج المكالمات', labelEn: 'Call Outcomes' },
+          { id: 'st-op-statuses',  labelAr: 'الحالات',            labelEn: 'Statuses' },
+          { id: 'st-op-slas',      labelAr: 'اتفاقيات SLA',       labelEn: 'SLAs' },
+        ],
+      },
+      {
+        id: 'st-security', labelAr: 'إعدادات الأمان', labelEn: 'Security Settings',
+        children: [
+          { id: 'st-sec-password', labelAr: 'سياسة كلمات المرور', labelEn: 'Password Policy' },
+          { id: 'st-sec-mfa',      labelAr: 'التحقق الثنائي (MFA)', labelEn: 'MFA' },
+          { id: 'st-sec-session',  labelAr: 'مهلة الجلسة',        labelEn: 'Session Timeout' },
+          { id: 'st-sec-ip',       labelAr: 'قيود IP',            labelEn: 'IP Restrictions' },
+          { id: 'st-sec-audit',    labelAr: 'سجلات التدقيق',      labelEn: 'Audit Logs' },
+          { id: 'st-sec-logins',   labelAr: 'سجل الدخول',         labelEn: 'Login History' },
+          { id: 'st-sec-devices',  labelAr: 'إدارة الأجهزة',      labelEn: 'Device Management' },
+        ],
+      },
+      {
+        id: 'st-integration', labelAr: 'إعدادات التكامل', labelEn: 'Integration Settings',
+        children: [
+          { id: 'st-int-orders',    labelAr: 'واجهة نظام الطلبات (API)', labelEn: 'Order System API' },
+          { id: 'st-int-yeastar',   labelAr: 'واجهة Yeastar (API)',      labelEn: 'Yeastar API' },
+          { id: 'st-int-sms',       labelAr: 'بوابة SMS',                labelEn: 'SMS Gateway' },
+          { id: 'st-int-smtp',      labelAr: 'بريد SMTP',                labelEn: 'Email SMTP' },
+          { id: 'st-int-insurance', labelAr: 'شركاء التأمين',            labelEn: 'Insurance Partners' },
+          { id: 'st-int-external',  labelAr: 'أنظمة خارجية',             labelEn: 'External Systems' },
+        ],
+      },
+    ],
+  },
+];
+
+// فهرس مسطح: id الصفحة → { section, trail } للـ breadcrumb والعناوين
+const PAGE_INDEX = (() => {
+  const index = {};
+  const walk = (section, items, trail) => {
+    items.forEach(item => {
+      index[item.id] = { section, item, trail };
+      if (item.children) walk(section, item.children, [...trail, item]);
+    });
+  };
+  SIDEBAR_SECTIONS.forEach(s => walk(s, s.items, []));
+  return index;
+})();
+
+// ─────────────────────────────────────────────────────────────
+// SIDEBAR COMPONENTS
+// ─────────────────────────────────────────────────────────────
+const SoonBadge = () => (
+  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#f0e3d2] text-[#7a4d1d] font-body shrink-0">
+    قريباً
+  </span>
+);
+
+// عنصر تنقل (ورقة أو مجموعة فرعية) — recursive لدعم أي عمق
+const NavItem = ({ item, depth, page, setPage, openGroups, toggleGroup, forceOpen }) => {
+  const hasChildren = !!item.children?.length;
+  const open = forceOpen || openGroups.includes(item.id);
+  const active = page === item.id;
+  const padding = { paddingRight: 12 + depth * 14 };
+
+  if (hasChildren) {
+    return (
+      <div>
+        <button
+          onClick={() => toggleGroup(item.id)}
+          className="w-full flex items-center gap-2 py-2 pl-3 rounded-lg text-[13px] font-body text-[#5c5141] hover:bg-[#f5f1e3] transition"
+          style={padding}
+        >
+          <ChevronDown
+            size={12}
+            className={`shrink-0 transition-transform ${open ? '' : 'rotate-90'}`}
+          />
+          <span className="flex-1 text-right">{item.labelAr}</span>
+          {item.soon && <SoonBadge/>}
+        </button>
+        {open && (
+          <div className="space-y-0.5">
+            {item.children.map(child => (
+              <NavItem
+                key={child.id}
+                item={child}
+                depth={depth + 1}
+                page={page}
+                setPage={setPage}
+                openGroups={openGroups}
+                toggleGroup={toggleGroup}
+                forceOpen={forceOpen}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setPage(item.id)}
+      className={`w-full flex items-center gap-2 py-2 pl-3 rounded-lg text-[13px] font-body transition ${
+        active
+          ? 'bg-[#1a1d2e] text-[#fbf8f0]'
+          : 'text-[#1a1d2e] hover:bg-[#f5f1e3]'
+      }`}
+      style={padding}
+    >
+      <span
+        className={`w-1 h-1 rounded-full shrink-0 ${active ? 'bg-[#a86b2c]' : 'bg-[#d4cfc0]'}`}
+      />
+      <span className="flex-1 text-right truncate">{item.labelAr}</span>
+      {item.soon && <SoonBadge/>}
+    </button>
+  );
+};
+
+// فلترة العناصر recursively حسب نص البحث (عربي أو إنجليزي)
+const filterNavItems = (items, q) =>
+  items
+    .map(item => {
+      const selfMatch =
+        item.labelAr.toLowerCase().includes(q) ||
+        item.labelEn.toLowerCase().includes(q);
+      if (selfMatch) return item;
+      if (item.children) {
+        const kids = filterNavItems(item.children, q);
+        if (kids.length) return { ...item, children: kids };
+      }
+      return null;
+    })
+    .filter(Boolean);
+
+const Sidebar = ({ page, setPage, role }) => {
+  const me = EMPLOYEES.find(e => e.id === CURRENT_EMPLOYEE_ID);
+  const [openSections, setOpenSections] = useState(['customer-care']);
+  const [openGroups, setOpenGroups] = useState([]);
+  const [query, setQuery] = useState('');
+
+  const q = query.trim().toLowerCase();
+  const searching = q.length > 0;
+
+  const sections = useMemo(() => {
+    if (!searching) return SIDEBAR_SECTIONS;
+    return SIDEBAR_SECTIONS
+      .map(s => {
+        const sectionMatch =
+          s.labelAr.toLowerCase().includes(q) ||
+          s.labelEn.toLowerCase().includes(q);
+        const items = filterNavItems(s.items, q);
+        if (sectionMatch) return s;
+        if (items.length) return { ...s, items };
+        return null;
+      })
+      .filter(Boolean);
+  }, [q, searching]);
+
+  const toggleSection = (id) =>
+    setOpenSections(prev =>
+      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+    );
+
+  const toggleGroup = (id) =>
+    setOpenGroups(prev =>
+      prev.includes(id) ? prev.filter(g => g !== id) : [...prev, id]
+    );
+
+  return (
+    <aside className="w-72 h-screen sticky top-0 bg-[#fbf8f0] border-l border-[#e8e1cf] flex flex-col">
+      {/* Brand */}
+      <div className="p-6 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-[#1a1d2e] text-[#fbf8f0] flex items-center justify-center font-latin-serif text-lg font-bold">
+            M
+          </div>
+          <div>
+            <div className="font-display text-base text-[#1a1d2e] leading-tight">ميلاسيرف</div>
+            <div className="text-[10px] text-[#857961] font-latin-serif tracking-wider">MILASERV · UPC</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Nav search */}
+      <div className="px-4 pb-3">
+        <div className="relative">
+          <Search size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#857961]"/>
+          <input
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="ابحث في القائمة..."
+            className="w-full pr-8 pl-3 py-2 bg-[#f5f1e3] border border-[#e8e1cf] rounded-xl text-xs font-body focus:outline-none focus:border-[#1a1d2e]"
+          />
+        </div>
+      </div>
+
+      {/* Sections */}
+      <nav className="flex-1 overflow-y-auto px-4 pb-4">
+        <div className="text-[10px] uppercase tracking-[0.25em] text-[#857961] font-latin-serif mb-2 px-2">
+          الأقسام
+        </div>
+        <div className="space-y-1">
+          {sections.length === 0 && (
+            <div className="text-center py-6 text-xs text-[#857961] font-body">
+              لا توجد نتائج مطابقة
+            </div>
+          )}
+          {sections.map(sec => {
+            const Icon = sec.icon;
+            const open = searching || openSections.includes(sec.id);
+            const containsActive = !!PAGE_INDEX[page] && PAGE_INDEX[page].section.id === sec.id;
+            return (
+              <div key={sec.id}>
+                <button
+                  onClick={() => toggleSection(sec.id)}
+                  className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-xl transition ${
+                    containsActive && !open ? 'bg-[#f5f1e3]' : 'hover:bg-[#f5f1e3]'
+                  }`}
+                >
+                  <div
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition ${
+                      containsActive ? 'bg-[#1a1d2e] text-[#fbf8f0]' : 'bg-[#f5f1e3] text-[#5c5141]'
+                    }`}
+                  >
+                    <Icon size={15}/>
+                  </div>
+                  <div className="flex-1 min-w-0 text-right">
+                    <div className="font-body text-[13px] text-[#1a1d2e] font-medium truncate">
+                      {sec.labelAr}
+                    </div>
+                    <div className="text-[9px] text-[#857961] font-latin-serif tracking-wide truncate">
+                      {sec.subtitle || sec.labelEn}
+                    </div>
+                  </div>
+                  <ChevronDown
+                    size={13}
+                    className={`text-[#857961] shrink-0 transition-transform ${open ? '' : 'rotate-90'}`}
+                  />
+                </button>
+                {open && (
+                  <div className="mt-1 mb-2 mr-4 pr-2 border-r border-[#e8e1cf] space-y-0.5">
+                    {sec.items.map(item => (
+                      <NavItem
+                        key={item.id}
+                        item={item}
+                        depth={0}
+                        page={page}
+                        setPage={setPage}
+                        openGroups={openGroups}
+                        toggleGroup={toggleGroup}
+                        forceOpen={searching}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Master Teams — الفرق الرئيسية */}
+        {!searching && (
+          <>
+            <div className="text-[10px] uppercase tracking-[0.25em] text-[#857961] font-latin-serif mt-6 mb-2 px-2">
+              الفرق الرئيسية · MASTER TEAMS
+            </div>
+            <div className="space-y-0.5">
+              {Object.values(TEAMS).map(t => {
+                const Icon = t.icon;
+                const cnt = EMPLOYEES.filter(e => e.team === t.id).length;
+                return (
+                  <div key={t.id} className="flex items-center gap-3 px-2.5 py-1.5 text-sm">
+                    <div
+                      className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                      style={{ background: t.soft, color: t.color }}
+                    >
+                      <Icon size={13}/>
+                    </div>
+                    <span className="font-body text-[12px] text-[#1a1d2e] flex-1 truncate">{t.name}</span>
+                    <span className="text-xs text-[#857961] font-latin-serif">{cnt}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </nav>
+
+      {/* User */}
+      <div className="p-4 border-t border-[#e8e1cf]">
+        <div className="flex items-center gap-3 p-3 bg-[#f5f1e3] rounded-xl">
+          <Avatar emp={me} size={36}/>
+          <div className="flex-1 min-w-0">
+            <div className="font-body text-sm text-[#1a1d2e] truncate">{me.name}</div>
+            <div className="text-xs text-[#857961] font-body truncate">
+              {role === 'moderator' ? 'مدير النظام' : me.role}
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+};
+
+// صفحة Placeholder للأقسام التي لم تُبنَ بعد
+const PlaceholderView = ({ pageId }) => {
+  const entry = PAGE_INDEX[pageId];
+  if (!entry) return null;
+  const { section, item, trail } = entry;
+  const Icon = section.icon;
+  return (
+    <div className="space-y-6">
+      <SectionHeader
+        eyebrow={`${section.labelEn.toUpperCase()} · ${section.labelAr}`}
+        title={item.labelAr}
+      />
+      <Card className="p-14 text-center">
+        <div className="w-14 h-14 mx-auto rounded-2xl bg-[#f5f1e3] text-[#857961] flex items-center justify-center mb-5">
+          <Icon size={24}/>
+        </div>
+        <div className="font-display text-xl text-[#1a1d2e] mb-2">هذه الصفحة قيد الإنشاء</div>
+        <div className="text-sm text-[#857961] font-body mb-4">
+          {item.labelEn}{item.soon ? ' — مخطط لها في مرحلة لاحقة' : ''}
+        </div>
+        <div className="inline-flex items-center gap-2 text-xs text-[#857961] font-body bg-[#f5f1e3] px-3 py-1.5 rounded-full">
+          <Wrench size={12}/>
+          {section.labelAr}
+          {trail.map(t => ` ← ${t.labelAr}`).join('')}
+          {` ← ${item.labelAr}`}
+        </div>
+      </Card>
+    </div>
+  );
 };
 
 export default function App() {
   const [role, setRole] = useState('moderator');
-  const [section, setSection] = useState('overview');
+  const [page, setPage] = useState('cc-shift-dashboard');
 
   const [tasks, setTasks] = useState(INITIAL_TASKS);
   const [leaves, setLeaves] = useState(INITIAL_LEAVES);
 
-  const nav = NAV[role];
-  const me = EMPLOYEES.find(e => e.id === CURRENT_EMPLOYEE_ID);
-
-  // ensure section exists in current role nav
-  React.useEffect(() => {
-    if (!nav.find(n => n.id === section)) setSection(nav[0].id);
-  }, [role]);
-
-  const renderSection = () => {
-    if (role === 'moderator') {
-      if (section === 'overview') return <ModeratorOverview tasks={tasks} leaves={leaves}/>;
-      if (section === 'tasks')    return <ModeratorTasks tasks={tasks} setTasks={setTasks}/>;
-      if (section === 'leaves')   return <ModeratorLeaves leaves={leaves} setLeaves={setLeaves}/>;
-      if (section === 'teams')    return <ModeratorTeams tasks={tasks}/>;
-    } else {
-      if (section === 'overview')    return <EmployeeOverview tasks={tasks} leaves={leaves}/>;
-      if (section === 'leave')       return <EmployeeLeave leaves={leaves} setLeaves={setLeaves}/>;
-      if (section === 'performance') return <EmployeePerformance/>;
+  // ربط صفحات الـ Sidebar بالشاشات المبنية فعلاً — الباقي Placeholder
+  const renderPage = () => {
+    switch (page) {
+      case 'cc-shift-dashboard':
+        return role === 'moderator'
+          ? <ModeratorOverview tasks={tasks} leaves={leaves}/>
+          : <EmployeeOverview tasks={tasks} leaves={leaves}/>;
+      case 'tm-task-assignment':
+        return role === 'moderator'
+          ? <ModeratorTasks tasks={tasks} setTasks={setTasks}/>
+          : <PlaceholderView pageId={page}/>;
+      case 'tm-teams':
+        return <ModeratorTeams tasks={tasks}/>;
+      case 'hr-vacation':
+        return role === 'moderator'
+          ? <ModeratorLeaves leaves={leaves} setLeaves={setLeaves}/>
+          : <EmployeeLeave leaves={leaves} setLeaves={setLeaves}/>;
+      case 'pf-agent-kpis':
+        return <EmployeePerformance/>;
+      default:
+        return <PlaceholderView pageId={page}/>;
     }
-    return null;
   };
 
   return (
@@ -1053,83 +1631,7 @@ export default function App() {
       <FontStyles/>
 
       <div className="flex">
-        {/* Sidebar */}
-        <aside className="w-64 min-h-screen bg-[#fbf8f0] border-l border-[#e8e1cf] p-6 sticky top-0">
-          {/* Brand */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-[#1a1d2e] text-[#fbf8f0] flex items-center justify-center font-latin-serif text-lg font-bold">
-                M
-              </div>
-              <div>
-                <div className="font-display text-base text-[#1a1d2e] leading-tight">ميلاسيرف</div>
-                <div className="text-[10px] text-[#857961] font-latin-serif tracking-wider">MILASERV · UPC</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Nav */}
-          <div className="text-[10px] uppercase tracking-[0.25em] text-[#857961] font-latin-serif mb-3 px-2">
-            القائمة
-          </div>
-          <nav className="space-y-1 mb-8">
-            {nav.map(item => {
-              const Icon = item.icon;
-              const active = section === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setSection(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition ${
-                    active
-                      ? 'bg-[#1a1d2e] text-[#fbf8f0]'
-                      : 'text-[#1a1d2e] hover:bg-[#f5f1e3]'
-                  }`}
-                >
-                  <Icon size={16}/>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Teams quick reference */}
-          {role === 'moderator' && (
-            <>
-              <div className="text-[10px] uppercase tracking-[0.25em] text-[#857961] font-latin-serif mb-3 px-2">
-                الفرق
-              </div>
-              <div className="space-y-1 mb-8">
-                {Object.values(TEAMS).map(t => {
-                  const Icon = t.icon;
-                  const cnt = EMPLOYEES.filter(e => e.team === t.id).length;
-                  return (
-                    <div key={t.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: t.soft, color: t.color }}>
-                        <Icon size={13}/>
-                      </div>
-                      <span className="font-body text-[13px] text-[#1a1d2e] flex-1">{t.name}</span>
-                      <span className="text-xs text-[#857961] font-latin-serif">{cnt}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-
-          {/* User */}
-          <div className="absolute bottom-6 right-6 left-6">
-            <div className="flex items-center gap-3 p-3 bg-[#f5f1e3] rounded-xl">
-              <Avatar emp={me} size={36}/>
-              <div className="flex-1 min-w-0">
-                <div className="font-body text-sm text-[#1a1d2e] truncate">{me.name}</div>
-                <div className="text-xs text-[#857961] font-body truncate">
-                  {role === 'moderator' ? 'مدير النظام' : me.role}
-                </div>
-              </div>
-            </div>
-          </div>
-        </aside>
+        <Sidebar page={page} setPage={setPage} role={role}/>
 
         {/* Main */}
         <main className="flex-1 min-h-screen">
@@ -1176,7 +1678,7 @@ export default function App() {
           </div>
 
           <div className="px-10 py-8 max-w-[1200px]">
-            {renderSection()}
+            {renderPage()}
           </div>
         </main>
       </div>
