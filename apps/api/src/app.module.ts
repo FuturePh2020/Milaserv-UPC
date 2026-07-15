@@ -6,10 +6,27 @@ import { HealthController } from './core/health/health.controller';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { TimelineModule } from './modules/timeline/timeline.module';
+import { DepartmentsModule } from './modules/departments/departments.module';
+import { TeamsModule } from './modules/teams/teams.module';
+import { UsersModule } from './modules/users/users.module';
+import { RolesModule } from './modules/roles/roles.module';
 
 @Module({
-  // AuthModule before PermissionsModule: JwtAuthGuard must run first.
-  imports: [AppConfigModule, PrismaModule, RedisModule, AuditModule, AuthModule, PermissionsModule],
+  imports: [
+    AppConfigModule,
+    PrismaModule,
+    RedisModule,
+    AuditModule,
+    TimelineModule,
+    // AuthModule before PermissionsModule: JwtAuthGuard must run first.
+    AuthModule,
+    PermissionsModule,
+    DepartmentsModule,
+    TeamsModule,
+    UsersModule,
+    RolesModule,
+  ],
   controllers: [HealthController],
 })
 export class AppModule {}
