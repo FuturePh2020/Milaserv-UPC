@@ -16,6 +16,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { NumberingModule } from './modules/numbering/numbering.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { BranchesModule } from './modules/branches/branches.module';
+import { TicketsModule } from './modules/tickets/tickets.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { BranchesModule } from './modules/branches/branches.module';
     NumberingModule,
     AttachmentsModule,
     BranchesModule,
+    TicketsModule,
   ],
   controllers: [HealthController],
 })

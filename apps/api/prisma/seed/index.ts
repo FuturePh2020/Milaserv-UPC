@@ -12,6 +12,7 @@ import { PrismaClient, DataScope } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@milaserv/contracts';
 import type { PermissionKey, SystemRoleKey } from '@milaserv/contracts';
+import { seedTicketingCatalogs } from './ticketing';
 
 const prisma = new PrismaClient();
 
@@ -44,21 +45,62 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['department.view', DataScope.DEPARTMENT],
     ['team.view', DataScope.DEPARTMENT],
     ['team.manage_members', DataScope.DEPARTMENT],
+    // ticketing (spec §8 defaults)
+    ['ticket.view', DataScope.DEPARTMENT],
+    ['ticket.create', DataScope.DEPARTMENT],
+    ['ticket.edit', DataScope.DEPARTMENT],
+    ['ticket.assign', DataScope.DEPARTMENT],
+    ['ticket.take_responsibility', DataScope.DEPARTMENT],
+    ['ticket.redirect', DataScope.DEPARTMENT],
+    ['ticket.update_add', DataScope.DEPARTMENT],
+    ['ticket.resolve', DataScope.DEPARTMENT],
+    ['ticket.close', DataScope.DEPARTMENT],
+    ['ticket.reopen', DataScope.DEPARTMENT],
+    ['ticket.escalate', DataScope.DEPARTMENT],
+    ['ticket.export', DataScope.DEPARTMENT],
+    ['branch.view', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
     ['team.view', DataScope.MY_TEAM],
+    ['ticket.view', DataScope.MY_TEAM],
+    ['ticket.create', DataScope.MY_TEAM],
+    ['ticket.assign', DataScope.MY_TEAM],
+    ['ticket.take_responsibility', DataScope.MY_TEAM],
+    ['ticket.redirect', DataScope.MY_TEAM],
+    ['ticket.update_add', DataScope.MY_TEAM],
+    ['ticket.resolve', DataScope.MY_TEAM],
+    ['ticket.escalate', DataScope.MY_TEAM],
+    ['branch.view', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
     ['team.view', DataScope.MY_TEAM],
+    ['ticket.view', DataScope.MY_TEAM],
+    ['ticket.create', DataScope.MY_TEAM],
+    ['ticket.assign', DataScope.MY_TEAM],
+    ['ticket.take_responsibility', DataScope.MY_TEAM],
+    ['ticket.update_add', DataScope.MY_TEAM],
+    ['ticket.resolve', DataScope.MY_TEAM],
+    ['ticket.escalate', DataScope.MY_TEAM],
+    ['branch.view', DataScope.MY_TEAM],
   ],
-  AGENT: [],
+  AGENT: [
+    ['ticket.view', DataScope.MY_RECORDS],
+    ['ticket.create', DataScope.MY_RECORDS],
+    ['ticket.take_responsibility', DataScope.MY_RECORDS],
+    ['ticket.update_add', DataScope.MY_RECORDS],
+    ['branch.view', DataScope.MY_RECORDS],
+  ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
     ['team.view', DataScope.DEPARTMENT],
+    ['ticket.view', DataScope.DEPARTMENT],
   ],
-  QUALITY_REVIEWER: [['audit.view', DataScope.DEPARTMENT]],
+  QUALITY_REVIEWER: [
+    ['audit.view', DataScope.DEPARTMENT],
+    ['ticket.view', DataScope.DEPARTMENT],
+  ],
   INTEGRATION_SUPPORT: [],
 };
 
@@ -103,6 +145,59 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     value: false,
     labelAr: 'تفعيل إشعارات البريد الإلكتروني',
     labelEn: 'Enable email notifications',
+  },
+  // Ticketing spec §2 — number generator formats (ADR-008)
+  {
+    key: 'ticketing.number.internal_format',
+    category: 'ticketing',
+    valueType: 'STRING',
+    value: 'TKT-{YYYY}-{SEQ:6}',
+    labelAr: 'صيغة الرقم الداخلي للتذكرة',
+    labelEn: 'Internal ticket number format',
+  },
+  {
+    key: 'ticketing.number.customer_format',
+    category: 'ticketing',
+    valueType: 'STRING',
+    value: 'CC-{YYYY}-{SEQ:6}',
+    labelAr: 'صيغة رقم شكوى العميل',
+    labelEn: 'Customer complaint number format',
+  },
+  // Branch routing fallback (spec §9.8)
+  {
+    key: 'ticketing.branch.no_supervisor_route',
+    category: 'ticketing',
+    valueType: 'STRING',
+    value: 'UNASSIGNED_QUEUE',
+    labelAr: 'مسار التوجيه عند غياب مشرف الفرع',
+    labelEn: 'Routing when branch has no supervisor',
+  },
+  // Attachment engine (spec A7)
+  {
+    key: 'attachments.max_size_mb',
+    category: 'attachments',
+    valueType: 'NUMBER',
+    value: 10,
+    labelAr: 'الحد الأقصى لحجم المرفق (ميجابايت)',
+    labelEn: 'Maximum attachment size (MB)',
+  },
+  {
+    key: 'attachments.allowed_mime',
+    category: 'attachments',
+    valueType: 'JSON',
+    value: [
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/plain',
+    ],
+    labelAr: 'أنواع الملفات المسموح بها',
+    labelEn: 'Allowed attachment types',
   },
 ];
 
@@ -205,6 +300,7 @@ async function main() {
   await seedPermissions();
   await seedRoles();
   await seedSettings();
+  await seedTicketingCatalogs(prisma);
   await seedSuperAdmin();
 }
 

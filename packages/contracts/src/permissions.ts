@@ -74,6 +74,64 @@ export const PERMISSIONS = [
 
   // audit (blueprint §19.2 "View Audit")
   { key: 'audit.view', module: 'audit', label: { en: 'View audit log', ar: 'عرض سجل التدقيق' } },
+
+  // branches (minimal directory — ticketing spec §2; Branch Center extends later)
+  { key: 'branch.view', module: 'branches', label: { en: 'View branches', ar: 'عرض الفروع' } },
+  {
+    key: 'branch.manage',
+    module: 'branches',
+    label: { en: 'Manage branch directory', ar: 'إدارة دليل الفروع' },
+  },
+
+  // attachments (engine foundation, blueprint §8)
+  {
+    key: 'attachment.manage',
+    module: 'attachments',
+    label: { en: 'Manage attachments', ar: 'إدارة المرفقات' },
+  },
+
+  // ticketing (§19.2 actions; ticketing spec §8)
+  { key: 'ticket.view', module: 'tickets', label: { en: 'View tickets', ar: 'عرض التذاكر' } },
+  { key: 'ticket.create', module: 'tickets', label: { en: 'Create tickets', ar: 'إنشاء التذاكر' } },
+  { key: 'ticket.edit', module: 'tickets', label: { en: 'Edit tickets', ar: 'تعديل التذاكر' } },
+  { key: 'ticket.assign', module: 'tickets', label: { en: 'Assign tickets', ar: 'إسناد التذاكر' } },
+  {
+    key: 'ticket.take_responsibility',
+    module: 'tickets',
+    label: { en: 'Take responsibility', ar: 'تولّي المسؤولية' },
+  },
+  {
+    key: 'ticket.redirect',
+    module: 'tickets',
+    label: { en: 'Redirect tickets', ar: 'إعادة توجيه التذاكر' },
+  },
+  {
+    key: 'ticket.update_add',
+    module: 'tickets',
+    label: { en: 'Add ticket updates', ar: 'إضافة تحديثات التذكرة' },
+  },
+  { key: 'ticket.resolve', module: 'tickets', label: { en: 'Resolve tickets', ar: 'حل التذاكر' } },
+  { key: 'ticket.close', module: 'tickets', label: { en: 'Close tickets', ar: 'إغلاق التذاكر' } },
+  {
+    key: 'ticket.reopen',
+    module: 'tickets',
+    label: { en: 'Re-open tickets', ar: 'إعادة فتح التذاكر' },
+  },
+  {
+    key: 'ticket.escalate',
+    module: 'tickets',
+    label: { en: 'Escalate tickets', ar: 'تصعيد التذاكر' },
+  },
+  {
+    key: 'ticket.export',
+    module: 'tickets',
+    label: { en: 'Export tickets', ar: 'تصدير التذاكر' },
+  },
+  {
+    key: 'ticket.manage_config',
+    module: 'tickets',
+    label: { en: 'Manage ticketing configuration', ar: 'إدارة إعدادات التذاكر' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];
