@@ -5,6 +5,7 @@
     "moduleResolution": "Node",
     "outDir": "dist",
     "baseUrl": ".",
+    "isolatedModules": true,
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "strictPropertyInitialization": false,
