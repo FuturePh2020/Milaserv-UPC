@@ -1,0 +1,141 @@
+{
+  "app": {
+    "name": "ميلاسيرف 360",
+    "tagline": "منصة تشغيل الرعاية الصحية المؤسسية"
+  },
+  "nav": {
+    "dashboard": "لوحة التحكم",
+    "users": "المستخدمون",
+    "departments": "الإدارات",
+    "teams": "الفرق",
+    "roles": "الأدوار والصلاحيات",
+    "settings": "الإعدادات",
+    "audit": "سجل التدقيق",
+    "notifications": "الإشعارات",
+    "administration": "الإدارة"
+  },
+  "auth": {
+    "signIn": "تسجيل الدخول",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "signingIn": "جارٍ تسجيل الدخول…",
+    "logout": "تسجيل الخروج",
+    "changePassword": "تغيير كلمة المرور",
+    "currentPassword": "كلمة المرور الحالية",
+    "newPassword": "كلمة المرور الجديدة",
+    "confirmPassword": "تأكيد كلمة المرور الجديدة",
+    "passwordMismatch": "كلمتا المرور غير متطابقتين",
+    "mustChange": "يجب تغيير كلمة المرور قبل المتابعة.",
+    "changed": "تم تغيير كلمة المرور بنجاح."
+  },
+  "common": {
+    "search": "بحث…",
+    "create": "إنشاء",
+    "edit": "تعديل",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "archive": "أرشفة",
+    "close": "إغلاق",
+    "actions": "إجراءات",
+    "status": "الحالة",
+    "active": "نشط",
+    "inactive": "غير نشط",
+    "loading": "جارٍ التحميل…",
+    "empty": "لا توجد سجلات بعد",
+    "error": "حدث خطأ ما",
+    "confirmArchive": "هل أنت متأكد من أرشفة هذا السجل؟",
+    "page": "صفحة {page} من {pages}",
+    "previous": "السابق",
+    "next": "التالي",
+    "total": "{count} سجل",
+    "nameAr": "الاسم بالعربية",
+    "nameEn": "الاسم بالإنجليزية",
+    "yes": "نعم",
+    "no": "لا"
+  },
+  "users": {
+    "title": "المستخدمون",
+    "create": "مستخدم جديد",
+    "email": "البريد الإلكتروني",
+    "name": "الاسم",
+    "department": "الإدارة",
+    "rolesCol": "الأدوار",
+    "teams": "الفرق",
+    "lastSignIn": "آخر تسجيل دخول",
+    "phone": "الهاتف",
+    "tempPassword": "كلمة مرور مؤقتة",
+    "tempPasswordHint": "سيُطلب من المستخدم تغييرها عند أول تسجيل دخول.",
+    "deactivate": "تعطيل",
+    "activate": "تفعيل",
+    "assignRoles": "إسناد الأدوار",
+    "noDepartment": "—"
+  },
+  "departments": {
+    "title": "الإدارات",
+    "create": "إدارة جديدة",
+    "code": "الرمز",
+    "teamsCount": "الفرق"
+  },
+  "teams": {
+    "title": "الفرق",
+    "create": "فريق جديد",
+    "department": "الإدارة",
+    "membersCount": "الأعضاء",
+    "members": "الأعضاء",
+    "addMember": "إضافة عضو",
+    "removeMember": "إزالة",
+    "memberRole": "الدور في الفريق",
+    "roleMember": "عضو",
+    "roleLeader": "قائد",
+    "roleManager": "مدير"
+  },
+  "roles": {
+    "title": "الأدوار والصلاحيات",
+    "create": "دور جديد",
+    "key": "المفتاح",
+    "system": "نظامي",
+    "custom": "مخصص",
+    "usersCount": "المستخدمون",
+    "grants": "الصلاحيات",
+    "dataScope": "نطاق البيانات",
+    "editGrants": "تعديل الصلاحيات",
+    "scope": {
+      "MY_RECORDS": "سجلاتي",
+      "MY_TEAM": "فريقي",
+      "DEPARTMENT": "الإدارة",
+      "MULTIPLE_TEAMS": "فرق متعددة",
+      "PARTNER": "الشريك",
+      "BRANCH": "الفرع",
+      "ALL_DATA": "جميع البيانات"
+    }
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "value": "القيمة",
+    "category": "الفئة",
+    "scope": "النطاق",
+    "updated": "تم تحديث الإعداد"
+  },
+  "audit": {
+    "title": "سجل التدقيق",
+    "actor": "المنفذ",
+    "action": "الإجراء",
+    "entity": "الكيان",
+    "when": "التوقيت",
+    "details": "التفاصيل",
+    "system": "النظام",
+    "filterAction": "تصفية حسب الإجراء…",
+    "filterEntityType": "نوع الكيان…"
+  },
+  "notifications": {
+    "title": "الإشعارات",
+    "markAllRead": "تحديد الكل كمقروء",
+    "empty": "لا توجد إشعارات",
+    "unread": "غير مقروء"
+  },
+  "dashboard": {
+    "title": "لوحة التحكم",
+    "welcome": "مرحبًا، {name}",
+    "hint": "استخدم القائمة الجانبية للتنقل. تظهر الوحدات حسب صلاحياتك."
+  }
+}

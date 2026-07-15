@@ -1,4 +1,9 @@
 import type { Metadata } from 'next';
+import { NextIntlClientProvider } from 'next-intl';
+import { getLocale, getMessages } from 'next-intl/server';
+import { RTL_LOCALES } from '@milaserv/contracts';
+import type { Locale } from '@milaserv/contracts';
+import { Providers } from '@/components/providers';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -6,11 +11,18 @@ export const metadata: Metadata = {
   description: 'Enterprise Healthcare Operations Platform',
 };
 
-// Locale-aware <html lang/dir> handling arrives with the i18n shell in Step 7.
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const locale = (await getLocale()) as Locale;
+  const messages = await getMessages();
+  const dir = RTL_LOCALES.includes(locale) ? 'rtl' : 'ltr';
+
   return (
-    <html lang="ar" dir="rtl">
-      <body>{children}</body>
+    <html lang={locale} dir={dir}>
+      <body>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <Providers>{children}</Providers>
+        </NextIntlClientProvider>
+      </body>
     </html>
   );
 }

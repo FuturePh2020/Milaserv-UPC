@@ -1,0 +1,141 @@
+{
+  "app": {
+    "name": "Milaserv360",
+    "tagline": "Enterprise Healthcare Operations Platform"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "users": "Users",
+    "departments": "Departments",
+    "teams": "Teams",
+    "roles": "Roles & Permissions",
+    "settings": "Settings",
+    "audit": "Audit Log",
+    "notifications": "Notifications",
+    "administration": "Administration"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "email": "Email",
+    "password": "Password",
+    "signingIn": "Signing in…",
+    "logout": "Log out",
+    "changePassword": "Change password",
+    "currentPassword": "Current password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "passwordMismatch": "Passwords do not match",
+    "mustChange": "You must change your password before continuing.",
+    "changed": "Password changed successfully."
+  },
+  "common": {
+    "search": "Search…",
+    "create": "Create",
+    "edit": "Edit",
+    "save": "Save",
+    "cancel": "Cancel",
+    "archive": "Archive",
+    "close": "Close",
+    "actions": "Actions",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "loading": "Loading…",
+    "empty": "Nothing here yet",
+    "error": "Something went wrong",
+    "confirmArchive": "Are you sure you want to archive this record?",
+    "page": "Page {page} of {pages}",
+    "previous": "Previous",
+    "next": "Next",
+    "total": "{count} records",
+    "nameAr": "Arabic name",
+    "nameEn": "English name",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "users": {
+    "title": "Users",
+    "create": "New user",
+    "email": "Email",
+    "name": "Name",
+    "department": "Department",
+    "rolesCol": "Roles",
+    "teams": "Teams",
+    "lastSignIn": "Last sign-in",
+    "phone": "Phone",
+    "tempPassword": "Temporary password",
+    "tempPasswordHint": "The user must change it at first sign-in.",
+    "deactivate": "Deactivate",
+    "activate": "Activate",
+    "assignRoles": "Assign roles",
+    "noDepartment": "—"
+  },
+  "departments": {
+    "title": "Departments",
+    "create": "New department",
+    "code": "Code",
+    "teamsCount": "Teams"
+  },
+  "teams": {
+    "title": "Teams",
+    "create": "New team",
+    "department": "Department",
+    "membersCount": "Members",
+    "members": "Members",
+    "addMember": "Add member",
+    "removeMember": "Remove",
+    "memberRole": "Role in team",
+    "roleMember": "Member",
+    "roleLeader": "Leader",
+    "roleManager": "Manager"
+  },
+  "roles": {
+    "title": "Roles & Permissions",
+    "create": "New role",
+    "key": "Key",
+    "system": "System",
+    "custom": "Custom",
+    "usersCount": "Users",
+    "grants": "Permissions",
+    "dataScope": "Data scope",
+    "editGrants": "Edit permissions",
+    "scope": {
+      "MY_RECORDS": "My records",
+      "MY_TEAM": "My team",
+      "DEPARTMENT": "Department",
+      "MULTIPLE_TEAMS": "Multiple teams",
+      "PARTNER": "Partner",
+      "BRANCH": "Branch",
+      "ALL_DATA": "All data"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "value": "Value",
+    "category": "Category",
+    "scope": "Scope",
+    "updated": "Setting updated"
+  },
+  "audit": {
+    "title": "Audit Log",
+    "actor": "Actor",
+    "action": "Action",
+    "entity": "Entity",
+    "when": "When",
+    "details": "Details",
+    "system": "System",
+    "filterAction": "Filter by action…",
+    "filterEntityType": "Entity type…"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "markAllRead": "Mark all as read",
+    "empty": "No notifications",
+    "unread": "Unread"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome, {name}",
+    "hint": "Use the sidebar to navigate. Modules appear according to your permissions."
+  }
+}
