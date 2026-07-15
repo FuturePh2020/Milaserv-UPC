@@ -30,7 +30,7 @@ integrations, OCR, CSAT, email-to-ticket, full Branch Center, WhatsApp.
 - [x] Audit + timeline on every action (verified by tests)
 - [x] Notifications verified — assignment, direction, escalation, SLA warning/breach, resolution, close/reopen, new response
 - [x] Validation & error states — catalog validation, 400/403/404/409/422 semantics, loading/empty/error UI
-- [x] Tests — 8 e2e suites, 64 tests green (Phase 1 suites: auth 9, permissions 5, org 12, foundations 11; Phase 2: prerequisites 10, config 3, tickets 10, SLA 4) — two Phase-1 assertions updated for the spec §8 agent grants
+- [x] Tests — 8 e2e suites, 63 tests green (Phase 1 suites: auth 9, permissions 5, org 12, foundations 11; Phase 2: prerequisites 10, config 3, tickets 10, SLA 4) — two Phase-1 assertions updated for the spec §8 agent grants
 - [x] UAT walkthrough — Chromium 21/21: branch → branch ticket with snapshot → take → update → resolve → close → timeline → views
 - [x] Docs updated; rollback = revert per-step commits + migrations
 
