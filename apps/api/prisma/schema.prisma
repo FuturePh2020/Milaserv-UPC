@@ -111,9 +111,9 @@ model Team {
 model TeamMember {
   id       String         @id @default(cuid())
   teamId   String
-  team     Team           @relation(fields: [teamId], references: [id])
+  team     Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
   userId   String
-  user     User           @relation(fields: [userId], references: [id])
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   role     TeamMemberRole @default(MEMBER)
   joinedAt DateTime       @default(now())
 
