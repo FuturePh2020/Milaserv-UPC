@@ -1,0 +1,10 @@
+@import 'tailwindcss';
+
+:root {
+  /* Milaserv360 base palette — refined in Step 7 (design system) */
+  --color-brand: #0b2545;
+}
+
+body {
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
