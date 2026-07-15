@@ -25,3 +25,6 @@ coverage/
 
 # prisma
 apps/api/prisma/*.db
+
+# attachments (local dev storage)
+storage/

@@ -13,6 +13,9 @@ import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { NumberingModule } from './modules/numbering/numbering.module';
+import { AttachmentsModule } from './modules/attachments/attachments.module';
+import { BranchesModule } from './modules/branches/branches.module';
 
 @Module({
   imports: [
@@ -30,6 +33,9 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     RolesModule,
     SettingsModule,
     NotificationsModule,
+    NumberingModule,
+    AttachmentsModule,
+    BranchesModule,
   ],
   controllers: [HealthController],
 })
