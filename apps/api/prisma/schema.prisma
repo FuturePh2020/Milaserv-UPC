@@ -1,0 +1,272 @@
+// Milaserv360 — Phase 1 (Core Platform) schema.
+// Blueprint references: §6 roles, §6.1 data scopes, §19 permissions & security,
+// §8 shared engines (Audit, Timeline, Notification, Configuration).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Blueprint §6.1 — PARTNER and BRANCH are modeled now, activated when their
+/// master-data modules exist (Phase 2+).
+enum DataScope {
+  MY_RECORDS
+  MY_TEAM
+  DEPARTMENT
+  MULTIPLE_TEAMS
+  PARTNER
+  BRANCH
+  ALL_DATA
+}
+
+enum TeamMemberRole {
+  MEMBER
+  LEADER
+  MANAGER
+}
+
+enum SettingScopeLevel {
+  SYSTEM
+  DEPARTMENT
+  TEAM
+}
+
+enum SettingValueType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+// ── Identity & organization ─────────────────────────────────────────
+
+model User {
+  id                  String     @id @default(cuid())
+  email               String     @unique
+  passwordHash        String
+  nameAr              String
+  nameEn              String
+  phone               String?
+  status              UserStatus @default(ACTIVE)
+  departmentId        String?
+  department          Department? @relation(fields: [departmentId], references: [id])
+  lastSignInAt        DateTime?
+  failedLoginAttempts Int        @default(0)
+  lockedUntil         DateTime?
+  mustChangePassword  Boolean    @default(false)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  deletedAt           DateTime?
+
+  roles         UserRole[]
+  teams         TeamMember[]
+  sessions      Session[]
+  notifications Notification[]
+
+  @@index([departmentId])
+  @@index([status, deletedAt])
+}
+
+model Department {
+  id        String    @id @default(cuid())
+  code      String    @unique
+  nameAr    String
+  nameEn    String
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  users User[]
+  teams Team[]
+}
+
+model Team {
+  id           String     @id @default(cuid())
+  nameAr       String
+  nameEn       String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  members TeamMember[]
+
+  @@index([departmentId])
+}
+
+model TeamMember {
+  id       String         @id @default(cuid())
+  teamId   String
+  team     Team           @relation(fields: [teamId], references: [id])
+  userId   String
+  user     User           @relation(fields: [userId], references: [id])
+  role     TeamMemberRole @default(MEMBER)
+  joinedAt DateTime       @default(now())
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+// ── Roles & permissions (blueprint §19) ─────────────────────────────
+
+model Role {
+  id        String    @id @default(cuid())
+  /// Stable machine key (e.g. SUPER_ADMIN); system roles seeded from contracts.
+  key       String    @unique
+  nameAr    String
+  nameEn    String
+  /// System roles (blueprint §6) cannot be deleted.
+  isSystem  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  id      String @id @default(cuid())
+  /// Stable key from @milaserv/contracts (e.g. "user.create"). Never renamed.
+  key     String @unique
+  module  String
+  labelAr String
+  labelEn String
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  /// Blueprint §19.1: permission = action + data scope.
+  dataScope    DataScope  @default(MY_RECORDS)
+  /// Explicit team ids when dataScope = MULTIPLE_TEAMS.
+  scopeTeamIds String[]   @default([])
+  /// Reserved for Phase 2+ (blueprint §19.1) — inactive until Branch/Partner masters exist.
+  scopeBranchIds String[] @default([])
+  scopePartnerIds String[] @default([])
+
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String
+  ip               String?
+  userAgent        String?
+  lastActivityAt   DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, revokedAt])
+}
+
+// ── Configuration Engine (ADR-008) ──────────────────────────────────
+
+model Setting {
+  id         String            @id @default(cuid())
+  key        String
+  category   String
+  valueType  SettingValueType
+  /// JSON-encoded value; interpreted per valueType.
+  value      Json
+  scopeLevel SettingScopeLevel @default(SYSTEM)
+  /// Department/Team id when scopeLevel is not SYSTEM; "" for SYSTEM scope
+  /// (non-nullable so the composite unique constraint actually enforces).
+  scopeId    String            @default("")
+  labelAr    String
+  labelEn    String
+  updatedAt  DateTime          @updatedAt
+  createdAt  DateTime          @default(now())
+
+  @@unique([key, scopeLevel, scopeId])
+  @@index([category])
+}
+
+// ── Audit Engine (blueprint §8 — append-only, immutable) ────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  /// Nullable: system/seed actions have no user actor.
+  actorId    String?
+  /// Snapshot — remains meaningful even if the user is later renamed/removed.
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}
+
+// ── Timeline Engine (blueprint §8) ──────────────────────────────────
+
+model TimelineEvent {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  eventType  String
+  actorId    String?
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+}
+
+// ── Notification Engine foundation (blueprint §8) ───────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  titleAr   String
+  titleEn   String
+  bodyAr    String?
+  bodyEn    String?
+  /// Structured payload for deep-linking (entityType/entityId, …).
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
