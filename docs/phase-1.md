@@ -3,20 +3,20 @@
 Scope delivered (per approved Phase 1 plan; blueprint §5 "Core Platform" + Sprint 0–2
 foundations from §23):
 
-| Area | Delivered |
-| --- | --- |
-| Architecture | npm-workspaces monorepo: NestJS modular monolith (ADR-002), Next.js App Router, shared `@milaserv/contracts` (ADR-011), Docker Compose (postgres 16 + redis 7, optional containerized api/web), CI gates |
-| Authentication | argon2id passwords, JWT access + rotating refresh sessions, idle timeout, lockout, forced password change, logout/deactivation revocation |
-| Users | Scope-filtered CRUD, activation, role assignment, audit + timeline + notifications |
-| Departments | CRUD + archive (guarded), bilingual masters |
-| Teams | CRUD + membership with team roles, permission-cache invalidation |
-| Roles | 10 system roles seeded (§6), custom roles, grant matrix editor |
-| Permissions | Catalog in contracts (§19.2), widest-scope resolver (§19.1, §6.1), `@RequirePermission` guard, Redis-cached, `GET /me/permissions` |
-| Main layout | Sidebar + topbar shell, ar/en with RTL/LTR first paint, locale toggle |
-| Dynamic sidebar | Rendered strictly from effective permissions (same keys as API guards) |
-| Settings foundation | Typed catalog + SYSTEM/DEPARTMENT/TEAM overrides (ADR-008) |
-| Audit foundation | Append-only log, every mutation recorded, scoped query API + viewer (ADR-010) |
-| Notification foundation | Channel abstraction (in-app live; email/SMS slots per §8), unread badge, notification center |
+| Area                    | Delivered                                                                                                                                                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Architecture            | npm-workspaces monorepo: NestJS modular monolith (ADR-002), Next.js App Router, shared `@milaserv/contracts` (ADR-011), Docker Compose (postgres 16 + redis 7, optional containerized api/web), CI gates |
+| Authentication          | argon2id passwords, JWT access + rotating refresh sessions, idle timeout, lockout, forced password change, logout/deactivation revocation                                                                |
+| Users                   | Scope-filtered CRUD, activation, role assignment, audit + timeline + notifications                                                                                                                       |
+| Departments             | CRUD + archive (guarded), bilingual masters                                                                                                                                                              |
+| Teams                   | CRUD + membership with team roles, permission-cache invalidation                                                                                                                                         |
+| Roles                   | 10 system roles seeded (§6), custom roles, grant matrix editor                                                                                                                                           |
+| Permissions             | Catalog in contracts (§19.2), widest-scope resolver (§19.1, §6.1), `@RequirePermission` guard, Redis-cached, `GET /me/permissions`                                                                       |
+| Main layout             | Sidebar + topbar shell, ar/en with RTL/LTR first paint, locale toggle                                                                                                                                    |
+| Dynamic sidebar         | Rendered strictly from effective permissions (same keys as API guards)                                                                                                                                   |
+| Settings foundation     | Typed catalog + SYSTEM/DEPARTMENT/TEAM overrides (ADR-008)                                                                                                                                               |
+| Audit foundation        | Append-only log, every mutation recorded, scoped query API + viewer (ADR-010)                                                                                                                            |
+| Notification foundation | Channel abstraction (in-app live; email/SMS slots per §8), unread badge, notification center                                                                                                             |
 
 Deliberately **not** included (later phases per blueprint): tickets, KB, break tracker,
 attachments, number generator, branch/partner masters (scope columns reserved),
