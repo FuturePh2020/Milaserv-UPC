@@ -119,13 +119,19 @@ describe('Permissions engine (e2e)', () => {
     expect(res.body.teamIds).toContain(teamId);
   });
 
-  it('AGENT has no admin permissions', async () => {
+  it('AGENT has no admin permissions (ticketing self-service only, spec §8)', async () => {
     const token = await login(EMAILS.agent);
     const res = await request(http)
       .get('/api/v1/me/permissions')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
-    expect(res.body.permissions).toEqual({});
+    const keys = Object.keys(res.body.permissions);
+    // No admin-module permissions…
+    for (const adminKey of ['user.view', 'role.manage', 'setting.manage', 'audit.view']) {
+      expect(keys).not.toContain(adminKey);
+    }
+    // …only self-scoped ticketing grants (Phase 2 seed, spec §8).
+    expect(res.body.permissions['ticket.view']?.scope).toBe('MY_RECORDS');
   });
 
   it('guard: 403 without the permission, 200 with it (scope attached)', async () => {

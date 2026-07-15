@@ -87,15 +87,22 @@ describe('Ticketing prerequisites (e2e)', () => {
       expect(audit).toBeTruthy();
     });
 
-    it('duplicate branch code → 409; agent → 403', async () => {
+    it('duplicate branch code → 409; agent can view (spec §8) but not manage', async () => {
       await request(http)
         .post('/api/v1/branches')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ code: 'E2E-BR1', nameAr: 'تكرار', nameEn: 'Duplicate' })
         .expect(409);
+      // AGENT holds branch.view (needed for the branch-ticket form)…
       await request(http)
         .get('/api/v1/branches')
         .set('Authorization', `Bearer ${agentToken}`)
+        .expect(200);
+      // …but not branch.manage.
+      await request(http)
+        .post('/api/v1/branches')
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({ code: 'E2E-BR9', nameAr: 'ممنوع', nameEn: 'Forbidden' })
         .expect(403);
     });
 
