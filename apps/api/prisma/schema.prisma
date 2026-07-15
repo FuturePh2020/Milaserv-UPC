@@ -73,6 +73,10 @@ model User {
   teams         TeamMember[]
   sessions      Session[]
   notifications Notification[]
+  ticketsCreated     Ticket[]          @relation("ticketCreatedBy")
+  ticketsResponsible Ticket[]          @relation("ticketResponsible")
+  ticketOwnerships   TicketOwnership[]
+  ticketUpdates      TicketUpdate[]
 
   @@index([departmentId])
   @@index([status, deletedAt])
@@ -104,6 +108,7 @@ model Team {
   deletedAt    DateTime?
 
   members TeamMember[]
+  tickets TicketTeam[]
 
   @@index([departmentId])
 }
@@ -250,6 +255,304 @@ model TimelineEvent {
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId, createdAt])
+}
+
+// ── Number Generator (ticketing spec §2) ────────────────────────────
+
+model NumberSequence {
+  key       String
+  year      Int
+  lastValue Int    @default(0)
+
+  @@id([key, year])
+}
+
+// ── Attachment Engine foundation (blueprint §8, ticketing spec §2) ──
+
+model Attachment {
+  id           String    @id @default(cuid())
+  entityType   String
+  entityId     String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  uploadedById String
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([entityType, entityId])
+}
+
+// ── Minimal Branch Directory (ticketing spec §2; extended by Branch Center §16 later) ──
+
+model Branch {
+  id               String     @id @default(cuid())
+  code             String     @unique
+  nameAr           String
+  nameEn           String
+  city             String?
+  phone            String?
+  supervisorName   String?
+  supervisorEmail  String?
+  supervisorPhone  String?
+  areaManagerName  String?
+  areaManagerEmail String?
+  status           UserStatus @default(ACTIVE)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  deletedAt        DateTime?
+
+  tickets Ticket[]
+}
+
+// ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
+
+enum StatusKind {
+  OPEN
+  RESOLVED
+  TERMINAL
+}
+
+model TicketType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  categories  TicketCategory[]
+  slaPolicies SlaPolicy[]
+  tickets     Ticket[]
+}
+
+model TicketCategory {
+  id     String     @id @default(cuid())
+  typeId String
+  type   TicketType @relation(fields: [typeId], references: [id])
+  key    String
+  nameAr String
+  nameEn String
+  order  Int        @default(0)
+  active Boolean    @default(true)
+
+  tickets Ticket[]
+
+  @@unique([typeId, key])
+}
+
+model TicketUrgency {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  color  String  @default("#6b7280")
+  order  Int     @default(0)
+  active Boolean @default(true)
+
+  slaPolicies SlaPolicy[]
+  tickets     Ticket[]
+}
+
+model TicketStatus {
+  id     String     @id @default(cuid())
+  key    String     @unique
+  nameAr String
+  nameEn String
+  kind   StatusKind @default(OPEN)
+  color  String     @default("#6b7280")
+  order  Int        @default(0)
+  active Boolean    @default(true)
+
+  transitionsFrom StatusTransition[] @relation("fromStatus")
+  transitionsTo   StatusTransition[] @relation("toStatus")
+  tickets         Ticket[]
+}
+
+/// Workflow-engine foundation: allowed transitions are configuration.
+model StatusTransition {
+  id                    String       @id @default(cuid())
+  fromStatusId          String
+  fromStatus            TicketStatus @relation("fromStatus", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatusId            String
+  toStatus              TicketStatus @relation("toStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
+  requiredPermissionKey String?
+
+  @@unique([fromStatusId, toStatusId])
+}
+
+model UpdateType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  order  Int     @default(0)
+  active Boolean @default(true)
+  /// Waiting-type updates pause the SLA clock (spec US-4).
+  pausesSla Boolean @default(false)
+
+  ticketUpdates TicketUpdate[]
+}
+
+model ResolutionCategory {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  resolutions TicketResolution[]
+}
+
+model SlaPolicy {
+  id                   String        @id @default(cuid())
+  typeId               String
+  type                 TicketType    @relation(fields: [typeId], references: [id])
+  urgencyId            String
+  urgency              TicketUrgency @relation(fields: [urgencyId], references: [id])
+  firstResponseMinutes Int
+  resolutionMinutes    Int
+  warningThresholdPct  Int           @default(80)
+  active               Boolean       @default(true)
+
+  tickets Ticket[]
+
+  @@unique([typeId, urgencyId])
+}
+
+// ── Tickets (ADR-003 universal engine; spec §4) ─────────────────────
+
+enum SlaState {
+  ON_TRACK
+  WARNING
+  BREACHED
+  PAUSED
+  MET
+}
+
+model Ticket {
+  id                      String    @id @default(cuid())
+  internalNumber          String    @unique
+  customerComplaintNumber String    @unique
+  typeId                  String
+  type                    TicketType @relation(fields: [typeId], references: [id])
+  categoryId              String
+  category                TicketCategory @relation(fields: [categoryId], references: [id])
+  urgencyId               String
+  urgency                 TicketUrgency @relation(fields: [urgencyId], references: [id])
+  statusId                String
+  status                  TicketStatus @relation(fields: [statusId], references: [id])
+
+  customerName            String
+  customerPhone           String
+  subject                 String
+  description             String
+  relatedOrderNo          String?
+  customerVisitAt         DateTime?
+  sapMaterialNo           String?
+  itemNameAr              String?
+  itemNameEn              String?
+
+  branchId                String?
+  branch                  Branch?   @relation(fields: [branchId], references: [id])
+  /// ADR-007: immutable snapshot of supervisor data at creation time.
+  branchSupervisorSnapshot Json?
+
+  /// ADR-004: creator never changes.
+  createdById             String
+  createdBy               User      @relation("ticketCreatedBy", fields: [createdById], references: [id])
+  responsibleId           String?
+  responsible             User?     @relation("ticketResponsible", fields: [responsibleId], references: [id])
+  resolvedById            String?
+  resolvedAt              DateTime?
+  closedById              String?
+  closedAt                DateTime?
+  reopenCount             Int       @default(0)
+  lastCustomerResponseAt  DateTime?
+
+  // SLA (Sprint 4)
+  slaPolicyId             String?
+  slaPolicy               SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
+  firstResponseDueAt      DateTime?
+  resolutionDueAt         DateTime?
+  slaState                SlaState  @default(ON_TRACK)
+  slaPausedAt             DateTime?
+  slaPausedTotalMinutes   Int       @default(0)
+  firstRespondedAt        DateTime?
+
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  deletedAt               DateTime?
+
+  teams      TicketTeam[]
+  ownerships TicketOwnership[]
+  updates    TicketUpdate[]
+  resolution TicketResolution?
+
+  @@index([statusId, urgencyId])
+  @@index([responsibleId])
+  @@index([createdById])
+  @@index([branchId])
+  @@index([createdAt])
+}
+
+/// §9.9: directed teams are multi-select.
+model TicketTeam {
+  id       String @id @default(cuid())
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  teamId   String
+  team     Team   @relation(fields: [teamId], references: [id])
+
+  @@unique([ticketId, teamId])
+  @@index([teamId])
+}
+
+/// §9.5: complete responsibility history.
+model TicketOwnership {
+  id           String    @id @default(cuid())
+  ticketId     String
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  assignedById String
+  reason       String?
+  fromAt       DateTime  @default(now())
+  toAt         DateTime?
+
+  @@index([ticketId, fromAt])
+}
+
+/// §9.6: immutable operational updates.
+model TicketUpdate {
+  id               String     @id @default(cuid())
+  ticketId         String
+  ticket           Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           User       @relation(fields: [authorId], references: [id])
+  updateTypeId     String
+  updateType       UpdateType @relation(fields: [updateTypeId], references: [id])
+  directedToTeamId String?
+  body             String
+  createdAt        DateTime   @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+/// §9.7: mandatory resolution record (ADR-005).
+model TicketResolution {
+  id                   String             @id @default(cuid())
+  ticketId             String             @unique
+  ticket               Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  summary              String
+  rootCause            String
+  actionTaken          String
+  finalSolution        String
+  resolutionCategoryId String
+  resolutionCategory   ResolutionCategory @relation(fields: [resolutionCategoryId], references: [id])
+  customerInformed     Boolean
+  resolvedById         String
+  resolvedAt           DateTime           @default(now())
 }
 
 // ── Notification Engine foundation (blueprint §8) ───────────────────

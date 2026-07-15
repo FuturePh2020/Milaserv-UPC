@@ -150,7 +150,50 @@ const SLA_DEFAULTS: Record<string, [number, number]> = {
   CRITICAL: [30, 240],
 };
 
+/** §9.9 directed-teams list — seeded as real teams under a system Routing department. */
+const ROUTABLE_TEAMS = [
+  { key: 'BRANCH_SUPERVISOR', nameAr: 'مشرف الفرع', nameEn: 'Branch Supervisor' },
+  { key: 'OPERATION_LEADER', nameAr: 'قائد العمليات', nameEn: 'Operation Leader' },
+  { key: 'OPERATION_SUPERVISOR', nameAr: 'مشرف العمليات', nameEn: 'Operation Supervisor' },
+  { key: 'OPERATION_TEAM', nameAr: 'فريق العمليات', nameEn: 'Operation Team' },
+  { key: 'CUSTOMER_CARE_LEADER', nameAr: 'قائد خدمة العملاء', nameEn: 'Customer Care Leader' },
+  {
+    key: 'CUSTOMER_CARE_SUPERVISOR',
+    nameAr: 'مشرف خدمة العملاء',
+    nameEn: 'Customer Care Supervisor',
+  },
+  { key: 'CUSTOMER_CARE_TEAM', nameAr: 'فريق خدمة العملاء', nameEn: 'Customer Care Team' },
+  { key: 'CRM_LEADER', nameAr: 'قائد إدارة علاقات العملاء', nameEn: 'CRM Leader' },
+  { key: 'CRM_SUPERVISOR', nameAr: 'مشرف إدارة علاقات العملاء', nameEn: 'CRM Supervisor' },
+  { key: 'CRM_TEAM', nameAr: 'فريق إدارة علاقات العملاء', nameEn: 'CRM Team' },
+  { key: 'MARKETING_LEADER', nameAr: 'قائد التسويق', nameEn: 'Marketing Leader' },
+  { key: 'MARKETING_SUPERVISOR', nameAr: 'مشرف التسويق', nameEn: 'Marketing Supervisor' },
+  { key: 'MARKETING_TEAM', nameAr: 'فريق التسويق', nameEn: 'Marketing Team' },
+  { key: 'DELIVERY_SUPERVISOR', nameAr: 'مشرف التوصيل', nameEn: 'Delivery Supervisor' },
+  { key: 'ONLINE_HUB', nameAr: 'المركز الإلكتروني', nameEn: 'Online Hub' },
+];
+
+async function seedRoutableTeams(prisma: PrismaClient) {
+  const dept = await prisma.department.upsert({
+    where: { code: 'ROUTING' },
+    update: {},
+    create: { code: 'ROUTING', nameAr: 'فرق التوجيه', nameEn: 'Routing Teams' },
+  });
+  for (const t of ROUTABLE_TEAMS) {
+    const existing = await prisma.team.findFirst({
+      where: { nameEn: t.nameEn, departmentId: dept.id },
+    });
+    if (!existing) {
+      await prisma.team.create({
+        data: { nameAr: t.nameAr, nameEn: t.nameEn, departmentId: dept.id },
+      });
+    }
+  }
+  console.log(`✔ routable teams (§9.9): ${ROUTABLE_TEAMS.length}`);
+}
+
 export async function seedTicketingCatalogs(prisma: PrismaClient) {
+  await seedRoutableTeams(prisma);
   for (const t of TYPES) {
     await prisma.ticketType.upsert({
       where: { key: t.key },
