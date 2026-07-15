@@ -20,6 +20,7 @@ interface NavItem {
  */
 const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', labelKey: 'dashboard', icon: '▦', permission: null },
+  { href: '/tickets', labelKey: 'tickets', icon: '🎫', permission: 'ticket.view' },
   { href: '/notifications', labelKey: 'notifications', icon: '🔔', permission: null },
 ];
 
@@ -32,6 +33,7 @@ const ADMIN_ITEMS: NavItem[] = [
     permission: 'department.view',
   },
   { href: '/admin/teams', labelKey: 'teams', icon: '👥', permission: 'team.view' },
+  { href: '/admin/branches', labelKey: 'branches', icon: '🏪', permission: 'branch.view' },
   { href: '/admin/roles', labelKey: 'roles', icon: '🛡', permission: 'role.view' },
   { href: '/admin/settings', labelKey: 'settings', icon: '⚙', permission: 'setting.view' },
   { href: '/admin/audit', labelKey: 'audit', icon: '📜', permission: 'audit.view' },
