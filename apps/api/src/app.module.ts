@@ -11,6 +11,8 @@ import { DepartmentsModule } from './modules/departments/departments.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { UsersModule } from './modules/users/users.module';
 import { RolesModule } from './modules/roles/roles.module';
+import { SettingsModule } from './modules/settings/settings.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,6 +28,8 @@ import { RolesModule } from './modules/roles/roles.module';
     TeamsModule,
     UsersModule,
     RolesModule,
+    SettingsModule,
+    NotificationsModule,
   ],
   controllers: [HealthController],
 })

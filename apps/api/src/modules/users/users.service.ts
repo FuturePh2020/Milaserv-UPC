@@ -13,6 +13,7 @@ import { ENV } from '../../core/config/config.module';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import type { RequestScope } from '../permissions/scope';
 import type { AuthUser } from '../auth/current-user.decorator';
@@ -49,6 +50,7 @@ export class UsersService {
     private readonly audit: AuditService,
     private readonly timeline: TimelineService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -308,6 +310,15 @@ export class UsersService {
       eventType: 'roles_changed',
       actorId: actor.userId,
       payload: { roles: roles.map((r) => r.key) },
+    });
+    await this.notifications.notify({
+      userId: id,
+      type: 'user.roles_changed',
+      titleAr: 'تم تحديث أدوارك في النظام',
+      titleEn: 'Your system roles were updated',
+      bodyAr: `الأدوار الحالية: ${roles.map((r) => r.nameAr).join('، ')}`,
+      bodyEn: `Current roles: ${roles.map((r) => r.nameEn).join(', ')}`,
+      payload: { entityType: 'user', entityId: id },
     });
     return this.get(scope, id);
   }

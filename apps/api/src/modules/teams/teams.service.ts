@@ -8,6 +8,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import type { RequestScope } from '../permissions/scope';
 import type { AuthUser } from '../auth/current-user.decorator';
@@ -22,6 +23,7 @@ export class TeamsService {
     private readonly audit: AuditService,
     private readonly timeline: TimelineService,
     private readonly permissions: PermissionsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Translate the resolved data scope (§6.1) into a team where-filter. */
@@ -228,6 +230,15 @@ export class TeamsService {
       eventType: 'joined_team',
       actorId: actor.userId,
       payload: { teamId, role: dto.role },
+    });
+
+    const team = await this.prisma.team.findUniqueOrThrow({ where: { id: teamId } });
+    await this.notifications.notify({
+      userId: dto.userId,
+      type: 'team.member_added',
+      titleAr: `تمت إضافتك إلى فريق ${team.nameAr}`,
+      titleEn: `You were added to team ${team.nameEn}`,
+      payload: { entityType: 'team', entityId: teamId, role: dto.role },
     });
     return member;
   }
