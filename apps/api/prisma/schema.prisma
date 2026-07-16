@@ -73,10 +73,14 @@ model User {
   teams         TeamMember[]
   sessions      Session[]
   notifications Notification[]
-  ticketsCreated     Ticket[]          @relation("ticketCreatedBy")
-  ticketsResponsible Ticket[]          @relation("ticketResponsible")
+  ticketsCreated     Ticket[]           @relation("ticketCreatedBy")
+  ticketsResponsible Ticket[]           @relation("ticketResponsible")
   ticketOwnerships   TicketOwnership[]
   ticketUpdates      TicketUpdate[]
+  kbContents         KbContent[]        @relation("kbOwner")
+  coursesAdministered Course[]          @relation("courseAdmin")
+  courseAssignments  CourseAssignment[] @relation("courseAssignee")
+  lessonProgress     LessonProgress[]   @relation("lessonProgress")
 
   @@index([departmentId])
   @@index([status, deletedAt])
@@ -109,6 +113,7 @@ model Team {
 
   members TeamMember[]
   tickets TicketTeam[]
+  courseAssignments CourseAssignment[]
 
   @@index([departmentId])
 }
@@ -553,6 +558,126 @@ model TicketResolution {
   customerInformed     Boolean
   resolvedById         String
   resolvedAt           DateTime           @default(now())
+}
+
+// ── Knowledge Base Basic (blueprint §10; spec docs/specs/kb-basic-spec-v1.0.md) ──
+
+enum KbKind {
+  SOP
+  ADDED_SOP
+  DAILY_NOTE
+  VIDEO
+  PDF
+  WORD
+  FLOW_CHART
+}
+
+enum KbStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model KbContent {
+  id        String   @id @default(cuid())
+  /// Version group: equals the first version's id (§10.4).
+  rootId    String
+  version   Int      @default(1)
+  kind      KbKind
+  titleAr   String
+  titleEn   String
+  summaryAr String?
+  summaryEn String?
+  body      String?
+  videoUrl  String?
+  ownerId   String
+  owner     User     @relation("kbOwner", fields: [ownerId], references: [id])
+  status    KbStatus @default(DRAFT)
+  publishAt DateTime?
+  expiryAt  DateTime?
+  /// Published+public content is visible to every kb.view holder (spec B3).
+  isPublic  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  lessons CourseLesson[]
+
+  @@unique([rootId, version])
+  @@index([status, kind])
+}
+
+model Course {
+  id            String    @id @default(cuid())
+  titleAr       String
+  titleEn       String
+  descriptionAr String?
+  descriptionEn String?
+  /// §10.2 Course Admin.
+  courseAdminId String
+  courseAdmin   User      @relation("courseAdmin", fields: [courseAdminId], references: [id])
+  status        KbStatus  @default(DRAFT)
+  /// §10.3 Due Date (default for assignments without their own).
+  dueAt         DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  lessons     CourseLesson[]
+  assignments CourseAssignment[]
+}
+
+model CourseLesson {
+  id              String     @id @default(cuid())
+  courseId        String
+  course          Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  order           Int
+  titleAr         String
+  titleEn         String
+  contentId       String?
+  content         KbContent? @relation(fields: [contentId], references: [id])
+  videoUrl        String?
+  durationSeconds Int?
+  createdAt       DateTime   @default(now())
+
+  progress LessonProgress[]
+
+  @@unique([courseId, order])
+}
+
+/// §10.2: assignment to a team OR a specific user (exactly one target).
+model CourseAssignment {
+  id           String    @id @default(cuid())
+  courseId     String
+  course       Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teamId       String?
+  team         Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?     @relation("courseAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  assignedById String
+  dueAt        DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([courseId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+/// §10.3 progress indicators; course % derived from completed lessons.
+model LessonProgress {
+  id               String       @id @default(cuid())
+  lessonId         String
+  lesson           CourseLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User         @relation("lessonProgress", fields: [userId], references: [id], onDelete: Cascade)
+  positionSeconds  Int          @default(0)
+  watchTimeSeconds Int          @default(0)
+  completedAt      DateTime?
+  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime     @default(now())
+
+  @@unique([lessonId, userId])
+  @@index([userId, updatedAt])
 }
 
 // ── Notification Engine foundation (blueprint §8) ───────────────────

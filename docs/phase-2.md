@@ -4,19 +4,19 @@ Implements the approved **Ticketing Module Specification v1.0**
 (`docs/specs/ticketing-module-spec-v1.0.md`) — blueprint §9, ADR-003..007, Sprints 2–4
 of §23. Assumptions A1–A8 were approved before implementation.
 
-| Area | Delivered |
-| --- | --- |
-| Prerequisites | Number generator (settings-driven formats, atomic per-year sequences), Attachment Engine foundation (local-disk driver, settings-driven size/MIME limits, audited access), minimal Branch Directory with supervisor-change timeline |
-| Config catalogs (ADR-008) | Types, categories, urgencies, statuses + transition matrix, update types, resolution categories, SLA policies — all data, seeded verbatim from §9.1–9.3/§9.6, editable via `ticket.manage_config` APIs |
-| Ticketing core | Create (both types) with generated numbers + SLA due dates; scope-filtered lists (ADR-010); 8 views (§9.10); §9.11 filters + search; audited CSV export (§19.3) |
-| Responsibility (ADR-004) | Single responsible + complete ownership history (§9.5); assign/take with auto-transition; multi-team redirect (§9.9) |
-| Updates (§9.6) | Immutable typed updates; WAITING pauses the SLA clock; first-response stamping |
-| Branch flow (ADR-006/007) | Supervisor snapshot at creation, auto-direction to the Branch Supervisor routable team, no-supervisor fallback route + data-quality audit (§9.8, §26) |
-| Resolution (ADR-005) | §9.7 mandatory record enforced (422 without it); resolve→Completed freezes SLA MET/BREACHED; close/reopen with separate ADR-004 stamps; reopen restarts SLA |
-| Status engine | Seeded transition matrix with per-transition permission guards; New Response automation (A3) |
-| SLA engine (US-8) | Warning at threshold, breach with auto-escalation + notifications, first-response breach notify-once, pause/resume — periodic in-process sweeper (`SLA_SWEEP_INTERVAL_SECONDS`); BullMQ worker documented as the volume upgrade path |
-| Routable teams | §9.9 list seeded as teams under a system Routing department |
-| Frontend | Ticket queue (views/filters/SLA chips), create form with read-only supervisor card, detail page (actions per permissions+status, updates/resolution/timeline tabs, ownership history), Branches admin screen, bilingual |
+| Area                      | Delivered                                                                                                                                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Prerequisites             | Number generator (settings-driven formats, atomic per-year sequences), Attachment Engine foundation (local-disk driver, settings-driven size/MIME limits, audited access), minimal Branch Directory with supervisor-change timeline  |
+| Config catalogs (ADR-008) | Types, categories, urgencies, statuses + transition matrix, update types, resolution categories, SLA policies — all data, seeded verbatim from §9.1–9.3/§9.6, editable via `ticket.manage_config` APIs                               |
+| Ticketing core            | Create (both types) with generated numbers + SLA due dates; scope-filtered lists (ADR-010); 8 views (§9.10); §9.11 filters + search; audited CSV export (§19.3)                                                                      |
+| Responsibility (ADR-004)  | Single responsible + complete ownership history (§9.5); assign/take with auto-transition; multi-team redirect (§9.9)                                                                                                                 |
+| Updates (§9.6)            | Immutable typed updates; WAITING pauses the SLA clock; first-response stamping                                                                                                                                                       |
+| Branch flow (ADR-006/007) | Supervisor snapshot at creation, auto-direction to the Branch Supervisor routable team, no-supervisor fallback route + data-quality audit (§9.8, §26)                                                                                |
+| Resolution (ADR-005)      | §9.7 mandatory record enforced (422 without it); resolve→Completed freezes SLA MET/BREACHED; close/reopen with separate ADR-004 stamps; reopen restarts SLA                                                                          |
+| Status engine             | Seeded transition matrix with per-transition permission guards; New Response automation (A3)                                                                                                                                         |
+| SLA engine (US-8)         | Warning at threshold, breach with auto-escalation + notifications, first-response breach notify-once, pause/resume — periodic in-process sweeper (`SLA_SWEEP_INTERVAL_SECONDS`); BullMQ worker documented as the volume upgrade path |
+| Routable teams            | §9.9 list seeded as teams under a system Routing department                                                                                                                                                                          |
+| Frontend                  | Ticket queue (views/filters/SLA chips), create form with read-only supervisor card, detail page (actions per permissions+status, updates/resolution/timeline tabs, ownership history), Branches admin screen, bilingual              |
 
 Out of scope (unchanged from spec §1): customer master, case grouping, Yeastar/order
 integrations, OCR, CSAT, email-to-ticket, full Branch Center, WhatsApp.

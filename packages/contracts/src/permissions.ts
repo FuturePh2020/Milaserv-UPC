@@ -132,6 +132,23 @@ export const PERMISSIONS = [
     module: 'tickets',
     label: { en: 'Manage ticketing configuration', ar: 'إدارة إعدادات التذاكر' },
   },
+
+  // knowledge base (blueprint §10)
+  {
+    key: 'kb.view',
+    module: 'knowledge_base',
+    label: { en: 'View knowledge base', ar: 'عرض قاعدة المعرفة' },
+  },
+  {
+    key: 'kb.manage',
+    module: 'knowledge_base',
+    label: { en: 'Manage content & courses', ar: 'إدارة المحتوى والكورسات' },
+  },
+  {
+    key: 'kb.assign',
+    module: 'knowledge_base',
+    label: { en: 'Assign courses', ar: 'إسناد الكورسات' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

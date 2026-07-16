@@ -59,6 +59,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.escalate', DataScope.DEPARTMENT],
     ['ticket.export', DataScope.DEPARTMENT],
     ['branch.view', DataScope.DEPARTMENT],
+    ['kb.view', DataScope.DEPARTMENT],
+    ['kb.assign', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -72,6 +74,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.resolve', DataScope.MY_TEAM],
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
+    ['kb.view', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
@@ -84,6 +87,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.resolve', DataScope.MY_TEAM],
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
+    ['kb.view', DataScope.MY_TEAM],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -91,11 +95,13 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.take_responsibility', DataScope.MY_RECORDS],
     ['ticket.update_add', DataScope.MY_RECORDS],
     ['branch.view', DataScope.MY_RECORDS],
+    ['kb.view', DataScope.MY_RECORDS],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
     ['team.view', DataScope.DEPARTMENT],
     ['ticket.view', DataScope.DEPARTMENT],
+    ['kb.view', DataScope.DEPARTMENT],
   ],
   QUALITY_REVIEWER: [
     ['audit.view', DataScope.DEPARTMENT],
