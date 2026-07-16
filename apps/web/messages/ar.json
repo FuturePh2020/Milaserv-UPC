@@ -14,7 +14,9 @@
     "notifications": "الإشعارات",
     "administration": "الإدارة",
     "tickets": "التذاكر",
-    "branches": "الفروع"
+    "branches": "الفروع",
+    "kb": "قاعدة المعرفة",
+    "kbAdmin": "إدارة قاعدة المعرفة"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -223,5 +225,62 @@
     "supervisorPhone": "هاتف المشرف",
     "areaManagerName": "مدير المنطقة",
     "areaManagerEmail": "بريد مدير المنطقة"
+  },
+  "kb": {
+    "title": "قاعدة المعرفة",
+    "library": "المكتبة",
+    "myCourses": "كورساتي",
+    "kind": "النوع",
+    "kinds": {
+      "SOP": "إجراء SOP",
+      "ADDED_SOP": "إجراء مضاف",
+      "DAILY_NOTE": "ملاحظة يومية",
+      "VIDEO": "فيديو",
+      "PDF": "PDF",
+      "WORD": "Word",
+      "FLOW_CHART": "مخطط تدفق"
+    },
+    "owner": "المالك",
+    "version": "الإصدار",
+    "publishedAt": "تاريخ النشر",
+    "expiresAt": "تاريخ الانتهاء",
+    "statusL": "الحالة",
+    "statuses": {
+      "DRAFT": "مسودة",
+      "PUBLISHED": "منشور",
+      "ARCHIVED": "مؤرشف"
+    },
+    "newContent": "محتوى جديد",
+    "newVersion": "إصدار جديد",
+    "publish": "نشر",
+    "body": "نص المحتوى",
+    "videoUrl": "رابط الفيديو",
+    "summaryAr": "ملخص (عربي)",
+    "summaryEn": "ملخص (إنجليزي)",
+    "titleArL": "العنوان (عربي)",
+    "titleEnL": "العنوان (إنجليزي)",
+    "course": "الكورس",
+    "newCourse": "كورس جديد",
+    "lessons": "الدروس",
+    "lessonCount": "{count} درس",
+    "addLesson": "إضافة درس",
+    "courseAdmin": "مدير الكورس",
+    "assign": "إسناد",
+    "assignTeams": "إسناد إلى فرق",
+    "dueAt": "الموعد المطلوب",
+    "progress": "التقدم",
+    "progressStates": {
+      "NOT_STARTED": "لم يبدأ",
+      "IN_PROGRESS": "قيد التقدم",
+      "COMPLETED": "مكتمل"
+    },
+    "markComplete": "تحديد كمكتمل",
+    "completedL": "مكتمل",
+    "watchTime": "وقت المشاهدة",
+    "lastActivity": "آخر نشاط",
+    "lastSignIn": "آخر تسجيل دخول",
+    "trainees": "تقدم المتدربين",
+    "open": "فتح",
+    "manage": "إدارة قاعدة المعرفة"
   }
 }

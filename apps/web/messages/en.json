@@ -14,7 +14,9 @@
     "notifications": "Notifications",
     "administration": "Administration",
     "tickets": "Tickets",
-    "branches": "Branches"
+    "branches": "Branches",
+    "kb": "Knowledge Base",
+    "kbAdmin": "KB Management"
   },
   "auth": {
     "signIn": "Sign in",
@@ -223,5 +225,62 @@
     "supervisorPhone": "Supervisor phone",
     "areaManagerName": "Area manager",
     "areaManagerEmail": "Area manager email"
+  },
+  "kb": {
+    "title": "Knowledge Base",
+    "library": "Library",
+    "myCourses": "My Courses",
+    "kind": "Type",
+    "kinds": {
+      "SOP": "SOP",
+      "ADDED_SOP": "Added SOP",
+      "DAILY_NOTE": "Daily Note",
+      "VIDEO": "Video",
+      "PDF": "PDF",
+      "WORD": "Word",
+      "FLOW_CHART": "Flow Chart"
+    },
+    "owner": "Owner",
+    "version": "Version",
+    "publishedAt": "Published",
+    "expiresAt": "Expires",
+    "statusL": "Status",
+    "statuses": {
+      "DRAFT": "Draft",
+      "PUBLISHED": "Published",
+      "ARCHIVED": "Archived"
+    },
+    "newContent": "New content",
+    "newVersion": "New version",
+    "publish": "Publish",
+    "body": "Content body",
+    "videoUrl": "Video URL",
+    "summaryAr": "Summary (Arabic)",
+    "summaryEn": "Summary (English)",
+    "titleArL": "Title (Arabic)",
+    "titleEnL": "Title (English)",
+    "course": "Course",
+    "newCourse": "New course",
+    "lessons": "Lessons",
+    "lessonCount": "{count} lessons",
+    "addLesson": "Add lesson",
+    "courseAdmin": "Course admin",
+    "assign": "Assign",
+    "assignTeams": "Assign to teams",
+    "dueAt": "Due date",
+    "progress": "Progress",
+    "progressStates": {
+      "NOT_STARTED": "Not started",
+      "IN_PROGRESS": "In progress",
+      "COMPLETED": "Completed"
+    },
+    "markComplete": "Mark complete",
+    "completedL": "Completed",
+    "watchTime": "Watch time",
+    "lastActivity": "Last activity",
+    "lastSignIn": "Last sign-in",
+    "trainees": "Trainees progress",
+    "open": "Open",
+    "manage": "KB Management"
   }
 }

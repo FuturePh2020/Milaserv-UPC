@@ -24,7 +24,9 @@ export class PermissionsService {
   ) {}
 
   async getEffectivePermissions(userId: string): Promise<EffectivePermissions> {
-    const version = (await this.redis.get(VERSION_KEY)) ?? '0';
+    // Redis unavailability must never break authorization (§22 Availability):
+    // fall back to an uncached resolve.
+    const version = (await this.redis.get(VERSION_KEY).catch(() => null)) ?? '0';
     const cacheKey = `perm:${version}:${userId}`;
 
     const cached = await this.redis.get(cacheKey).catch(() => null);
