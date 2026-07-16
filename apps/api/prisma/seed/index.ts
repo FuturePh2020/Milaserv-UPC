@@ -61,6 +61,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['branch.view', DataScope.DEPARTMENT],
     ['kb.view', DataScope.DEPARTMENT],
     ['kb.assign', DataScope.DEPARTMENT],
+    ['break.track', DataScope.MY_RECORDS],
+    ['break.viewTeam', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -75,6 +77,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
     ['kb.view', DataScope.MY_TEAM],
+    ['break.track', DataScope.MY_RECORDS],
+    ['break.viewTeam', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
@@ -88,6 +92,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
     ['kb.view', DataScope.MY_TEAM],
+    ['break.track', DataScope.MY_RECORDS],
+    ['break.viewTeam', DataScope.MY_TEAM],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -96,6 +102,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.update_add', DataScope.MY_RECORDS],
     ['branch.view', DataScope.MY_RECORDS],
     ['kb.view', DataScope.MY_RECORDS],
+    ['break.track', DataScope.MY_RECORDS],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
@@ -204,6 +211,63 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     ],
     labelAr: 'أنواع الملفات المسموح بها',
     labelEn: 'Allowed attachment types',
+  },
+  // Break Tracker (blueprint §11, spec §10 — assumptions C1–C6)
+  {
+    key: 'break.idle_threshold_seconds',
+    category: 'breaks',
+    valueType: 'NUMBER',
+    value: 300,
+    labelAr: 'عتبة الخمول (ثوانٍ)',
+    labelEn: 'Idle threshold (seconds)',
+  },
+  {
+    key: 'break.daily_allowance_minutes',
+    category: 'breaks',
+    valueType: 'NUMBER',
+    value: 60,
+    labelAr: 'رصيد البريك اليومي (دقائق)',
+    labelEn: 'Daily break allowance (minutes)',
+  },
+  {
+    key: 'break.max_concurrent_per_team',
+    category: 'breaks',
+    valueType: 'NUMBER',
+    value: 2,
+    labelAr: 'الحد الأقصى للموظفين في بريك بنفس الفريق (0 = بلا حد)',
+    labelEn: 'Max concurrent employees on break per team (0 = unlimited)',
+  },
+  {
+    key: 'break.offline_threshold_seconds',
+    category: 'breaks',
+    valueType: 'NUMBER',
+    value: 180,
+    labelAr: 'عتبة اعتبار الموظف Offline (ثوانٍ بدون heartbeat)',
+    labelEn: 'Offline threshold (seconds without heartbeat)',
+  },
+  {
+    key: 'break.notify_on_overage',
+    category: 'breaks',
+    valueType: 'BOOLEAN',
+    value: true,
+    labelAr: 'إشعار الموظف والمشرف عند تجاوز رصيد البريك',
+    labelEn: 'Notify employee & supervisor on break overage',
+  },
+  {
+    key: 'break.heartbeat_interval_seconds',
+    category: 'breaks',
+    valueType: 'NUMBER',
+    value: 60,
+    labelAr: 'فاصل إرسال نبضات النشاط من المتصفح (ثوانٍ)',
+    labelEn: 'Client activity heartbeat interval (seconds)',
+  },
+  {
+    key: 'break.session_auto_end_hours',
+    category: 'breaks',
+    valueType: 'NUMBER',
+    value: 12,
+    labelAr: 'إنهاء الجلسة تلقائيًا بعد انقطاع النبضات (ساعات)',
+    labelEn: 'Auto-end session after heartbeat silence (hours)',
   },
 ];
 

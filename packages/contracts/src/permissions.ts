@@ -149,6 +149,18 @@ export const PERMISSIONS = [
     module: 'knowledge_base',
     label: { en: 'Assign courses', ar: 'إسناد الكورسات' },
   },
+
+  // break tracker & workforce (blueprint §11)
+  {
+    key: 'break.track',
+    module: 'breaks',
+    label: { en: 'Track own work sessions & breaks', ar: 'تسجيل جلسات العمل والبريكات الخاصة' },
+  },
+  {
+    key: 'break.viewTeam',
+    module: 'breaks',
+    label: { en: 'View team live status & sessions', ar: 'عرض الحالة اللحظية وجلسات الفريق' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

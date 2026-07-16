@@ -81,6 +81,7 @@ model User {
   coursesAdministered Course[]          @relation("courseAdmin")
   courseAssignments  CourseAssignment[] @relation("courseAssignee")
   lessonProgress     LessonProgress[]   @relation("lessonProgress")
+  workSessions       WorkSession[]      @relation("workSessions")
 
   @@index([departmentId])
   @@index([status, deletedAt])
@@ -114,6 +115,7 @@ model Team {
   members TeamMember[]
   tickets TicketTeam[]
   courseAssignments CourseAssignment[]
+  workSessions      WorkSession[]
 
   @@index([departmentId])
 }
@@ -697,4 +699,64 @@ model Notification {
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt, createdAt])
+}
+
+// ── Break Tracker & Workforce (blueprint §11) ───────────────────────
+
+enum WorkSessionStatus {
+  ACTIVE
+  ENDED
+}
+
+enum SessionEndReason {
+  MANUAL
+  AUTO
+}
+
+enum WorkPeriodType {
+  WORK
+  BREAK
+  IDLE
+}
+
+/// One work shift (§11.1). At most one ACTIVE session per user — enforced by
+/// a partial unique index added in the migration SQL.
+model WorkSession {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation("workSessions", fields: [userId], references: [id], onDelete: Cascade)
+  /// Primary-team snapshot at session start (live view + concurrency unit).
+  teamId    String?
+  team      Team?             @relation(fields: [teamId], references: [id])
+  status    WorkSessionStatus @default(ACTIVE)
+  startedAt DateTime          @default(now())
+  endedAt   DateTime?
+  endReason SessionEndReason?
+
+  lastHeartbeatAt DateTime @default(now())
+  lastActivityAt  DateTime @default(now())
+
+  /// Rollups of closed periods; the open period is added at read time.
+  activeSeconds Int @default(0)
+  idleSeconds   Int @default(0)
+  breakSeconds  Int @default(0)
+
+  periods WorkPeriod[]
+
+  @@index([userId, status])
+  @@index([status, lastHeartbeatAt])
+  @@index([teamId, status])
+}
+
+/// §11.1 "تسجيل بداية ونهاية كل فترة" — the auditable period record.
+model WorkPeriod {
+  id        String         @id @default(cuid())
+  sessionId String
+  session   WorkSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      WorkPeriodType
+  startedAt DateTime
+  endedAt   DateTime?
+
+  @@index([sessionId, endedAt])
+  @@index([type, endedAt, startedAt])
 }
