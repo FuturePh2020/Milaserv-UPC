@@ -17,6 +17,7 @@ import { NumberingModule } from './modules/numbering/numbering.module';
 import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
+import { KbModule } from './modules/kb/kb.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { TicketsModule } from './modules/tickets/tickets.module';
     AttachmentsModule,
     BranchesModule,
     TicketsModule,
+    KbModule,
   ],
   controllers: [HealthController],
 })
