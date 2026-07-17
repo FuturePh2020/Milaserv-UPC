@@ -17,7 +17,8 @@
     "branches": "الفروع",
     "kb": "قاعدة المعرفة",
     "kbAdmin": "إدارة قاعدة المعرفة",
-    "breaks": "متابعة البريك"
+    "breaks": "متابعة البريك",
+    "performance": "الأداء"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -309,5 +310,27 @@
       "IDLE": "خامل",
       "OFFLINE": "غير متصل"
     }
+  },
+  "performance": {
+    "title": "الأداء",
+    "period": "الفترة",
+    "periods": {
+      "DAILY": "يومي",
+      "MONTHLY": "شهري",
+      "YEARLY": "سنوي"
+    },
+    "date": "التاريخ",
+    "metric": "المقياس",
+    "allMetrics": "كل المقاييس",
+    "actual": "الفعلي",
+    "target": "المستهدف",
+    "achievement": "نسبة الإنجاز %",
+    "trend": "الاتجاه",
+    "manageTargets": "إدارة الأهداف",
+    "scopeType": "النطاق",
+    "scopeUser": "موظف",
+    "scopeTeam": "فريق",
+    "noTargets": "لا توجد أهداف بعد",
+    "empty": "لا توجد بيانات أداء لهذه الفترة"
   }
 }

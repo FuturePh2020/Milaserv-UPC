@@ -17,7 +17,8 @@
     "branches": "Branches",
     "kb": "Knowledge Base",
     "kbAdmin": "KB Management",
-    "breaks": "Break Tracker"
+    "breaks": "Break Tracker",
+    "performance": "Performance"
   },
   "auth": {
     "signIn": "Sign in",
@@ -309,5 +310,27 @@
       "IDLE": "Idle",
       "OFFLINE": "Offline"
     }
+  },
+  "performance": {
+    "title": "Performance",
+    "period": "Period",
+    "periods": {
+      "DAILY": "Daily",
+      "MONTHLY": "Monthly",
+      "YEARLY": "Yearly"
+    },
+    "date": "Date",
+    "metric": "Metric",
+    "allMetrics": "All metrics",
+    "actual": "Actual",
+    "target": "Target",
+    "achievement": "Achievement %",
+    "trend": "Trend",
+    "manageTargets": "Manage targets",
+    "scopeType": "Scope",
+    "scopeUser": "Employee",
+    "scopeTeam": "Team",
+    "noTargets": "No targets defined yet",
+    "empty": "No performance data for this period"
   }
 }

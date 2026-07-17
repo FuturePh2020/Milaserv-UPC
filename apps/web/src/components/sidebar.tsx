@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/tickets', labelKey: 'tickets', icon: '🎫', permission: 'ticket.view' },
   { href: '/kb', labelKey: 'kb', icon: '📚', permission: 'kb.view' },
   { href: '/breaks', labelKey: 'breaks', icon: '⏱', permission: 'break.track' },
+  { href: '/performance', labelKey: 'performance', icon: '📈', permission: 'performance.view' },
   { href: '/notifications', labelKey: 'notifications', icon: '🔔', permission: null },
 ];
 
