@@ -14,6 +14,7 @@ import { PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@milaserv/contracts'
 import type { PermissionKey, SystemRoleKey } from '@milaserv/contracts';
 import { seedTicketingCatalogs } from './ticketing';
 import { seedPerformanceCatalog } from './performance';
+import { seedCrmCatalogs } from './crm';
 
 const prisma = new PrismaClient();
 
@@ -66,6 +67,9 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['break.viewTeam', DataScope.DEPARTMENT],
     ['performance.view', DataScope.DEPARTMENT],
     ['performance.manage', DataScope.DEPARTMENT],
+    ['crm.view', DataScope.DEPARTMENT],
+    ['crm.work', DataScope.DEPARTMENT],
+    ['crm.upload', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -83,6 +87,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
     ['performance.view', DataScope.MY_TEAM],
+    ['crm.view', DataScope.MY_TEAM],
+    ['crm.work', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
@@ -99,6 +105,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
     ['performance.view', DataScope.MY_TEAM],
+    ['crm.view', DataScope.MY_TEAM],
+    ['crm.work', DataScope.MY_TEAM],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -109,6 +117,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['kb.view', DataScope.MY_RECORDS],
     ['break.track', DataScope.MY_RECORDS],
     ['performance.view', DataScope.MY_RECORDS],
+    ['crm.view', DataScope.MY_RECORDS],
+    ['crm.work', DataScope.MY_RECORDS],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
@@ -300,6 +310,15 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'هامش اعتبار الاتجاه ثابتًا (%)',
     labelEn: 'Tolerance for flat trend (%)',
   },
+  // CRM & Telesales (blueprint §14, spec E7)
+  {
+    key: 'crm.order.number_format',
+    category: 'crm',
+    valueType: 'STRING',
+    value: 'ORD-{YYYY}-{SEQ:6}',
+    labelAr: 'صيغة رقم طلب التيليسيلز',
+    labelEn: 'Telesales order number format',
+  },
 ];
 
 async function seedPermissions() {
@@ -403,6 +422,7 @@ async function main() {
   await seedSettings();
   await seedTicketingCatalogs(prisma);
   await seedPerformanceCatalog(prisma);
+  await seedCrmCatalogs(prisma);
   await seedSuperAdmin();
 }
 

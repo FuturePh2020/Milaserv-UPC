@@ -178,6 +178,23 @@ export const PERMISSIONS = [
     module: 'performance',
     label: { en: 'Ingest performance metrics', ar: 'إدخال مقاييس الأداء' },
   },
+
+  // crm, leads & telesales (blueprint §14)
+  {
+    key: 'crm.view',
+    module: 'crm',
+    label: { en: 'View leads & orders', ar: 'عرض العملاء المحتملين والطلبات' },
+  },
+  {
+    key: 'crm.work',
+    module: 'crm',
+    label: { en: 'Work leads (calls & orders)', ar: 'العمل على العملاء المحتملين (مكالمات وطلبات)' },
+  },
+  {
+    key: 'crm.upload',
+    module: 'crm',
+    label: { en: 'Import lead files', ar: 'استيراد ملفات العملاء المحتملين' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

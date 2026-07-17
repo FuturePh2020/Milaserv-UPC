@@ -82,6 +82,10 @@ model User {
   courseAssignments  CourseAssignment[] @relation("courseAssignee")
   lessonProgress     LessonProgress[]   @relation("lessonProgress")
   workSessions       WorkSession[]      @relation("workSessions")
+  leadBatches        LeadBatch[]        @relation("leadBatches")
+  assignedLeads      Lead[]             @relation("assignedLeads")
+  leadCalls          LeadCall[]         @relation("leadCalls")
+  telesalesOrders    TelesalesOrder[]   @relation("telesalesOrders")
 
   @@index([departmentId])
   @@index([status, deletedAt])
@@ -771,6 +775,7 @@ enum MetricAggregation {
 enum MetricSource {
   YEASTAR
   TICKETING
+  TELESALES
 }
 
 enum PerfScopeType {
@@ -834,4 +839,155 @@ model PerformanceTarget {
 
   @@unique([scopeType, scopeId, metricKey, period])
   @@index([scopeType, scopeId])
+}
+
+// ── CRM, Leads & Telesales (blueprint §14) ──────────────────────────
+
+enum LeadStatus {
+  NEW
+  ASSIGNED
+  CLOSED
+}
+
+enum TelesalesOrderStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+/// §14.2 — call result catalog, seeded verbatim.
+model CallStatus {
+  id        String @id @default(cuid())
+  key       String @unique
+  nameAr    String
+  nameEn    String
+  sortOrder Int    @default(0)
+
+  calls LeadCall[]
+}
+
+/// §14.3 — disposition catalog with behavior flags (spec E3, ADR-008).
+model LeadDisposition {
+  id                 String  @id @default(cuid())
+  key                String  @unique
+  nameAr             String
+  nameEn             String
+  /// Lead is closed after this disposition.
+  closesLead         Boolean @default(false)
+  /// rescheduledAt becomes mandatory with this disposition.
+  requiresReschedule Boolean @default(false)
+  /// An order payload becomes mandatory (Order Created).
+  createsOrder       Boolean @default(false)
+  sortOrder          Int     @default(0)
+
+  calls LeadCall[]
+}
+
+/// §14.4 — order type catalog, seeded verbatim.
+model TelesalesOrderType {
+  id        String @id @default(cuid())
+  key       String @unique
+  nameAr    String
+  nameEn    String
+  sortOrder Int    @default(0)
+
+  orders TelesalesOrder[]
+}
+
+/// One uploaded lead file (§14.1: source/partner/campaign set at upload).
+model LeadBatch {
+  id            String   @id @default(cuid())
+  fileName      String
+  leadSource    String
+  /// Snapshot string until the Partner master exists (spec E6).
+  partnerName   String?
+  campaign      String?
+  uploadedById  String
+  uploadedBy    User     @relation("leadBatches", fields: [uploadedById], references: [id])
+  importedCount Int      @default(0)
+  skippedCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  leads Lead[]
+}
+
+model Lead {
+  id      String     @id @default(cuid())
+  batchId String?
+  batch   LeadBatch? @relation(fields: [batchId], references: [id])
+
+  name        String
+  /// Normalized digits — duplicate-detection key (spec E2).
+  phone       String
+  city        String?
+  notes       String?
+  leadSource  String
+  partnerName String?
+  campaign    String?
+
+  status               LeadStatus @default(NEW)
+  assignedToId         String?
+  assignedTo           User?      @relation("assignedLeads", fields: [assignedToId], references: [id])
+  assignedAt           DateTime?
+  /// Follow-up due time (§14.1 Reschedule); lead returns via /next when due.
+  rescheduledAt        DateTime?
+  lastCallAt           DateTime?
+  closedAt             DateTime?
+  closedDispositionKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  calls  LeadCall[]
+  orders TelesalesOrder[]
+
+  @@index([status, rescheduledAt])
+  @@index([assignedToId, status])
+  @@index([phone])
+}
+
+/// §14.1 — every call attempt: result, duration, disposition.
+model LeadCall {
+  id              String          @id @default(cuid())
+  leadId          String
+  lead            Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  agentId         String
+  agent           User            @relation("leadCalls", fields: [agentId], references: [id])
+  callStatusKey   String
+  callStatus      CallStatus      @relation(fields: [callStatusKey], references: [key])
+  dispositionKey  String
+  disposition     LeadDisposition @relation(fields: [dispositionKey], references: [key])
+  durationSeconds Int             @default(0)
+  notes           String?
+  rescheduledAt   DateTime?
+  orderId         String?
+  order           TelesalesOrder? @relation(fields: [orderId], references: [id])
+  createdAt       DateTime        @default(now())
+
+  @@index([agentId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+/// Performance-readiness order record (spec E7) — not the pharmacy pipeline.
+model TelesalesOrder {
+  id            String               @id @default(cuid())
+  number        String               @unique
+  leadId        String?
+  lead          Lead?                @relation(fields: [leadId], references: [id])
+  customerName  String
+  customerPhone String
+  orderTypeKey  String
+  orderType     TelesalesOrderType   @relation(fields: [orderTypeKey], references: [key])
+  value         Decimal              @db.Decimal(14, 2)
+  status        TelesalesOrderStatus @default(OPEN)
+  createdById   String
+  createdBy     User                 @relation("telesalesOrders", fields: [createdById], references: [id])
+  completedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  calls LeadCall[]
+
+  @@index([createdById, createdAt])
+  @@index([status, createdAt])
 }
