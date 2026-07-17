@@ -16,7 +16,8 @@
     "tickets": "Tickets",
     "branches": "Branches",
     "kb": "Knowledge Base",
-    "kbAdmin": "KB Management"
+    "kbAdmin": "KB Management",
+    "breaks": "Break Tracker"
   },
   "auth": {
     "signIn": "Sign in",
@@ -282,5 +283,31 @@
     "trainees": "Trainees progress",
     "open": "Open",
     "manage": "KB Management"
+  },
+  "breaks": {
+    "title": "Break Tracker",
+    "mySession": "My session",
+    "startSession": "Start session",
+    "endSession": "End session",
+    "startBreak": "Start break",
+    "endBreak": "End break",
+    "activeTime": "Active time",
+    "idleTime": "Idle time",
+    "breakTime": "Break time",
+    "remainingAllowance": "Remaining break allowance",
+    "usedOf": "Used {used} of {total} min",
+    "min": "min",
+    "noSessionHint": "Start a session when you begin work; end it at the end of your shift.",
+    "liveView": "Live Team View",
+    "asOf": "As of",
+    "state": "State",
+    "since": "Since",
+    "breakBalance": "Break balance",
+    "states": {
+      "AVAILABLE": "Available",
+      "ON_BREAK": "On break",
+      "IDLE": "Idle",
+      "OFFLINE": "Offline"
+    }
   }
 }

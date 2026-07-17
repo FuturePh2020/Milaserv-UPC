@@ -22,6 +22,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', labelKey: 'dashboard', icon: '▦', permission: null },
   { href: '/tickets', labelKey: 'tickets', icon: '🎫', permission: 'ticket.view' },
   { href: '/kb', labelKey: 'kb', icon: '📚', permission: 'kb.view' },
+  { href: '/breaks', labelKey: 'breaks', icon: '⏱', permission: 'break.track' },
   { href: '/notifications', labelKey: 'notifications', icon: '🔔', permission: null },
 ];
 
@@ -61,6 +62,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const t = useTranslations();
 
+  const navItems = NAV_ITEMS.filter((i) => !i.permission || hasPermission(i.permission));
   const adminItems = ADMIN_ITEMS.filter((i) => !i.permission || hasPermission(i.permission));
 
   return (
@@ -70,7 +72,7 @@ export function Sidebar() {
         <div className="text-xs text-blue-200">{t('app.tagline')}</div>
       </div>
       <nav className="flex flex-col gap-1">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink key={item.href} item={item} active={pathname.startsWith(item.href)} />
         ))}
         {adminItems.length > 0 && (

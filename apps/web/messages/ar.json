@@ -16,7 +16,8 @@
     "tickets": "التذاكر",
     "branches": "الفروع",
     "kb": "قاعدة المعرفة",
-    "kbAdmin": "إدارة قاعدة المعرفة"
+    "kbAdmin": "إدارة قاعدة المعرفة",
+    "breaks": "متابعة البريك"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -282,5 +283,31 @@
     "trainees": "تقدم المتدربين",
     "open": "فتح",
     "manage": "إدارة قاعدة المعرفة"
+  },
+  "breaks": {
+    "title": "متابعة البريك",
+    "mySession": "جلستي",
+    "startSession": "بدء الجلسة",
+    "endSession": "إنهاء الجلسة",
+    "startBreak": "بدء بريك",
+    "endBreak": "إنهاء البريك",
+    "activeTime": "وقت العمل",
+    "idleTime": "وقت الخمول",
+    "breakTime": "وقت البريك",
+    "remainingAllowance": "رصيد البريك المتبقي",
+    "usedOf": "استُخدم {used} من {total} دقيقة",
+    "min": "دقيقة",
+    "noSessionHint": "ابدأ الجلسة عند بدء العمل، وأنهِها في نهاية الشيفت.",
+    "liveView": "العرض اللحظي للفريق",
+    "asOf": "حتى",
+    "state": "الحالة",
+    "since": "منذ",
+    "breakBalance": "رصيد البريك",
+    "states": {
+      "AVAILABLE": "متاح",
+      "ON_BREAK": "في بريك",
+      "IDLE": "خامل",
+      "OFFLINE": "غير متصل"
+    }
   }
 }
