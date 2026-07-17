@@ -27,4 +27,15 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },
+  {
+    // NestJS DI relies on emitDecoratorMetadata: classes referenced in
+    // constructor/parameter positions must stay VALUE imports or their
+    // design:paramtypes metadata degrades to Object and injection (and
+    // ValidationPipe DTO validation) silently breaks. Without type-aware
+    // linting the rule cannot see that, so it is disabled for API sources.
+    files: ['apps/api/src/**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': 'off',
+    },
+  },
 );

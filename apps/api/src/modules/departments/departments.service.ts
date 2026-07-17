@@ -26,8 +26,7 @@ export class DepartmentsService {
       case 'MULTIPLE_TEAMS':
       case 'MY_TEAM':
       case 'MY_RECORDS':
-      // BRANCH/PARTNER have no org mapping until Phase 2+ masters exist:
-      case 'BRANCH':
+      case 'BRANCH': // BRANCH/PARTNER have no org mapping until Phase 2+ masters exist
       case 'PARTNER':
         return scope.context.departmentId ? { id: scope.context.departmentId } : { id: 'none' };
     }

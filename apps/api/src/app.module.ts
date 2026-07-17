@@ -18,6 +18,7 @@ import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { TicketsModule } from './modules/tickets/tickets.module';
 import { KbModule } from './modules/kb/kb.module';
+import { BreaksModule } from './modules/breaks/breaks.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { KbModule } from './modules/kb/kb.module';
     BranchesModule,
     TicketsModule,
     KbModule,
+    BreaksModule,
   ],
   controllers: [HealthController],
 })

@@ -70,8 +70,7 @@ export class UsersService {
           ? { teams: { some: { teamId: { in: scope.context.teamIds } } } }
           : { id: scope.context.userId };
       case 'MY_RECORDS':
-      // BRANCH/PARTNER inactive until Phase 2+ masters exist:
-      case 'BRANCH':
+      case 'BRANCH': // BRANCH/PARTNER inactive until Phase 2+ masters exist
       case 'PARTNER':
         return { id: scope.context.userId };
     }

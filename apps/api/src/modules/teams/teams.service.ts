@@ -39,8 +39,7 @@ export class TeamsService {
         return { id: { in: scope.teamIds ?? [] } };
       case 'MY_TEAM':
       case 'MY_RECORDS':
-      // BRANCH/PARTNER inactive until Phase 2+ masters exist:
-      case 'BRANCH':
+      case 'BRANCH': // BRANCH/PARTNER inactive until Phase 2+ masters exist
       case 'PARTNER':
         return { id: { in: scope.context.teamIds } };
     }

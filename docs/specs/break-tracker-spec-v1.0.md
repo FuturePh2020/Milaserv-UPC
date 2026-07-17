@@ -7,18 +7,18 @@ C1–C6 below.
 
 ## 1. Blueprint requirements (verbatim mapping)
 
-| §      | Requirement                                                                                                              | Delivered as                                                              |
-| ------ | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| 11.1   | Start Session عند بدء العمل / End Session عند نهاية الشيفت                                                                | `POST /breaks/session/start`, `POST /breaks/session/end`                  |
-| 11.1   | حساب Active Time و Idle Time و Manual Breaks                                                                              | Per-session accumulated seconds, live-computed for the open period        |
-| 11.1   | تسجيل بداية ونهاية كل فترة                                                                                                | `WorkPeriod` rows (WORK / BREAK / IDLE) with startedAt/endedAt            |
-| 11.2   | 5 دقائق بدون ماوس/كيبورد → Idle يبدأ من لحظة بداية عدم النشاط + تنبيه الموظف + تسجيل الحدث                                 | Activity heartbeat + server-side transition backdated to lastActivityAt; in-app notification; timeline event |
-| 11.2   | التوافق مع ضوابط الخصوصية والأمن وسياسات الأجهزة                                                                          | See §4 (privacy model, C1)                                                |
-| 11.3   | إظهار الرصيد المتبقي                                                                                                      | `GET /breaks/me` returns allowance / used / remaining minutes             |
-| 11.3   | تحويل التجاوز إلى اللون الأحمر                                                                                            | Frontend renders negative remaining in red                                |
-| 11.3   | Notification للموظف والمشرف وفق الإعدادات                                                                                 | Overage notification to employee + team LEADER/MANAGER, gated by setting  |
-| 11.3   | الحد الأقصى لعدد الموظفين في Break داخل نفس Team أو Task Group                                                            | Concurrency check on break start against `break.max_concurrent_per_team`  |
-| 11.3   | Live Team View: Available / On Break / Idle / Offline                                                                     | `GET /breaks/live` + polling UI                                           |
+| §    | Requirement                                                                                | Delivered as                                                                                                 |
+| ---- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| 11.1 | Start Session عند بدء العمل / End Session عند نهاية الشيفت                                 | `POST /breaks/session/start`, `POST /breaks/session/end`                                                     |
+| 11.1 | حساب Active Time و Idle Time و Manual Breaks                                               | Per-session accumulated seconds, live-computed for the open period                                           |
+| 11.1 | تسجيل بداية ونهاية كل فترة                                                                 | `WorkPeriod` rows (WORK / BREAK / IDLE) with startedAt/endedAt                                               |
+| 11.2 | 5 دقائق بدون ماوس/كيبورد → Idle يبدأ من لحظة بداية عدم النشاط + تنبيه الموظف + تسجيل الحدث | Activity heartbeat + server-side transition backdated to lastActivityAt; in-app notification; timeline event |
+| 11.2 | التوافق مع ضوابط الخصوصية والأمن وسياسات الأجهزة                                           | See §4 (privacy model, C1)                                                                                   |
+| 11.3 | إظهار الرصيد المتبقي                                                                       | `GET /breaks/me` returns allowance / used / remaining minutes                                                |
+| 11.3 | تحويل التجاوز إلى اللون الأحمر                                                             | Frontend renders negative remaining in red                                                                   |
+| 11.3 | Notification للموظف والمشرف وفق الإعدادات                                                  | Overage notification to employee + team LEADER/MANAGER, gated by setting                                     |
+| 11.3 | الحد الأقصى لعدد الموظفين في Break داخل نفس Team أو Task Group                             | Concurrency check on break start against `break.max_concurrent_per_team`                                     |
+| 11.3 | Live Team View: Available / On Break / Idle / Offline                                      | `GET /breaks/live` + polling UI                                                                              |
 
 ## 2. Data model
 
@@ -121,12 +121,12 @@ directly; BullMQ remains the documented upgrade slot):
 
 `GET /breaks/live` — for each user in scope, derived state:
 
-| State     | Condition                                                              |
-| --------- | ---------------------------------------------------------------------- |
-| AVAILABLE | ACTIVE session, open WORK period, heartbeat fresh                      |
-| ON_BREAK  | ACTIVE session, open BREAK period                                      |
-| IDLE      | ACTIVE session, open IDLE period                                       |
-| OFFLINE   | no ACTIVE session, or heartbeat older than the offline threshold       |
+| State     | Condition                                                        |
+| --------- | ---------------------------------------------------------------- |
+| AVAILABLE | ACTIVE session, open WORK period, heartbeat fresh                |
+| ON_BREAK  | ACTIVE session, open BREAK period                                |
+| IDLE      | ACTIVE session, open IDLE period                                 |
+| OFFLINE   | no ACTIVE session, or heartbeat older than the offline threshold |
 
 Grouped by team; includes today's break used/remaining per member. The UI
 polls every 15 s (C5 — WebSockets are the blueprint §20 later-phase item; the
@@ -134,10 +134,10 @@ endpoint shape will not change when transport upgrades).
 
 ## 8. Permissions (§19.1 model, existing engine)
 
-| Key              | Meaning                                                            | Defaults                                                                 |
-| ---------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `break.track`    | Start/end own sessions & breaks, heartbeat, own summary            | All staff roles, MY_RECORDS                                              |
-| `break.viewTeam` | Live Team View + session history of others (data-scope filtered)   | Supervisor MY_TEAM, Manager DEPARTMENT, Ops/Admin ALL_DATA               |
+| Key              | Meaning                                                          | Defaults                                                   |
+| ---------------- | ---------------------------------------------------------------- | ---------------------------------------------------------- |
+| `break.track`    | Start/end own sessions & breaks, heartbeat, own summary          | All staff roles, MY_RECORDS                                |
+| `break.viewTeam` | Live Team View + session history of others (data-scope filtered) | Supervisor MY_TEAM, Manager DEPARTMENT, Ops/Admin ALL_DATA |
 
 Scope semantics for `break.viewTeam` reuse `RequestScope` exactly like
 tickets: MY_TEAM = own teams' members, DEPARTMENT = department users, etc.
@@ -159,15 +159,15 @@ GET  /breaks/sessions?userId=&from=…  break.viewTeam → history with periods 
 
 ## 10. Settings (seeded, category `breaks`)
 
-| Key                              | Type    | Default | Blueprint basis                    |
-| -------------------------------- | ------- | ------- | ---------------------------------- |
-| break.idle_threshold_seconds     | NUMBER  | 300     | §11.2 "خمس دقائق"                  |
-| break.daily_allowance_minutes    | NUMBER  | 60      | §11.3 الرصيد (default C3)          |
-| break.max_concurrent_per_team    | NUMBER  | 2       | §11.3 الحد الأقصى (default C3)     |
-| break.offline_threshold_seconds  | NUMBER  | 180     | Live view OFFLINE derivation       |
-| break.notify_on_overage          | BOOLEAN | true    | §11.3 "وفق الإعدادات"              |
-| break.heartbeat_interval_seconds | NUMBER  | 60      | client cadence                     |
-| break.session_auto_end_hours     | NUMBER  | 12      | C4 hygiene                         |
+| Key                              | Type    | Default | Blueprint basis                |
+| -------------------------------- | ------- | ------- | ------------------------------ |
+| break.idle_threshold_seconds     | NUMBER  | 300     | §11.2 "خمس دقائق"              |
+| break.daily_allowance_minutes    | NUMBER  | 60      | §11.3 الرصيد (default C3)      |
+| break.max_concurrent_per_team    | NUMBER  | 2       | §11.3 الحد الأقصى (default C3) |
+| break.offline_threshold_seconds  | NUMBER  | 180     | Live view OFFLINE derivation   |
+| break.notify_on_overage          | BOOLEAN | true    | §11.3 "وفق الإعدادات"          |
+| break.heartbeat_interval_seconds | NUMBER  | 60      | client cadence                 |
+| break.session_auto_end_hours     | NUMBER  | 12      | C4 hygiene                     |
 
 ## 11. Assumptions (flagged for approval)
 
@@ -186,7 +186,7 @@ GET  /breaks/sessions?userId=&from=…  break.viewTeam → history with periods 
   60 min/day and 2 per team as SYSTEM defaults, overridable per team.
 - **C4 — Abandoned sessions.** A session whose client vanished would count
   Active Time forever; auto-end after 12 h (configurable) with `endReason:
-  AUTO` keeps §11.1 time accounting truthful.
+AUTO` keeps §11.1 time accounting truthful.
 - **C5 — Polling live view.** Real-time transport (WebSocket) is listed in
   the blueprint's later phases (§20); the live view polls every 15 s for now.
 - **C6 — Allowance day boundary.** "الرصيد" is read as a per-day allowance,

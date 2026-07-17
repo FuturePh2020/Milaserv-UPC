@@ -40,8 +40,7 @@ export class AuditController {
         return { actorId: { in: users.map((u) => u.id) } };
       }
       case 'MY_RECORDS':
-      // BRANCH/PARTNER inactive until Phase 2+ masters exist:
-      case 'BRANCH':
+      case 'BRANCH': // BRANCH/PARTNER inactive until Phase 2+ masters exist
       case 'PARTNER':
         return { actorId: scope.context.userId };
     }
