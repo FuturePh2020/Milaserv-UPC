@@ -21,6 +21,7 @@ export default function NewTicketPage() {
   const [categoryKey, setCategoryKey] = useState('');
   const [urgencyKey, setUrgencyKey] = useState('MODERATE');
   const [branchId, setBranchId] = useState('');
+  const [requestSourceKey, setRequestSourceKey] = useState('');
   const [form, setForm] = useState({
     customerName: '',
     customerPhone: '',
@@ -42,6 +43,17 @@ export default function NewTicketPage() {
     queryKey: ['branches', 'all'],
     queryFn: () => api<Page<BranchRow>>('/branches?page=1&pageSize=100&status=ACTIVE'),
     enabled: typeKey === 'BRANCH',
+  });
+
+  // §13 Request Source — online issue/request tickets only.
+  const isOnline = typeKey === 'ONLINE_ISSUE' || typeKey === 'ONLINE_REQUEST';
+  const { data: onlineCatalogs } = useQuery({
+    queryKey: ['online-catalogs'],
+    queryFn: () =>
+      api<{ requestSources: { key: string; nameAr: string; nameEn: string }[] }>(
+        '/online/catalogs',
+      ),
+    enabled: isOnline,
   });
 
   const type = useMemo(() => catalogs?.types.find((x) => x.key === typeKey), [catalogs, typeKey]);
@@ -70,6 +82,7 @@ export default function NewTicketPage() {
           itemNameAr: form.itemNameAr || undefined,
           itemNameEn: form.itemNameEn || undefined,
           branchId: typeKey === 'BRANCH' ? branchId : undefined,
+          requestSourceKey: isOnline && requestSourceKey ? requestSourceKey : undefined,
         },
       });
       router.replace(`/tickets/${created.id}`);
@@ -128,6 +141,21 @@ export default function NewTicketPage() {
             ))}
           </Select>
         </div>
+
+        {isOnline && (
+          <Select
+            label={t('tickets.requestSource')}
+            value={requestSourceKey}
+            onChange={(e) => setRequestSourceKey(e.target.value)}
+          >
+            <option value="">—</option>
+            {onlineCatalogs?.requestSources.map((src) => (
+              <option key={src.key} value={src.key}>
+                {pickName(locale, src)}
+              </option>
+            ))}
+          </Select>
+        )}
 
         {typeKey === 'BRANCH' && (
           <div className="rounded-md border border-blue-100 bg-blue-50 p-3">

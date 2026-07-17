@@ -19,7 +19,9 @@
     "kbAdmin": "KB Management",
     "breaks": "Break Tracker",
     "performance": "Performance",
-    "crm": "CRM & Telesales"
+    "crm": "CRM & Telesales",
+    "online": "Online Operation",
+    "integrations": "Integration Monitor"
   },
   "auth": {
     "signIn": "Sign in",
@@ -215,7 +217,8 @@
       "BREACHED": "Breached",
       "PAUSED": "Paused",
       "MET": "Met"
-    }
+    },
+    "requestSource": "Request source"
   },
   "branches": {
     "title": "Branches",
@@ -383,5 +386,43 @@
     "rowValid": "Valid",
     "importBtn": "Import {count} leads",
     "importDone": "Imported {imported} leads; skipped {skipped}."
+  },
+  "online": {
+    "title": "Online Operation",
+    "dailyOrders": "Daily orders",
+    "openIssues": "Open issues",
+    "handledIssues": "Handled issues",
+    "openRequests": "Open requests",
+    "handledRequests": "Handled requests",
+    "slaAchievement": "SLA achievement",
+    "avgHandling": "Avg handling",
+    "min": "min",
+    "allSources": "All sources",
+    "orderNumber": "Order #",
+    "source": "Source",
+    "customer": "Customer",
+    "value": "Value",
+    "orderedAt": "Ordered at",
+    "noOrders": "No orders for this day",
+    "viewIssueTickets": "Issue & request tickets",
+    "newIssue": "New issue / request"
+  },
+  "integrations": {
+    "title": "Integration Monitor",
+    "healthy": "Healthy",
+    "unhealthy": "Attention needed",
+    "noneYet": "No integration operations yet",
+    "integration": "Integration",
+    "operation": "Operation",
+    "attempts": "Attempts",
+    "lastError": "Last error",
+    "createdAt": "Created",
+    "retry": "Retry",
+    "states": {
+      "PENDING": "Pending",
+      "SUCCEEDED": "Succeeded",
+      "FAILED": "Retrying",
+      "DEAD": "Dead"
+    }
   }
 }

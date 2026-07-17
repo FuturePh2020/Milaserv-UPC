@@ -19,7 +19,9 @@
     "kbAdmin": "إدارة قاعدة المعرفة",
     "breaks": "متابعة البريك",
     "performance": "الأداء",
-    "crm": "المبيعات الهاتفية CRM"
+    "crm": "المبيعات الهاتفية CRM",
+    "online": "العمليات الإلكترونية",
+    "integrations": "مراقبة التكاملات"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -215,7 +217,8 @@
       "BREACHED": "متجاوز",
       "PAUSED": "متوقف مؤقتًا",
       "MET": "محقق"
-    }
+    },
+    "requestSource": "مصدر الطلب"
   },
   "branches": {
     "title": "الفروع",
@@ -383,5 +386,43 @@
     "rowValid": "صالح",
     "importBtn": "استيراد {count} عميلًا",
     "importDone": "تم استيراد {imported} عميلًا؛ وتخطي {skipped}."
+  },
+  "online": {
+    "title": "العمليات الإلكترونية",
+    "dailyOrders": "طلبات اليوم",
+    "openIssues": "مشاكل مفتوحة",
+    "handledIssues": "مشاكل معالَجة",
+    "openRequests": "طلبات خدمة مفتوحة",
+    "handledRequests": "طلبات خدمة معالَجة",
+    "slaAchievement": "تحقيق SLA",
+    "avgHandling": "متوسط المعالجة",
+    "min": "دقيقة",
+    "allSources": "كل المصادر",
+    "orderNumber": "رقم الطلب",
+    "source": "المصدر",
+    "customer": "العميل",
+    "value": "القيمة",
+    "orderedAt": "وقت الطلب",
+    "noOrders": "لا توجد طلبات لهذا اليوم",
+    "viewIssueTickets": "تذاكر المشاكل والطلبات",
+    "newIssue": "مشكلة / طلب جديد"
+  },
+  "integrations": {
+    "title": "مراقبة التكاملات",
+    "healthy": "سليم",
+    "unhealthy": "يحتاج انتباهًا",
+    "noneYet": "لا توجد عمليات تكامل بعد",
+    "integration": "التكامل",
+    "operation": "العملية",
+    "attempts": "المحاولات",
+    "lastError": "آخر خطأ",
+    "createdAt": "أُنشئت",
+    "retry": "إعادة المحاولة",
+    "states": {
+      "PENDING": "قيد الانتظار",
+      "SUCCEEDED": "نجحت",
+      "FAILED": "تُعاد المحاولة",
+      "DEAD": "متوقفة نهائيًا"
+    }
   }
 }

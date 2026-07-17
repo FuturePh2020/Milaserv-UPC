@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/breaks', labelKey: 'breaks', icon: '⏱', permission: 'break.track' },
   { href: '/performance', labelKey: 'performance', icon: '📈', permission: 'performance.view' },
   { href: '/crm', labelKey: 'crm', icon: '📞', permission: 'crm.view' },
+  { href: '/online', labelKey: 'online', icon: '🛒', permission: 'online.view' },
   { href: '/notifications', labelKey: 'notifications', icon: '🔔', permission: null },
 ];
 
@@ -42,6 +43,12 @@ const ADMIN_ITEMS: NavItem[] = [
   { href: '/admin/roles', labelKey: 'roles', icon: '🛡', permission: 'role.view' },
   { href: '/admin/settings', labelKey: 'settings', icon: '⚙', permission: 'setting.view' },
   { href: '/admin/audit', labelKey: 'audit', icon: '📜', permission: 'audit.view' },
+  {
+    href: '/admin/integrations',
+    labelKey: 'integrations',
+    icon: '🔌',
+    permission: 'integration.monitor',
+  },
 ];
 
 function NavLink({ item, active }: { item: NavItem; active: boolean }) {
