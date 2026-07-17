@@ -120,8 +120,10 @@ describe('Customer Care performance (e2e)', () => {
       .get('/api/v1/performance/metric-defs')
       .set(auth(agentToken))
       .expect(200);
-    expect(res.body).toHaveLength(16);
-    const keys = res.body.map((d: { key: string }) => d.key);
+    const defs = res.body as { key: string; source: string }[];
+    // 16 §12.1 KPIs (Yeastar + ticketing SLA); §14.5 telesales KPIs add more.
+    expect(defs.filter((d) => d.source !== 'TELESALES')).toHaveLength(16);
+    const keys = defs.map((d) => d.key);
     expect(keys).toEqual(expect.arrayContaining(['inbound_calls', 'team_sla', 'agent_sla']));
   });
 

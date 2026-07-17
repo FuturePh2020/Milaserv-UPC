@@ -5,6 +5,7 @@ import { skipTake, toPage } from '../../core/pagination';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
 import { SettingsService } from '../settings/settings.service';
+import { TelesalesKpiService } from '../crm/telesales-kpi.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import type { RequestScope } from '../permissions/scope';
 import type {
@@ -66,6 +67,7 @@ export class PerformanceService {
     private readonly audit: AuditService,
     private readonly timeline: TimelineService,
     private readonly settings: SettingsService,
+    private readonly telesalesKpis: TelesalesKpiService,
   ) {}
 
   metricDefs() {
@@ -219,6 +221,9 @@ export class PerformanceService {
     await Promise.all([
       this.addTicketSla(curAgg, userIds, teamIds, current),
       this.addTicketSla(prevAgg, userIds, teamIds, previous),
+      // §14.5 telesales KPIs, live from CRM data (crm spec E5).
+      this.telesalesKpis.add(curAgg, userIds, teamIds, current),
+      this.telesalesKpis.add(prevAgg, userIds, teamIds, previous),
     ]);
 
     const targetOf = new Map(
