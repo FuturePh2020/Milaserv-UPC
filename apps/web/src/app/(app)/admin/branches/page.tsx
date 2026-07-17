@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnDef } from '@tanstack/react-table';
@@ -47,6 +47,7 @@ export default function BranchesPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [form, setForm] = useState<FormState | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -100,6 +101,16 @@ export default function BranchesPage() {
       { header: t('branches.code'), accessorKey: 'code' },
       { header: t('users.name'), cell: ({ row }) => pickName(locale, row.original) },
       { header: t('branches.city'), cell: ({ row }) => row.original.city ?? '—' },
+      { header: t('branches.region'), cell: ({ row }) => row.original.region ?? '—' },
+      {
+        header: t('branches.type'),
+        cell: ({ row }) =>
+          row.original.branchType ? (
+            <Badge tone="blue">{pickName(locale, row.original.branchType)}</Badge>
+          ) : (
+            '—'
+          ),
+      },
       {
         header: t('branches.supervisorName'),
         cell: ({ row }) => row.original.supervisorName ?? <Badge tone="amber">—</Badge>,
@@ -169,6 +180,11 @@ export default function BranchesPage() {
               setPage(1);
             }}
           />
+          {canManage && (
+            <Button variant="secondary" onClick={() => setShowImport(true)}>
+              {t('branches.importBtn')}
+            </Button>
+          )}
           {canManage && <Button onClick={() => setForm(EMPTY)}>{t('branches.create')}</Button>}
         </div>
       </div>
@@ -271,6 +287,153 @@ export default function BranchesPage() {
           </form>
         )}
       </Dialog>
+
+      {showImport && (
+        <ImportDialog
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            invalidate();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ── §16.1 master-data import (United Locations format, spec G2/G3) ────
+
+interface PreviewCounts {
+  valid: number;
+  invalid: number;
+  willCreate: number;
+  willUpdate: number;
+  missingLocation: number;
+  missingSupervisor: number;
+  unmappedType: number;
+}
+
+function ImportDialog({ onClose, onImported }: { onClose: () => void; onImported: () => void }) {
+  const t = useTranslations();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState('');
+  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
+  const [preview, setPreview] = useState<PreviewCounts | null>(null);
+  const [result, setResult] = useState<{
+    created: number;
+    updated: number;
+    invalid: unknown[];
+  } | null>(null);
+
+  async function parseFile(file: File) {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.read(await file.arrayBuffer());
+    const sheet = wb.Sheets[wb.SheetNames[0]!];
+    if (!sheet) throw new Error('empty');
+    return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  }
+
+  const doPreview = useMutation({
+    mutationFn: () =>
+      api<{ counts: PreviewCounts }>('/branches/import/preview', {
+        method: 'POST',
+        body: { fileName, rows },
+      }),
+    onSuccess: (d) => {
+      setError(null);
+      setPreview(d.counts);
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  });
+
+  const doImport = useMutation({
+    mutationFn: () =>
+      api<{ created: number; updated: number; invalid: unknown[] }>('/branches/import', {
+        method: 'POST',
+        body: { fileName, rows },
+      }),
+    onSuccess: (d) => {
+      setError(null);
+      setResult(d);
+      onImported();
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  });
+
+  return (
+    <Dialog open onClose={onClose} title={t('branches.importTitle')} wide>
+      {error && <ErrorState message={error} />}
+      {result ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-700">
+            {t('branches.importDone', {
+              created: result.created,
+              updated: result.updated,
+              invalid: result.invalid.length,
+            })}
+          </p>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>{t('common.close')}</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">{t('branches.importHint')}</p>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="block w-full text-sm text-gray-600"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              setFileName(file.name);
+              setPreview(null);
+              void parseFile(file)
+                .then(setRows)
+                .catch(() => setError(t('crm.parseError')));
+            }}
+          />
+          {rows.length > 0 && !preview && (
+            <div className="flex items-center justify-between text-sm text-gray-500">
+              <span>{t('crm.rowsParsed', { count: rows.length })}</span>
+              <Button onClick={() => doPreview.mutate()} disabled={doPreview.isPending}>
+                {t('crm.previewBtn')}
+              </Button>
+            </div>
+          )}
+          {preview && (
+            <>
+              <div className="flex flex-wrap gap-2 text-sm">
+                <Badge tone="green">
+                  {t('branches.willCreate', { count: preview.willCreate })}
+                </Badge>
+                <Badge tone="blue">{t('branches.willUpdate', { count: preview.willUpdate })}</Badge>
+                <Badge tone="red">{t('crm.invalidCount', { count: preview.invalid })}</Badge>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm">
+                <Badge tone="amber">
+                  {t('branches.qMissingLocation', { count: preview.missingLocation })}
+                </Badge>
+                <Badge tone="amber">
+                  {t('branches.qMissingSupervisor', { count: preview.missingSupervisor })}
+                </Badge>
+                <Badge tone="amber">
+                  {t('branches.qUnmappedType', { count: preview.unmappedType })}
+                </Badge>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  onClick={() => doImport.mutate()}
+                  disabled={doImport.isPending || preview.valid === 0}
+                >
+                  {t('branches.importConfirm', { count: preview.valid })}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </Dialog>
   );
 }

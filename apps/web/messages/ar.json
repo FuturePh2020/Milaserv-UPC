@@ -21,7 +21,8 @@
     "performance": "الأداء",
     "crm": "المبيعات الهاتفية CRM",
     "online": "العمليات الإلكترونية",
-    "integrations": "مراقبة التكاملات"
+    "integrations": "مراقبة التكاملات",
+    "locator": "أقرب فرع"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -230,7 +231,19 @@
     "supervisorEmail": "بريد المشرف",
     "supervisorPhone": "هاتف المشرف",
     "areaManagerName": "مدير المنطقة",
-    "areaManagerEmail": "بريد مدير المنطقة"
+    "areaManagerEmail": "بريد مدير المنطقة",
+    "region": "المنطقة",
+    "type": "النوع",
+    "importBtn": "استيراد ملف",
+    "importTitle": "استيراد ملف الفروع الرئيسي",
+    "importHint": "ملف United Locations بصيغة xlsx. — الأكواد الموجودة تُحدَّث والجديدة تُنشأ.",
+    "willCreate": "{count} جديد",
+    "willUpdate": "{count} تحديث",
+    "qMissingLocation": "{count} بلا إحداثيات",
+    "qMissingSupervisor": "{count} بلا مشرف",
+    "qUnmappedType": "{count} نوع غير معروف",
+    "importConfirm": "استيراد {count} فرعًا",
+    "importDone": "أُنشئ {created}، حُدِّث {updated}، غير صالح {invalid}."
   },
   "kb": {
     "title": "قاعدة المعرفة",
@@ -423,6 +436,26 @@
       "SUCCEEDED": "نجحت",
       "FAILED": "تُعاد المحاولة",
       "DEAD": "متوقفة نهائيًا"
+    }
+  },
+  "locator": {
+    "title": "أقرب فرع",
+    "lat": "خط العرض",
+    "lng": "خط الطول",
+    "find": "ابحث عن الأقرب",
+    "useMyLocation": "استخدم موقعي",
+    "noGeolocation": "تحديد الموقع غير متاح في هذا المتصفح",
+    "locationDenied": "تم رفض إذن الموقع",
+    "noBranches": "لا توجد فروع بإحداثيات معروفة",
+    "km": "كم",
+    "open": "مفتوح",
+    "closed": "مغلق",
+    "eta": "التوصيل ≈ {minutes} دقيقة",
+    "openMap": "افتح الخريطة",
+    "reasons": {
+      "NOT_COVERED": "التوصيل غير مغطى",
+      "OUT_OF_RANGE": "خارج نطاق التوصيل",
+      "CLOSED": "مغلق الآن"
     }
   }
 }

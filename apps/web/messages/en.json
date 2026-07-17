@@ -21,7 +21,8 @@
     "performance": "Performance",
     "crm": "CRM & Telesales",
     "online": "Online Operation",
-    "integrations": "Integration Monitor"
+    "integrations": "Integration Monitor",
+    "locator": "Branch Locator"
   },
   "auth": {
     "signIn": "Sign in",
@@ -230,7 +231,19 @@
     "supervisorEmail": "Supervisor email",
     "supervisorPhone": "Supervisor phone",
     "areaManagerName": "Area manager",
-    "areaManagerEmail": "Area manager email"
+    "areaManagerEmail": "Area manager email",
+    "region": "Region",
+    "type": "Type",
+    "importBtn": "Import file",
+    "importTitle": "Import branch master file",
+    "importHint": "United Locations export (.xlsx) — existing codes are updated, new codes are created.",
+    "willCreate": "{count} new",
+    "willUpdate": "{count} updates",
+    "qMissingLocation": "{count} missing location",
+    "qMissingSupervisor": "{count} missing supervisor",
+    "qUnmappedType": "{count} unmapped type",
+    "importConfirm": "Import {count} branches",
+    "importDone": "Created {created}, updated {updated}, invalid {invalid}."
   },
   "kb": {
     "title": "Knowledge Base",
@@ -423,6 +436,26 @@
       "SUCCEEDED": "Succeeded",
       "FAILED": "Retrying",
       "DEAD": "Dead"
+    }
+  },
+  "locator": {
+    "title": "Branch Locator",
+    "lat": "Latitude",
+    "lng": "Longitude",
+    "find": "Find nearest",
+    "useMyLocation": "Use my location",
+    "noGeolocation": "Geolocation is not available in this browser",
+    "locationDenied": "Location permission denied",
+    "noBranches": "No located branches found",
+    "km": "km",
+    "open": "Open",
+    "closed": "Closed",
+    "eta": "Delivery ≈ {minutes} min",
+    "openMap": "Open map",
+    "reasons": {
+      "NOT_COVERED": "Delivery not covered",
+      "OUT_OF_RANGE": "Out of delivery range",
+      "CLOSED": "Closed now"
     }
   }
 }

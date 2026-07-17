@@ -99,4 +99,15 @@ export interface BranchRow {
   areaManagerName: string | null;
   areaManagerEmail: string | null;
   status: 'ACTIVE' | 'INACTIVE';
+  // §16.1 Branch Master extension
+  storeCode?: string | null;
+  district?: string | null;
+  region?: string | null;
+  addressAr?: string | null;
+  addressEn?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  mapUrl?: string | null;
+  deliveryCovered?: boolean | null;
+  branchType?: { key: string; nameAr: string; nameEn: string } | null;
 }
