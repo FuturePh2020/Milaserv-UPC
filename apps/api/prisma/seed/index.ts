@@ -16,6 +16,7 @@ import { seedTicketingCatalogs } from './ticketing';
 import { seedPerformanceCatalog } from './performance';
 import { seedCrmCatalogs } from './crm';
 import { seedOnlineCatalogs } from './online';
+import { seedBranchTypes } from './branches';
 
 const prisma = new PrismaClient();
 
@@ -363,6 +364,39 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'التأخير الأساسي بين المحاولات (ثوانٍ، يتضاعف)',
     labelEn: 'Base retry delay (seconds, doubles per attempt)',
   },
+  // Branch Center (blueprint §16.3, branch-center spec G5)
+  {
+    key: 'branch.locator.max_results',
+    category: 'branches',
+    valueType: 'NUMBER',
+    value: 5,
+    labelAr: 'عدد الفروع في نتائج تحديد الأقرب',
+    labelEn: 'Locator result count',
+  },
+  {
+    key: 'branch.delivery.base_minutes',
+    category: 'branches',
+    valueType: 'NUMBER',
+    value: 15,
+    labelAr: 'زمن التجهيز الأساسي للتوصيل (دقائق)',
+    labelEn: 'Delivery base preparation time (minutes)',
+  },
+  {
+    key: 'branch.delivery.minutes_per_km',
+    category: 'branches',
+    valueType: 'NUMBER',
+    value: 3,
+    labelAr: 'دقائق التوصيل لكل كيلومتر',
+    labelEn: 'Delivery minutes per kilometre',
+  },
+  {
+    key: 'branch.delivery.max_km',
+    category: 'branches',
+    valueType: 'NUMBER',
+    value: 15,
+    labelAr: 'أقصى مسافة توصيل (كم)',
+    labelEn: 'Maximum delivery distance (km)',
+  },
 ];
 
 async function seedPermissions() {
@@ -468,6 +502,7 @@ async function main() {
   await seedPerformanceCatalog(prisma);
   await seedCrmCatalogs(prisma);
   await seedOnlineCatalogs(prisma);
+  await seedBranchTypes(prisma);
   await seedSuperAdmin();
 }
 

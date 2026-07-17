@@ -310,11 +310,46 @@ model Branch {
   areaManagerName  String?
   areaManagerEmail String?
   status           UserStatus @default(ACTIVE)
-  createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  deletedAt        DateTime?
+
+  // ── §16.1 Branch Master extension (branch-center spec G1) ──
+  storeCode           String?
+  addressAr           String?
+  addressEn           String?
+  district            String?
+  region              String?
+  postalCode          String?
+  latitude            Float?
+  longitude           Float?
+  mapUrl              String?
+  phone2              String?
+  phone3              String?
+  branchTypeKey       String?
+  branchType          BranchType? @relation(fields: [branchTypeKey], references: [key])
+  deliveryCovered     Boolean?
+  /// { "from": "HH:MM", "to": "HH:MM" } — absent = always open (spec G6).
+  workingHours        Json?
+  dutyPharmacist      String?
+  districtManagerName String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   tickets Ticket[]
+
+  @@index([region, city])
+  @@index([branchTypeKey])
+}
+
+/// §16.2 — branch type catalog, seeded verbatim (editable).
+model BranchType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  branches Branch[]
 }
 
 // ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
