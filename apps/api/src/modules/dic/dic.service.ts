@@ -9,6 +9,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { SettingsService } from '../settings/settings.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import type { CreateChangeRequestDto, DecideChangeRequestDto, SearchQueryDto } from './dic.dto';
 
@@ -26,14 +27,16 @@ export class DicService {
     private readonly audit: AuditService,
     private readonly timeline: TimelineService,
     private readonly notifications: NotificationsService,
+    private readonly settings: SettingsService,
   ) {}
 
   async catalogs() {
-    const [itemTypes, companies] = await Promise.all([
+    const [itemTypes, companies, chunkSize] = await Promise.all([
       this.prisma.drugItemType.findMany({ where: { active: true }, orderBy: { key: 'asc' } }),
       this.prisma.insuranceCompany.findMany({ where: { active: true }, orderBy: { key: 'asc' } }),
+      this.settings.resolve('dic.import.chunk_size').then(Number),
     ]);
-    return { itemTypes, companies };
+    return { itemTypes, companies, chunkSize };
   }
 
   // ── §15.1 search: fields, partial, wildcard *, auto-complete ───────

@@ -190,7 +190,7 @@ describe('DIC (e2e)', () => {
     expect(material.body.items).toHaveLength(1);
 
     const wildcard = await request(http)
-      .get(`/api/v1/dic/search?q=${encodeURIComponent('Pana*Extra*')}`)
+      .get(`/api/v1/dic/search?q=${encodeURIComponent('Panadex*Extra*')}`)
       .set(auth(agentToken))
       .expect(200);
     expect((wildcard.body.items as { materialNo: string }[]).map((d) => d.materialNo)).toEqual([
