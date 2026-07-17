@@ -14,17 +14,54 @@ import type { Request } from 'express';
 import type { AuthUser } from '../auth/current-user.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission } from '../permissions/require-permission.decorator';
-import { CreateBranchDto, ListBranchesQueryDto, UpdateBranchDto } from './branches.dto';
+import {
+  CreateBranchDto,
+  ImportBranchesDto,
+  ListBranchesQueryDto,
+  NearestQueryDto,
+  UpdateBranchDto,
+} from './branches.dto';
 import { BranchesService } from './branches.service';
+import { BranchImportService } from './branch-import.service';
 
 @Controller('branches')
 export class BranchesController {
-  constructor(private readonly branches: BranchesService) {}
+  constructor(
+    private readonly branches: BranchesService,
+    private readonly importer: BranchImportService,
+  ) {}
 
   @RequirePermission('branch.view')
   @Get()
   list(@Query() q: ListBranchesQueryDto) {
     return this.branches.list(q);
+  }
+
+  @RequirePermission('branch.view')
+  @Get('types')
+  types() {
+    return this.branches.types();
+  }
+
+  /** §16.3 Locator & Delivery Estimator. */
+  @RequirePermission('branch.view')
+  @Get('nearest')
+  nearest(@Query() q: NearestQueryDto) {
+    return this.branches.nearest(q);
+  }
+
+  /** §16.1 master-data import (United Locations format, spec G2/G3). */
+  @RequirePermission('branch.manage')
+  @Post('import/preview')
+  @HttpCode(200)
+  importPreview(@Body() dto: ImportBranchesDto) {
+    return this.importer.preview(dto);
+  }
+
+  @RequirePermission('branch.manage')
+  @Post('import')
+  import(@CurrentUser() user: AuthUser, @Body() dto: ImportBranchesDto, @Req() req: Request) {
+    return this.importer.import(user, dto, { ip: req.ip });
   }
 
   @RequirePermission('branch.view')

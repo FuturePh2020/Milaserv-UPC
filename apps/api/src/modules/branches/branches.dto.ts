@@ -1,10 +1,17 @@
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsEmail,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 import { PaginationQuery } from '../../core/pagination';
@@ -17,6 +24,14 @@ export class ListBranchesQueryDto extends PaginationQuery {
   @IsOptional()
   @IsIn(['ACTIVE', 'INACTIVE'])
   status?: 'ACTIVE' | 'INACTIVE';
+
+  @IsOptional()
+  @IsString()
+  region?: string;
+
+  @IsOptional()
+  @IsString()
+  typeKey?: string;
 }
 
 export class CreateBranchDto {
@@ -107,4 +122,30 @@ export class UpdateBranchDto {
   @IsOptional()
   @IsIn(['ACTIVE', 'INACTIVE'])
   status?: 'ACTIVE' | 'INACTIVE';
+}
+
+export class ImportBranchesDto {
+  @IsString()
+  @MaxLength(255)
+  fileName: string;
+
+  /** Raw sheet rows keyed by the United Locations export headers (spec G2). */
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(2000)
+  rows: Record<string, unknown>[];
+}
+
+export class NearestQueryDto {
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-90)
+  @Max(90)
+  lat: number;
+
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng: number;
 }
