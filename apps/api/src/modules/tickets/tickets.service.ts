@@ -13,6 +13,7 @@ import { TimelineService } from '../timeline/timeline.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { SettingsService } from '../settings/settings.service';
+import { IntegrationsService } from '../integrations/integrations.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import type { RequestScope } from '../permissions/scope';
 import { skipTake, toPage } from '../../core/pagination';
@@ -52,6 +53,7 @@ export class TicketsService {
     private readonly notifications: NotificationsService,
     private readonly numbering: NumberingService,
     private readonly settings: SettingsService,
+    private readonly integrations: IntegrationsService,
   ) {}
 
   // ── Scope & views (spec §4/§7, ADR-010) ───────────────────────────
@@ -280,6 +282,14 @@ export class TicketsService {
       throw new BadRequestException('branchId is only valid for branch tickets');
     }
 
+    // §13 Request Source (online-operation spec F3).
+    if (dto.requestSourceKey) {
+      const source = await this.prisma.requestSource.findFirst({
+        where: { key: dto.requestSourceKey, active: true },
+      });
+      if (!source) throw new BadRequestException('Unknown request source');
+    }
+
     const [internalNumber, customerComplaintNumber] = await Promise.all([
       this.numbering.next('ticketing.number.internal_format', 'ticket-internal'),
       this.numbering.next('ticketing.number.customer_format', 'ticket-customer'),
@@ -304,6 +314,7 @@ export class TicketsService {
         subject: dto.subject,
         description: dto.description,
         relatedOrderNo: dto.relatedOrderNo,
+        requestSourceKey: dto.requestSourceKey,
         customerVisitAt: dto.customerVisitAt ? new Date(dto.customerVisitAt) : undefined,
         sapMaterialNo: dto.sapMaterialNo,
         itemNameAr: dto.itemNameAr,
@@ -865,6 +876,30 @@ export class TicketsService {
         payload: { entityType: 'ticket', entityId: id },
       });
     }
+
+    // §13 outbound sync slot (online-operation spec F5): resolving an online
+    // ticket notifies the Ordering System through the retry queue — the core
+    // never blocks on the integration (§22).
+    const type = await this.prisma.ticketType.findUnique({ where: { id: ticket.typeId } });
+    if (type && (type.key === 'ONLINE_ISSUE' || type.key === 'ONLINE_REQUEST')) {
+      const outboundEnabled = Boolean(
+        await this.settings.resolve('integrations.ordering.outbound_enabled').catch(() => false),
+      );
+      if (outboundEnabled) {
+        await this.integrations.enqueue({
+          integrationKey: 'ordering',
+          operation: 'issue_resolved',
+          payload: {
+            ticketId: id,
+            internalNumber: ticket.internalNumber,
+            type: type.key,
+            relatedOrderNo: ticket.relatedOrderNo,
+            resolvedAt: now.toISOString(),
+          },
+        });
+      }
+    }
+
     return this.transition(actor, scope, ticket, 'COMPLETED', meta);
   }
 

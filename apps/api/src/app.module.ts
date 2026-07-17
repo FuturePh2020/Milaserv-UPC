@@ -21,6 +21,8 @@ import { KbModule } from './modules/kb/kb.module';
 import { BreaksModule } from './modules/breaks/breaks.module';
 import { PerformanceModule } from './modules/performance/performance.module';
 import { CrmModule } from './modules/crm/crm.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
+import { OnlineModule } from './modules/online/online.module';
 
 @Module({
   imports: [
@@ -46,6 +48,8 @@ import { CrmModule } from './modules/crm/crm.module';
     BreaksModule,
     PerformanceModule,
     CrmModule,
+    IntegrationsModule,
+    OnlineModule,
   ],
   controllers: [HealthController],
 })

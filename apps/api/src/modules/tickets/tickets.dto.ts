@@ -119,6 +119,11 @@ export class CreateTicketDto {
   @IsString()
   relatedOrderNo?: string;
 
+  /** §13 Request Source — online issue/request tickets. */
+  @IsOptional()
+  @IsString()
+  requestSourceKey?: string;
+
   @IsOptional()
   @IsISO8601()
   customerVisitAt?: string;

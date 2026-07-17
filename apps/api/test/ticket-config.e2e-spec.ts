@@ -85,7 +85,8 @@ describe('Ticketing configuration catalogs (e2e)', () => {
     expect(res.body.statuses).toHaveLength(7); // §9.3
     expect(res.body.updateTypes).toHaveLength(10); // §9.6
     expect(res.body.transitions.length).toBeGreaterThanOrEqual(16);
-    expect(res.body.slaPolicies).toHaveLength(6); // 2 types × 3 urgencies
+    // 4 types × 3 urgencies (INTERNAL/BRANCH + §13 ONLINE_ISSUE/ONLINE_REQUEST)
+    expect(res.body.slaPolicies).toHaveLength(12);
 
     const waiting = res.body.updateTypes.find((u: { key: string }) => u.key === 'WAITING');
     expect(waiting.pausesSla).toBe(true);
