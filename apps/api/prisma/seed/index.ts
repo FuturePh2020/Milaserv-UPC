@@ -15,6 +15,7 @@ import type { PermissionKey, SystemRoleKey } from '@milaserv/contracts';
 import { seedTicketingCatalogs } from './ticketing';
 import { seedPerformanceCatalog } from './performance';
 import { seedCrmCatalogs } from './crm';
+import { seedOnlineCatalogs } from './online';
 
 const prisma = new PrismaClient();
 
@@ -41,6 +42,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['team.view', DataScope.ALL_DATA],
     ['audit.view', DataScope.ALL_DATA],
     ['setting.view', DataScope.ALL_DATA],
+    ['integration.monitor', DataScope.ALL_DATA],
   ],
   TEAM_MANAGER: [
     ['user.view', DataScope.DEPARTMENT],
@@ -70,6 +72,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.view', DataScope.DEPARTMENT],
     ['crm.work', DataScope.DEPARTMENT],
     ['crm.upload', DataScope.DEPARTMENT],
+    ['online.view', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -89,6 +92,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['performance.view', DataScope.MY_TEAM],
     ['crm.view', DataScope.MY_TEAM],
     ['crm.work', DataScope.MY_TEAM],
+    ['online.view', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
@@ -107,6 +111,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['performance.view', DataScope.MY_TEAM],
     ['crm.view', DataScope.MY_TEAM],
     ['crm.work', DataScope.MY_TEAM],
+    ['online.view', DataScope.MY_TEAM],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -119,6 +124,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['performance.view', DataScope.MY_RECORDS],
     ['crm.view', DataScope.MY_RECORDS],
     ['crm.work', DataScope.MY_RECORDS],
+    ['online.view', DataScope.MY_TEAM],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
@@ -130,7 +136,12 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['audit.view', DataScope.DEPARTMENT],
     ['ticket.view', DataScope.DEPARTMENT],
   ],
-  INTEGRATION_SUPPORT: [['performance.ingest', DataScope.ALL_DATA]],
+  INTEGRATION_SUPPORT: [
+    ['performance.ingest', DataScope.ALL_DATA],
+    ['online.ingest', DataScope.ALL_DATA],
+    ['online.view', DataScope.ALL_DATA],
+    ['integration.monitor', DataScope.ALL_DATA],
+  ],
 };
 
 interface DefaultSetting {
@@ -319,6 +330,39 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'صيغة رقم طلب التيليسيلز',
     labelEn: 'Telesales order number format',
   },
+  // Integration Layer (blueprint §13 note, §21.1 — online spec F5)
+  {
+    key: 'integrations.ordering.endpoint',
+    category: 'integrations',
+    valueType: 'STRING',
+    value: '',
+    labelAr: 'عنوان تكامل نظام الطلبات (يملؤه الموصّل)',
+    labelEn: 'Ordering System integration endpoint (set by the connector)',
+  },
+  {
+    key: 'integrations.ordering.outbound_enabled',
+    category: 'integrations',
+    valueType: 'BOOLEAN',
+    value: false,
+    labelAr: 'تفعيل المزامنة الصادرة لنظام الطلبات',
+    labelEn: 'Enable outbound sync to the Ordering System',
+  },
+  {
+    key: 'integrations.retry.max_attempts',
+    category: 'integrations',
+    valueType: 'NUMBER',
+    value: 5,
+    labelAr: 'الحد الأقصى لمحاولات إعادة التكامل',
+    labelEn: 'Max integration retry attempts',
+  },
+  {
+    key: 'integrations.retry.base_delay_seconds',
+    category: 'integrations',
+    valueType: 'NUMBER',
+    value: 60,
+    labelAr: 'التأخير الأساسي بين المحاولات (ثوانٍ، يتضاعف)',
+    labelEn: 'Base retry delay (seconds, doubles per attempt)',
+  },
 ];
 
 async function seedPermissions() {
@@ -423,6 +467,7 @@ async function main() {
   await seedTicketingCatalogs(prisma);
   await seedPerformanceCatalog(prisma);
   await seedCrmCatalogs(prisma);
+  await seedOnlineCatalogs(prisma);
   await seedSuperAdmin();
 }
 

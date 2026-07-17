@@ -198,6 +198,23 @@ export const PERMISSIONS = [
     module: 'crm',
     label: { en: 'Import lead files', ar: 'استيراد ملفات العملاء المحتملين' },
   },
+
+  // online operation & ordering (blueprint §13)
+  {
+    key: 'online.view',
+    module: 'online',
+    label: { en: 'View online orders & stats', ar: 'عرض الطلبات الإلكترونية والإحصاءات' },
+  },
+  {
+    key: 'online.ingest',
+    module: 'online',
+    label: { en: 'Ingest online orders', ar: 'إدخال الطلبات الإلكترونية' },
+  },
+  {
+    key: 'integration.monitor',
+    module: 'integrations',
+    label: { en: 'Integration monitor & retry', ar: 'مراقبة التكاملات وإعادة المحاولة' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

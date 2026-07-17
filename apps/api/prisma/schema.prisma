@@ -459,6 +459,9 @@ model Ticket {
   subject                 String
   description             String
   relatedOrderNo          String?
+  /// §13 "Request Source" — nullable; filled for online issue/request tickets.
+  requestSourceKey        String?
+  requestSource           RequestSource? @relation(fields: [requestSourceKey], references: [key])
   customerVisitAt         DateTime?
   sapMaterialNo           String?
   itemNameAr              String?
@@ -990,4 +993,75 @@ model TelesalesOrder {
 
   @@index([createdById, createdAt])
   @@index([status, createdAt])
+}
+
+// ── Online Operation & Ordering (blueprint §13) ─────────────────────
+
+enum IntegrationOpStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  DEAD
+}
+
+/// §13 "Order Source" — editable catalog (spec F3).
+model OrderSource {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  orders OnlineOrder[]
+}
+
+/// §13 "Request Source" — editable catalog (spec F3).
+model RequestSource {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  tickets Ticket[]
+}
+
+/// §13 "Daily Orders" — integration-owned records ingested via the
+/// Integration Layer slot (spec F4). Issues/requests link through the
+/// ticket engine's relatedOrderNo (§9.4).
+model OnlineOrder {
+  id             String      @id @default(cuid())
+  externalNumber String      @unique
+  orderSourceKey String
+  orderSource    OrderSource @relation(fields: [orderSourceKey], references: [key])
+  orderedAt      DateTime
+  customerName   String?
+  customerPhone  String?
+  value          Decimal?    @db.Decimal(14, 2)
+  /// Status as reported by the Ordering System (informational).
+  externalStatus String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([orderedAt])
+  @@index([orderSourceKey, orderedAt])
+}
+
+/// §13 Retry Queue + §21.1 integration standard (spec F5). Callers enqueue
+/// and never block on the external system (§22 Availability).
+model IntegrationOperation {
+  id             String              @id @default(cuid())
+  integrationKey String
+  operation      String
+  payload        Json
+  status         IntegrationOpStatus @default(PENDING)
+  attempts       Int                 @default(0)
+  nextRetryAt    DateTime            @default(now())
+  lastError      String?
+  succeededAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([integrationKey, createdAt])
 }

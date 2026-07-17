@@ -7,6 +7,9 @@ import type { PrismaClient, StatusKind } from '@prisma/client';
 const TYPES = [
   { key: 'INTERNAL', nameAr: 'تذكرة داخلية', nameEn: 'Internal Ticket' },
   { key: 'BRANCH', nameAr: 'تذكرة فرع', nameEn: 'Branch Ticket' },
+  // §13 Online Operation rides the universal engine (online spec F1)
+  { key: 'ONLINE_ISSUE', nameAr: 'مشكلة طلب إلكتروني', nameEn: 'Order Issue' },
+  { key: 'ONLINE_REQUEST', nameAr: 'طلب خدمة إلكتروني', nameEn: 'Order Request' },
 ];
 
 const CATEGORIES: Record<string, { key: string; nameAr: string; nameEn: string }[]> = {
@@ -25,6 +28,10 @@ const CATEGORIES: Record<string, { key: string; nameAr: string; nameEn: string }
     { key: 'RETURN_POLICY', nameAr: 'سياسة الاسترجاع', nameEn: 'Return Policy' },
     { key: 'PRICING', nameAr: 'التسعير', nameEn: 'Pricing' },
   ],
+  // §13 gives no category list — one generic each; ops extend via catalog
+  // config without deployments (online spec F2, ADR-008).
+  ONLINE_ISSUE: [{ key: 'GENERAL', nameAr: 'مشكلة طلب', nameEn: 'General Issue' }],
+  ONLINE_REQUEST: [{ key: 'GENERAL', nameAr: 'طلب خدمة', nameEn: 'General Request' }],
 };
 
 const URGENCIES = [
