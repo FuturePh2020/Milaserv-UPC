@@ -23,6 +23,7 @@ import { PerformanceModule } from './modules/performance/performance.module';
 import { CrmModule } from './modules/crm/crm.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { OnlineModule } from './modules/online/online.module';
+import { DicModule } from './modules/dic/dic.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { OnlineModule } from './modules/online/online.module';
     CrmModule,
     IntegrationsModule,
     OnlineModule,
+    DicModule,
   ],
   controllers: [HealthController],
 })
