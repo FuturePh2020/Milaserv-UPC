@@ -188,7 +188,10 @@ export const PERMISSIONS = [
   {
     key: 'crm.work',
     module: 'crm',
-    label: { en: 'Work leads (calls & orders)', ar: 'العمل على العملاء المحتملين (مكالمات وطلبات)' },
+    label: {
+      en: 'Work leads (calls & orders)',
+      ar: 'العمل على العملاء المحتملين (مكالمات وطلبات)',
+    },
   },
   {
     key: 'crm.upload',
