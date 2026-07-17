@@ -232,6 +232,21 @@ export const PERMISSIONS = [
     module: 'dic',
     label: { en: 'Approve drug master changes', ar: 'اعتماد تغييرات بيانات الأدوية' },
   },
+  {
+    key: 'ocr.view',
+    module: 'ocr',
+    label: { en: 'View prescriptions', ar: 'عرض الوصفات' },
+  },
+  {
+    key: 'ocr.upload',
+    module: 'ocr',
+    label: { en: 'Upload prescriptions for OCR', ar: 'رفع الوصفات للتعرف الضوئي' },
+  },
+  {
+    key: 'ocr.review',
+    module: 'ocr',
+    label: { en: 'Review & confirm OCR results', ar: 'مراجعة واعتماد نتائج التعرف الضوئي' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

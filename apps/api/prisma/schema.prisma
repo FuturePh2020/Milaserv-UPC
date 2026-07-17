@@ -1174,7 +1174,8 @@ model Drug {
   alternatives   DrugAlternative[]
   crossSells     DrugCrossSell[]
   coverages      DrugCoverage[]
-  changeRequests DrugChangeRequest[]
+  changeRequests    DrugChangeRequest[]
+  prescriptionLines PrescriptionLine[]
 
   @@index([nameEn])
   @@index([nameAr])
@@ -1232,4 +1233,62 @@ model DrugChangeRequest {
   decidedAt     DateTime?
 
   @@index([status, createdAt])
+}
+
+// ── §17 OCR Prescription Processing (spec docs/specs/ocr-spec-v1.0.md) ──
+
+enum PrescriptionStatus {
+  UPLOADED
+  EXTRACTING
+  REVIEW
+  CONFIRMED
+  REJECTED
+}
+
+enum PrescriptionLineStatus {
+  SUGGESTED
+  CONFIRMED
+  CORRECTED
+  REJECTED
+}
+
+/// §17 prescription — extraction via the Integration Engine (I1);
+/// human review is mandatory before confirmation (I4).
+model Prescription {
+  id             String             @id @default(cuid())
+  number         String             @unique
+  status         PrescriptionStatus @default(UPLOADED)
+  attachmentId   String?
+  uploadedById   String
+  reviewedById   String?
+  reviewedAt     DateTime?
+  /// I6: links existing records — OCR never creates tickets/orders.
+  ticketId       String?
+  relatedOrderNo String?
+  note           String?
+  engineMeta     Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  lines          PrescriptionLine[]
+
+  @@index([status, createdAt])
+  @@index([uploadedById])
+}
+
+model PrescriptionLine {
+  id               String                 @id @default(cuid())
+  prescriptionId   String
+  prescription     Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  lineNo           Int
+  rawText          String
+  /// Engine-reported confidence (0–1); null for manually entered lines.
+  engineConfidence Float?
+  /// Drug-master match certainty (spec I3); null when unmatched.
+  matchScore       Float?
+  matchedDrugId    String?
+  matchedDrug      Drug?                  @relation(fields: [matchedDrugId], references: [id])
+  status           PrescriptionLineStatus @default(SUGGESTED)
+  updatedAt        DateTime               @updatedAt
+
+  @@unique([prescriptionId, lineNo])
 }

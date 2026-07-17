@@ -47,6 +47,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['integration.monitor', DataScope.ALL_DATA],
     ['dic.view', DataScope.ALL_DATA],
     ['dic.approve', DataScope.ALL_DATA],
+    ['ocr.view', DataScope.ALL_DATA],
+    ['ocr.review', DataScope.ALL_DATA],
   ],
   TEAM_MANAGER: [
     ['user.view', DataScope.DEPARTMENT],
@@ -80,6 +82,9 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['dic.view', DataScope.DEPARTMENT],
     ['dic.manage', DataScope.DEPARTMENT],
     ['dic.approve', DataScope.DEPARTMENT],
+    ['ocr.view', DataScope.DEPARTMENT],
+    ['ocr.upload', DataScope.MY_RECORDS],
+    ['ocr.review', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -121,6 +126,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.work', DataScope.MY_TEAM],
     ['online.view', DataScope.MY_TEAM],
     ['dic.view', DataScope.MY_TEAM],
+    ['ocr.view', DataScope.MY_TEAM],
+    ['ocr.upload', DataScope.MY_RECORDS],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -135,6 +142,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.work', DataScope.MY_RECORDS],
     ['online.view', DataScope.MY_TEAM],
     ['dic.view', DataScope.MY_RECORDS],
+    ['ocr.view', DataScope.MY_RECORDS],
+    ['ocr.upload', DataScope.MY_RECORDS],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
@@ -153,6 +162,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['integration.monitor', DataScope.ALL_DATA],
     ['dic.manage', DataScope.ALL_DATA],
     ['dic.view', DataScope.ALL_DATA],
+    ['ocr.view', DataScope.ALL_DATA],
   ],
 };
 
@@ -416,6 +426,31 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     value: 2000,
     labelAr: 'حجم دفعة استيراد الأدوية (صفوف)',
     labelEn: 'Drug import chunk size (rows)',
+  },
+  // OCR spec §5 (blueprint §17 + §21)
+  {
+    key: 'integrations.ocr.endpoint',
+    category: 'integrations',
+    valueType: 'STRING',
+    value: '',
+    labelAr: 'رابط محرك التعرف الضوئي على الوصفات',
+    labelEn: 'OCR engine endpoint',
+  },
+  {
+    key: 'ocr.number.format',
+    category: 'ocr',
+    valueType: 'STRING',
+    value: 'PRX-{YYYY}-{SEQ:6}',
+    labelAr: 'صيغة رقم الوصفة',
+    labelEn: 'Prescription number format',
+  },
+  {
+    key: 'ocr.review.min_confidence',
+    category: 'ocr',
+    valueType: 'NUMBER',
+    value: 0.6,
+    labelAr: 'الحد الأدنى للثقة قبل تنبيه المراجع',
+    labelEn: 'Minimum confidence before flagging for review',
   },
 ];
 
