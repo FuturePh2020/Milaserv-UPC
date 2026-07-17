@@ -18,7 +18,8 @@
     "kb": "قاعدة المعرفة",
     "kbAdmin": "إدارة قاعدة المعرفة",
     "breaks": "متابعة البريك",
-    "performance": "الأداء"
+    "performance": "الأداء",
+    "crm": "المبيعات الهاتفية CRM"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -332,5 +333,55 @@
     "scopeTeam": "فريق",
     "noTargets": "لا توجد أهداف بعد",
     "empty": "لا توجد بيانات أداء لهذه الفترة"
+  },
+  "crm": {
+    "title": "المبيعات الهاتفية CRM",
+    "tabs": {
+      "queue": "قائمتي",
+      "leads": "العملاء المحتملون",
+      "orders": "الطلبات"
+    },
+    "uploadLeads": "رفع عملاء محتملين",
+    "nextLead": "العميل التالي",
+    "queueHint": "اسحب العميل المحتمل التالي واحدًا تلو الآخر أثناء جلسة عملك.",
+    "noLeads": "لا يوجد عملاء محتملون بانتظارك الآن",
+    "phone": "الهاتف",
+    "city": "المدينة",
+    "source": "مصدر العميل",
+    "partner": "الشريك",
+    "campaign": "الحملة",
+    "notes": "ملاحظات",
+    "callStatus": "نتيجة المكالمة",
+    "disposition": "التصنيف",
+    "rescheduleAt": "إعادة الجدولة إلى",
+    "orderType": "نوع الطلب",
+    "orderValue": "قيمة الطلب",
+    "saveCall": "حفظ نتيجة المكالمة",
+    "assignedTo": "مُسند إلى",
+    "leadStates": {
+      "NEW": "جديد",
+      "ASSIGNED": "مُسند",
+      "CLOSED": "مغلق"
+    },
+    "orderStates": {
+      "OPEN": "مفتوح",
+      "COMPLETED": "مكتمل",
+      "CANCELLED": "ملغي"
+    },
+    "orderNumber": "الرقم",
+    "customer": "العميل",
+    "createdBy": "أنشأه",
+    "complete": "إكمال",
+    "cancel": "إلغاء",
+    "all": "الكل",
+    "parseError": "تعذر قراءة الملف — استخدم xlsx. أو csv. بأعمدة الاسم/الهاتف",
+    "rowsParsed": "تم قراءة {count} صفًا",
+    "previewBtn": "تحقق ومعاينة",
+    "validCount": "{count} صالح",
+    "dupCount": "{count} مكرر",
+    "invalidCount": "{count} غير صالح",
+    "rowValid": "صالح",
+    "importBtn": "استيراد {count} عميلًا",
+    "importDone": "تم استيراد {imported} عميلًا؛ وتخطي {skipped}."
   }
 }

@@ -24,6 +24,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/kb', labelKey: 'kb', icon: '📚', permission: 'kb.view' },
   { href: '/breaks', labelKey: 'breaks', icon: '⏱', permission: 'break.track' },
   { href: '/performance', labelKey: 'performance', icon: '📈', permission: 'performance.view' },
+  { href: '/crm', labelKey: 'crm', icon: '📞', permission: 'crm.view' },
   { href: '/notifications', labelKey: 'notifications', icon: '🔔', permission: null },
 ];
 

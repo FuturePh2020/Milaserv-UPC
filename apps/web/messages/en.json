@@ -18,7 +18,8 @@
     "kb": "Knowledge Base",
     "kbAdmin": "KB Management",
     "breaks": "Break Tracker",
-    "performance": "Performance"
+    "performance": "Performance",
+    "crm": "CRM & Telesales"
   },
   "auth": {
     "signIn": "Sign in",
@@ -332,5 +333,55 @@
     "scopeTeam": "Team",
     "noTargets": "No targets defined yet",
     "empty": "No performance data for this period"
+  },
+  "crm": {
+    "title": "CRM & Telesales",
+    "tabs": {
+      "queue": "My Queue",
+      "leads": "Leads",
+      "orders": "Orders"
+    },
+    "uploadLeads": "Upload leads",
+    "nextLead": "Get next lead",
+    "queueHint": "Pull the next lead one at a time during your shift session.",
+    "noLeads": "No leads waiting right now",
+    "phone": "Phone",
+    "city": "City",
+    "source": "Lead source",
+    "partner": "Partner",
+    "campaign": "Campaign",
+    "notes": "Notes",
+    "callStatus": "Call status",
+    "disposition": "Disposition",
+    "rescheduleAt": "Reschedule to",
+    "orderType": "Order type",
+    "orderValue": "Order value",
+    "saveCall": "Save call result",
+    "assignedTo": "Assigned to",
+    "leadStates": {
+      "NEW": "New",
+      "ASSIGNED": "Assigned",
+      "CLOSED": "Closed"
+    },
+    "orderStates": {
+      "OPEN": "Open",
+      "COMPLETED": "Completed",
+      "CANCELLED": "Cancelled"
+    },
+    "orderNumber": "Number",
+    "customer": "Customer",
+    "createdBy": "Created by",
+    "complete": "Complete",
+    "cancel": "Cancel",
+    "all": "All",
+    "parseError": "Could not read the file — use .xlsx or .csv with name/phone columns",
+    "rowsParsed": "{count} rows parsed",
+    "previewBtn": "Validate & preview",
+    "validCount": "{count} valid",
+    "dupCount": "{count} duplicates",
+    "invalidCount": "{count} invalid",
+    "rowValid": "Valid",
+    "importBtn": "Import {count} leads",
+    "importDone": "Imported {imported} leads; skipped {skipped}."
   }
 }
