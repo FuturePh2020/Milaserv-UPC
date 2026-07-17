@@ -1100,3 +1100,136 @@ model IntegrationOperation {
   @@index([status, nextRetryAt])
   @@index([integrationKey, createdAt])
 }
+
+// ── United Pharmacy Center — DIC (blueprint §15) ────────────────────
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// §15.2 item classifications — catalog (feed values; editable).
+model DrugItemType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  drugs Drug[]
+}
+
+/// §15.3 — MEENA/TAWUNIYA/BUPA seeded; additional companies are inserts.
+model InsuranceCompany {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  coverages DrugCoverage[]
+}
+
+/// §18 Drug master — canonical feed: the company's Mapping export (spec H1).
+model Drug {
+  id            String  @id @default(cuid())
+  materialNo    String  @unique
+  oldMaterialNo String?
+  ean           String?
+  gtin          String?
+  sfdaCode      String?
+  /// §15.2 Coded/Not Coded — SFDA code present (spec H4).
+  coded         Boolean @default(false)
+
+  nameEn       String
+  nameAr       String?
+  brand        String?
+  division     String?
+  category     String?
+  subCategory  String?
+  className    String?
+  subClassName String?
+
+  price        Decimal? @db.Decimal(12, 2)
+  priceWithTax Decimal? @db.Decimal(12, 2)
+
+  itemTypeKey  String?
+  itemType     DrugItemType? @relation(fields: [itemTypeKey], references: [key])
+  raqeeb       Boolean       @default(false)
+  acuteChronic String?
+
+  /// Pharmacist-maintained fields (spec H5) — edited via the 15.3 approval flow.
+  activeIngredient String?
+  usage            String?
+  offers           String?
+  note             String?
+
+  /// {city: qty} snapshot from the feed's city columns (spec H6).
+  availability Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  alternatives   DrugAlternative[]
+  crossSells     DrugCrossSell[]
+  coverages      DrugCoverage[]
+  changeRequests DrugChangeRequest[]
+
+  @@index([nameEn])
+  @@index([nameAr])
+  @@index([brand])
+}
+
+/// §15.2 Alternatives — Mapped Product 1..22 (ordered).
+model DrugAlternative {
+  id            String @id @default(cuid())
+  drugId        String
+  drug          Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  altMaterialNo String
+  order         Int    @default(0)
+
+  @@unique([drugId, altMaterialNo])
+}
+
+/// §15.2 Cross-Selling — Combined Products column (spec H7).
+model DrugCrossSell {
+  id         String @id @default(cuid())
+  drugId     String
+  drug       Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  materialNo String
+
+  @@unique([drugId, materialNo])
+}
+
+/// §15.3 coverage mapping rows.
+model DrugCoverage {
+  id         String           @id @default(cuid())
+  drugId     String
+  drug       Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  companyKey String
+  company    InsuranceCompany @relation(fields: [companyKey], references: [key])
+  covered    Boolean
+  note       String?
+  updatedAt  DateTime         @updatedAt
+
+  @@unique([drugId, companyKey])
+  @@index([companyKey, covered])
+}
+
+/// §15.3 Approval Workflow for Master Data Changes (spec H8).
+model DrugChangeRequest {
+  id            String              @id @default(cuid())
+  drugId        String
+  drug          Drug                @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  /// Proposed patch: { field: newValue } for the H5 editable fields/coverage.
+  patch         Json
+  status        ChangeRequestStatus @default(PENDING)
+  requestedById String
+  decidedById   String?
+  decisionNote  String?
+  createdAt     DateTime            @default(now())
+  decidedAt     DateTime?
+
+  @@index([status, createdAt])
+}

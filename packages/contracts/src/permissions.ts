@@ -215,6 +215,23 @@ export const PERMISSIONS = [
     module: 'integrations',
     label: { en: 'Integration monitor & retry', ar: 'مراقبة التكاملات وإعادة المحاولة' },
   },
+
+  // united pharmacy center — DIC (blueprint §15)
+  {
+    key: 'dic.view',
+    module: 'dic',
+    label: { en: 'Search & view drug information', ar: 'البحث وعرض معلومات الأدوية' },
+  },
+  {
+    key: 'dic.manage',
+    module: 'dic',
+    label: { en: 'Import drug master & coverage', ar: 'استيراد ملفات الأدوية والتغطيات' },
+  },
+  {
+    key: 'dic.approve',
+    module: 'dic',
+    label: { en: 'Approve drug master changes', ar: 'اعتماد تغييرات بيانات الأدوية' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

@@ -17,6 +17,7 @@ import { seedPerformanceCatalog } from './performance';
 import { seedCrmCatalogs } from './crm';
 import { seedOnlineCatalogs } from './online';
 import { seedBranchTypes } from './branches';
+import { seedDicCatalogs } from './dic';
 
 const prisma = new PrismaClient();
 
@@ -44,6 +45,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['audit.view', DataScope.ALL_DATA],
     ['setting.view', DataScope.ALL_DATA],
     ['integration.monitor', DataScope.ALL_DATA],
+    ['dic.view', DataScope.ALL_DATA],
+    ['dic.approve', DataScope.ALL_DATA],
   ],
   TEAM_MANAGER: [
     ['user.view', DataScope.DEPARTMENT],
@@ -74,6 +77,9 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.work', DataScope.DEPARTMENT],
     ['crm.upload', DataScope.DEPARTMENT],
     ['online.view', DataScope.DEPARTMENT],
+    ['dic.view', DataScope.DEPARTMENT],
+    ['dic.manage', DataScope.DEPARTMENT],
+    ['dic.approve', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -94,6 +100,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.view', DataScope.MY_TEAM],
     ['crm.work', DataScope.MY_TEAM],
     ['online.view', DataScope.MY_TEAM],
+    ['dic.view', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
@@ -113,6 +120,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.view', DataScope.MY_TEAM],
     ['crm.work', DataScope.MY_TEAM],
     ['online.view', DataScope.MY_TEAM],
+    ['dic.view', DataScope.MY_TEAM],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -126,6 +134,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['crm.view', DataScope.MY_RECORDS],
     ['crm.work', DataScope.MY_RECORDS],
     ['online.view', DataScope.MY_TEAM],
+    ['dic.view', DataScope.MY_RECORDS],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
@@ -142,6 +151,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['online.ingest', DataScope.ALL_DATA],
     ['online.view', DataScope.ALL_DATA],
     ['integration.monitor', DataScope.ALL_DATA],
+    ['dic.manage', DataScope.ALL_DATA],
+    ['dic.view', DataScope.ALL_DATA],
   ],
 };
 
@@ -397,6 +408,15 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'أقصى مسافة توصيل (كم)',
     labelEn: 'Maximum delivery distance (km)',
   },
+  // DIC (blueprint §15, spec H2)
+  {
+    key: 'dic.import.chunk_size',
+    category: 'dic',
+    valueType: 'NUMBER',
+    value: 2000,
+    labelAr: 'حجم دفعة استيراد الأدوية (صفوف)',
+    labelEn: 'Drug import chunk size (rows)',
+  },
 ];
 
 async function seedPermissions() {
@@ -503,6 +523,7 @@ async function main() {
   await seedCrmCatalogs(prisma);
   await seedOnlineCatalogs(prisma);
   await seedBranchTypes(prisma);
+  await seedDicCatalogs(prisma);
   await seedSuperAdmin();
 }
 
