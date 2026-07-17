@@ -161,6 +161,23 @@ export const PERMISSIONS = [
     module: 'breaks',
     label: { en: 'View team live status & sessions', ar: 'عرض الحالة اللحظية وجلسات الفريق' },
   },
+
+  // customer care performance (blueprint §12.1/§12.2)
+  {
+    key: 'performance.view',
+    module: 'performance',
+    label: { en: 'View performance dashboards', ar: 'عرض لوحات الأداء' },
+  },
+  {
+    key: 'performance.manage',
+    module: 'performance',
+    label: { en: 'Manage performance targets', ar: 'إدارة أهداف الأداء' },
+  },
+  {
+    key: 'performance.ingest',
+    module: 'performance',
+    label: { en: 'Ingest performance metrics', ar: 'إدخال مقاييس الأداء' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

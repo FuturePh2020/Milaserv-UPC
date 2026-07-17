@@ -760,3 +760,78 @@ model WorkPeriod {
   @@index([sessionId, endedAt])
   @@index([type, endedAt, startedAt])
 }
+
+// ── Customer Care performance (blueprint §12.1/§12.2, Sprint 7) ─────
+
+enum MetricAggregation {
+  SUM
+  AVG
+}
+
+enum MetricSource {
+  YEASTAR
+  TICKETING
+}
+
+enum PerfScopeType {
+  USER
+  TEAM
+}
+
+enum TargetPeriod {
+  DAILY
+  MONTHLY
+  YEARLY
+}
+
+/// §12.1 KPI catalog as data (ADR-008, spec D2).
+model PerformanceMetricDef {
+  id             String            @id @default(cuid())
+  key            String            @unique
+  nameAr         String
+  nameEn         String
+  /// count | seconds | percent — display formatting hint.
+  unit           String
+  /// How daily rows combine into a period actual (spec D2).
+  aggregation    MetricAggregation
+  source         MetricSource
+  /// false for Missed/Abandoned/AVG Handle/Hold/Wait (spec D6).
+  higherIsBetter Boolean           @default(true)
+  sortOrder      Int               @default(0)
+
+  values  MetricValue[]
+  targets PerformanceTarget[]
+}
+
+/// One KPI value per day per user/team — the ingestion target (spec D1).
+model MetricValue {
+  id         String               @id @default(cuid())
+  metricDate DateTime             @db.Date
+  scopeType  PerfScopeType
+  scopeId    String
+  metricKey  String
+  metric     PerformanceMetricDef @relation(fields: [metricKey], references: [key])
+  value      Decimal              @db.Decimal(14, 2)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@unique([metricDate, scopeType, scopeId, metricKey])
+  @@index([scopeType, scopeId, metricDate])
+}
+
+/// §12.2: targets per employee or team, daily/monthly/yearly.
+model PerformanceTarget {
+  id          String               @id @default(cuid())
+  scopeType   PerfScopeType
+  scopeId     String
+  metricKey   String
+  metric      PerformanceMetricDef @relation(fields: [metricKey], references: [key])
+  period      TargetPeriod
+  targetValue Decimal              @db.Decimal(14, 2)
+  active      Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([scopeType, scopeId, metricKey, period])
+  @@index([scopeType, scopeId])
+}

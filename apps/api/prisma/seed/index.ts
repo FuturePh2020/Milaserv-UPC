@@ -13,6 +13,7 @@ import * as argon2 from 'argon2';
 import { PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@milaserv/contracts';
 import type { PermissionKey, SystemRoleKey } from '@milaserv/contracts';
 import { seedTicketingCatalogs } from './ticketing';
+import { seedPerformanceCatalog } from './performance';
 
 const prisma = new PrismaClient();
 
@@ -63,6 +64,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['kb.assign', DataScope.DEPARTMENT],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.DEPARTMENT],
+    ['performance.view', DataScope.DEPARTMENT],
+    ['performance.manage', DataScope.DEPARTMENT],
   ],
   TEAM_LEADER: [
     ['user.view', DataScope.MY_TEAM],
@@ -79,6 +82,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['kb.view', DataScope.MY_TEAM],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
+    ['performance.view', DataScope.MY_TEAM],
   ],
   SUPERVISOR: [
     ['user.view', DataScope.MY_TEAM],
@@ -94,6 +98,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['kb.view', DataScope.MY_TEAM],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
+    ['performance.view', DataScope.MY_TEAM],
   ],
   AGENT: [
     ['ticket.view', DataScope.MY_RECORDS],
@@ -103,6 +108,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['branch.view', DataScope.MY_RECORDS],
     ['kb.view', DataScope.MY_RECORDS],
     ['break.track', DataScope.MY_RECORDS],
+    ['performance.view', DataScope.MY_RECORDS],
   ],
   READ_ONLY: [
     ['department.view', DataScope.DEPARTMENT],
@@ -114,7 +120,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['audit.view', DataScope.DEPARTMENT],
     ['ticket.view', DataScope.DEPARTMENT],
   ],
-  INTEGRATION_SUPPORT: [],
+  INTEGRATION_SUPPORT: [['performance.ingest', DataScope.ALL_DATA]],
 };
 
 interface DefaultSetting {
@@ -269,6 +275,31 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'إنهاء الجلسة تلقائيًا بعد انقطاع النبضات (ساعات)',
     labelEn: 'Auto-end session after heartbeat silence (hours)',
   },
+  // Customer Care performance (blueprint §12.2, spec D4/D5)
+  {
+    key: 'performance.green_from_pct',
+    category: 'performance',
+    valueType: 'NUMBER',
+    value: 100,
+    labelAr: 'نسبة الإنجاز التي تبدأ عندها الحالة الخضراء (%)',
+    labelEn: 'Achievement % from which state is green',
+  },
+  {
+    key: 'performance.amber_from_pct',
+    category: 'performance',
+    valueType: 'NUMBER',
+    value: 80,
+    labelAr: 'نسبة الإنجاز التي تبدأ عندها الحالة الكهرمانية (%)',
+    labelEn: 'Achievement % from which state is amber',
+  },
+  {
+    key: 'performance.trend_flat_pct',
+    category: 'performance',
+    valueType: 'NUMBER',
+    value: 2,
+    labelAr: 'هامش اعتبار الاتجاه ثابتًا (%)',
+    labelEn: 'Tolerance for flat trend (%)',
+  },
 ];
 
 async function seedPermissions() {
@@ -371,6 +402,7 @@ async function main() {
   await seedRoles();
   await seedSettings();
   await seedTicketingCatalogs(prisma);
+  await seedPerformanceCatalog(prisma);
   await seedSuperAdmin();
 }
 
