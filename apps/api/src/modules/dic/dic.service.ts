@@ -92,12 +92,16 @@ export class DicService implements OnModuleInit {
   }
 
   async catalogs() {
-    const [itemTypes, companies, chunkSize] = await Promise.all([
+    const [itemTypes, companies, chunkSize, dbsEnabled] = await Promise.all([
       this.prisma.drugItemType.findMany({ where: { active: true }, orderBy: { key: 'asc' } }),
       this.prisma.insuranceCompany.findMany({ where: { active: true }, orderBy: { key: 'asc' } }),
       this.settings.resolve('dic.import.chunk_size').then(Number),
+      this.settings
+        .resolve('integrations.dbs.enabled')
+        .then((v) => Boolean(v) && String(v) !== 'false')
+        .catch(() => false),
     ]);
-    return { itemTypes, companies, chunkSize };
+    return { itemTypes, companies, chunkSize, dbsEnabled };
   }
 
   // ── §15.1 search: fields, partial, wildcard *, auto-complete ───────

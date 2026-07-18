@@ -350,7 +350,10 @@ function DrugCardView({
       </div>
 
       <div>
-        <h3 className="mb-1 text-sm font-semibold text-gray-700">{t('dic.availability')}</h3>
+        <div className="mb-1 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">{t('dic.availability')}</h3>
+          <DbsRefreshButton drugId={drug.id} />
+        </div>
         {availability.length === 0 ? (
           <p className="text-sm text-gray-400">{t('dic.noAvailability')}</p>
         ) : (
@@ -366,6 +369,49 @@ function DrugCardView({
 
       {propose && <ProposeDialog drug={drug} onClose={() => setPropose(false)} />}
     </div>
+  );
+}
+
+/** §21 DBS connector (integrations spec J3): on-demand availability. */
+function DbsRefreshButton({ drugId }: { drugId: string }) {
+  const t = useTranslations();
+  const queryClient = useQueryClient();
+  const [polling, setPolling] = useState(false);
+
+  const { data: catalogs } = useQuery({
+    queryKey: ['dic-catalogs'],
+    queryFn: () => api<DicCatalogs>('/dic/catalogs'),
+  });
+
+  useEffect(() => {
+    if (!polling) return;
+    // The answer arrives through the retry queue — re-read for a short while.
+    let ticks = 0;
+    const id = setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: ['dic-drug', drugId] });
+      if (++ticks >= 6) {
+        clearInterval(id);
+        setPolling(false);
+      }
+    }, 3000);
+    return () => clearInterval(id);
+  }, [polling, drugId, queryClient]);
+
+  const refresh = useMutation({
+    mutationFn: () =>
+      api(`/dic/drugs/${drugId}/refresh-availability`, { method: 'POST', body: {} }),
+    onSuccess: () => setPolling(true),
+  });
+
+  if (!catalogs?.dbsEnabled) return null;
+  return (
+    <Button
+      variant="secondary"
+      onClick={() => refresh.mutate()}
+      disabled={refresh.isPending || polling}
+    >
+      {polling ? t('dic.refreshing') : t('dic.refreshAvailability')}
+    </Button>
   );
 }
 

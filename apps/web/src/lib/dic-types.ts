@@ -11,6 +11,8 @@ export interface DicCatalogs {
   companies: NamedRef[];
   /** Configured rows-per-call for the chunked master import (spec H2). */
   chunkSize: number;
+  /** §21 DBS link approved (integrations spec J3). */
+  dbsEnabled: boolean;
 }
 
 export interface DrugSummary {

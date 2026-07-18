@@ -438,6 +438,26 @@
       "SUCCEEDED": "نجحت",
       "FAILED": "تُعاد المحاولة",
       "DEAD": "متوقفة نهائيًا"
+    },
+    "connectorsTitle": "الموصلات (§21)",
+    "connEnabled": "مفعّل",
+    "connConfigured": "مُهيأ",
+    "connNotConfigured": "غير مُهيأ",
+    "noOps": "لا توجد عمليات بعد",
+    "connectors": {
+      "yeastar": "Yeastar P570 (المكالمات)",
+      "ordering": "نظام الطلبات",
+      "ocr": "محرك التعرف الضوئي",
+      "dbs": "DBS (التوافر)",
+      "email": "البريد الإلكتروني (SMTP)",
+      "sms": "بوابة الرسائل SMS",
+      "maps": "خرائط جوجل"
+    },
+    "direction": {
+      "inbound": "استقبال (Webhook)",
+      "outbound": "إرسال عبر الطابور",
+      "both": "استقبال وإرسال",
+      "sync": "متزامن مع مسار بديل"
     }
   },
   "locator": {
@@ -458,6 +478,10 @@
       "NOT_COVERED": "التوصيل غير مغطى",
       "OUT_OF_RANGE": "خارج نطاق التوصيل",
       "CLOSED": "مغلق الآن"
+    },
+    "source": {
+      "maps": "مسافات القيادة (الخرائط)",
+      "straight_line": "مسافات الخط المستقيم"
     }
   },
   "dic": {
@@ -526,7 +550,9 @@
     "covImportHint": "اختر شركة التأمين وارفع ملفًا يحتوي عمود Material. يُعد كل صف مغطى ما لم يشر عمود Covered إلى غير ذلك.",
     "coverageCompany": "شركة التأمين",
     "covApplied": "تم تطبيق {applied} صفًا ورفض {rejected}",
-    "parseError": "تعذّرت قراءة الملف"
+    "parseError": "تعذّرت قراءة الملف",
+    "refreshAvailability": "تحديث التوفر",
+    "refreshing": "جارٍ التحديث…"
   },
   "ocr": {
     "title": "معالجة الوصفات بالتعرف الضوئي",

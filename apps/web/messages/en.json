@@ -438,6 +438,26 @@
       "SUCCEEDED": "Succeeded",
       "FAILED": "Retrying",
       "DEAD": "Dead"
+    },
+    "connectorsTitle": "Connectors (§21)",
+    "connEnabled": "Enabled",
+    "connConfigured": "Configured",
+    "connNotConfigured": "Not configured",
+    "noOps": "No operations yet",
+    "connectors": {
+      "yeastar": "Yeastar P570 (calls)",
+      "ordering": "Ordering System",
+      "ocr": "OCR Engine",
+      "dbs": "DBS (availability)",
+      "email": "Email (SMTP)",
+      "sms": "SMS Gateway",
+      "maps": "Google Maps"
+    },
+    "direction": {
+      "inbound": "Inbound webhook",
+      "outbound": "Outbound queue",
+      "both": "Inbound + outbound",
+      "sync": "Synchronous with fallback"
     }
   },
   "locator": {
@@ -458,6 +478,10 @@
       "NOT_COVERED": "Delivery not covered",
       "OUT_OF_RANGE": "Out of delivery range",
       "CLOSED": "Closed now"
+    },
+    "source": {
+      "maps": "Driving distances (Maps)",
+      "straight_line": "Straight-line distances"
     }
   },
   "dic": {
@@ -526,7 +550,9 @@
     "covImportHint": "Choose a company and upload a file with a Material column. Each row marks the material covered unless a Covered column says otherwise.",
     "coverageCompany": "Insurance company",
     "covApplied": "{applied} rows applied, {rejected} rejected",
-    "parseError": "Could not read the file"
+    "parseError": "Could not read the file",
+    "refreshAvailability": "Refresh availability",
+    "refreshing": "Refreshing…"
   },
   "ocr": {
     "title": "OCR Prescription Processing",

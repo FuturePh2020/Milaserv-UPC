@@ -9,6 +9,8 @@ import { Badge, Button, EmptyState, ErrorState, Input, Spinner } from '@/compone
 
 interface NearestResult {
   at: { lat: number; lng: number };
+  /** §21 Maps connector: 'maps' (driving) or 'straight_line' fallback. */
+  distanceSource: 'maps' | 'straight_line';
   results: {
     id: string;
     code: string;
@@ -104,6 +106,11 @@ export default function LocatorPage() {
       {data && data.results.length === 0 && <EmptyState message={t('locator.noBranches')} />}
       {data && data.results.length > 0 && (
         <div className="space-y-3">
+          <div className="text-xs text-gray-500">
+            <Badge tone={data.distanceSource === 'maps' ? 'green' : 'gray'}>
+              {t(`locator.source.${data.distanceSource}`)}
+            </Badge>
+          </div>
           {data.results.map((b, i) => (
             <div key={b.id} className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">

@@ -19,6 +19,73 @@ const STATUS_TONES: Record<IntegrationOpStatus, 'blue' | 'green' | 'amber' | 're
   DEAD: 'red',
 };
 
+interface ConnectorCard {
+  key: string;
+  direction: string;
+  configured: boolean;
+  enabled: boolean;
+  counts: Partial<Record<IntegrationOpStatus, number>>;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastError: string | null;
+}
+
+/** §21 connector cards (integrations spec §3). */
+function ConnectorsSection() {
+  const t = useTranslations();
+  const { data } = useQuery({
+    queryKey: ['integration-connectors'],
+    queryFn: () => api<{ connectors: ConnectorCard[] }>('/integrations/connectors'),
+    refetchInterval: 15000,
+  });
+  if (!data) return null;
+  return (
+    <div className="mb-6">
+      <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        {t('integrations.connectorsTitle')}
+      </h2>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {data.connectors.map((c) => (
+          <div key={c.key} className="rounded-lg border border-gray-200 bg-white p-4">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="font-semibold text-gray-800">
+                {t(`integrations.connectors.${c.key}`)}
+              </span>
+              <Badge tone={c.enabled ? 'green' : c.configured ? 'amber' : 'gray'}>
+                {c.enabled
+                  ? t('integrations.connEnabled')
+                  : c.configured
+                    ? t('integrations.connConfigured')
+                    : t('integrations.connNotConfigured')}
+              </Badge>
+            </div>
+            <div className="mb-2 text-xs text-gray-400">
+              {t(`integrations.direction.${c.direction}`)}
+            </div>
+            <div className="flex flex-wrap gap-1.5 text-xs">
+              {(['PENDING', 'SUCCEEDED', 'FAILED', 'DEAD'] as const)
+                .filter((s) => (c.counts[s] ?? 0) > 0)
+                .map((s) => (
+                  <Badge key={s} tone={STATUS_TONES[s]}>
+                    {t(`integrations.states.${s}`)}: {c.counts[s]}
+                  </Badge>
+                ))}
+              {Object.values(c.counts).every((n) => !n) && (
+                <span className="text-gray-400">{t('integrations.noOps')}</span>
+              )}
+            </div>
+            {c.lastError && (
+              <p className="mt-2 truncate text-xs text-red-600" title={c.lastError}>
+                {c.lastError}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** §13 Integration Monitor. */
 export default function IntegrationsMonitorPage() {
   const t = useTranslations();
@@ -56,6 +123,8 @@ export default function IntegrationsMonitorPage() {
     <div className="max-w-5xl">
       <h1 className="mb-4 text-2xl font-bold text-gray-900">{t('integrations.title')}</h1>
       {error && <ErrorState message={error} />}
+
+      <ConnectorsSection />
 
       {!monitor ? (
         <Spinner />
