@@ -11,6 +11,13 @@ import type { AuthUser } from '../auth/current-user.decorator';
 
 const HTTP_TIMEOUT_MS = 10_000;
 
+/** Applies a successful operation's response (OCR spec I1). Runs inside the
+ *  attempt: a throwing handler fails the operation so it retries normally. */
+export type IntegrationSuccessHandler = (
+  op: IntegrationOperation,
+  response: unknown,
+) => Promise<void>;
+
 /**
  * Integration Engine foundation (blueprint §8, §21.1) delivering the §13
  * resilience note: callers enqueue and never block on the external system;
@@ -19,6 +26,12 @@ const HTTP_TIMEOUT_MS = 10_000;
  */
 @Injectable()
 export class IntegrationsService {
+  private readonly handlers = new Map<string, IntegrationSuccessHandler>();
+
+  /** Response-consuming integrations register here (one per key). */
+  registerHandler(integrationKey: string, handler: IntegrationSuccessHandler) {
+    this.handlers.set(integrationKey, handler);
+  }
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -73,7 +86,9 @@ export class IntegrationsService {
     const attempts = op.attempts + 1;
 
     try {
-      await this.execute(op);
+      const response = await this.execute(op);
+      const handler = this.handlers.get(op.integrationKey);
+      if (handler) await handler(op, response);
       await this.prisma.integrationOperation.update({
         where: { id: op.id },
         data: { status: 'SUCCEEDED', attempts, succeededAt: now, lastError: null },
@@ -116,8 +131,9 @@ export class IntegrationsService {
     }
   }
 
-  /** §21.1: Timeout + Error Mapping. The connector fills the endpoint (ADR-009). */
-  private async execute(op: IntegrationOperation): Promise<void> {
+  /** §21.1: Timeout + Error Mapping. The connector fills the endpoint (ADR-009).
+   *  Returns the parsed response body for registered success handlers. */
+  private async execute(op: IntegrationOperation): Promise<unknown> {
     const endpoint = String(
       await this.settings.resolve(`integrations.${op.integrationKey}.endpoint`).catch(() => ''),
     );
@@ -133,6 +149,12 @@ export class IntegrationsService {
         signal: controller.signal,
       });
       if (!res.ok) throw new Error(`Integration endpoint returned HTTP ${res.status}`);
+      const text = await res.text();
+      try {
+        return text ? (JSON.parse(text) as unknown) : null;
+      } catch {
+        return text;
+      }
     } finally {
       clearTimeout(timer);
     }

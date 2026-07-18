@@ -24,6 +24,7 @@ import { CrmModule } from './modules/crm/crm.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { OnlineModule } from './modules/online/online.module';
 import { DicModule } from './modules/dic/dic.module';
+import { OcrModule } from './modules/ocr/ocr.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { DicModule } from './modules/dic/dic.module';
     IntegrationsModule,
     OnlineModule,
     DicModule,
+    OcrModule,
   ],
   controllers: [HealthController],
 })

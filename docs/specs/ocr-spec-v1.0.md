@@ -9,17 +9,17 @@ Open points are flagged as assumptions I1–I8.
 
 ## 1. Blueprint requirements (verbatim mapping)
 
-| §17 item                                              | Delivered as                                                                    |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------- |
-| رفع صورة أو PDF للوصفة                                | `Prescription` + file via the existing Attachments engine (image/PDF)           |
-| استخراج أسماء الأدوية                                 | `ocr.extract` operation through the Integration Engine (I1)                     |
-| مطابقة مع Drug Master                                 | Deterministic matcher against the §15 drug master (I3)                          |
-| إظهار Confidence Score                                | Per line: engine confidence + match score, both surfaced in the UI              |
-| مراجعة وتصحيح بشري                                    | REVIEW stage — correct match, add/reject lines, all behind `ocr.review`         |
-| فحص التوافر                                           | Matched drug's per-city availability (§15.2 H6 snapshot) shown per line         |
-| اقتراح البدائل                                        | Matched drug's `DrugAlternative` links shown per line                            |
-| ربط النتيجة بطلب أو Ticket                            | Confirm step links an existing ticket number and/or order number (I6)           |
-| لا يعتمد النظام نتيجة OCR الحساسة تلقائيًا دون مراجعة | No auto-approval path exists: only `ocr.review` holders can confirm (I4)        |
+| §17 item                                              | Delivered as                                                             |
+| ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| رفع صورة أو PDF للوصفة                                | `Prescription` + file via the existing Attachments engine (image/PDF)    |
+| استخراج أسماء الأدوية                                 | `ocr.extract` operation through the Integration Engine (I1)              |
+| مطابقة مع Drug Master                                 | Deterministic matcher against the §15 drug master (I3)                   |
+| إظهار Confidence Score                                | Per line: engine confidence + match score, both surfaced in the UI       |
+| مراجعة وتصحيح بشري                                    | REVIEW stage — correct match, add/reject lines, all behind `ocr.review`  |
+| فحص التوافر                                           | Matched drug's per-city availability (§15.2 H6 snapshot) shown per line  |
+| اقتراح البدائل                                        | Matched drug's `DrugAlternative` links shown per line                    |
+| ربط النتيجة بطلب أو Ticket                            | Confirm step links an existing ticket number and/or order number (I6)    |
+| لا يعتمد النظام نتيجة OCR الحساسة تلقائيًا دون مراجعة | No auto-approval path exists: only `ocr.review` holders can confirm (I4) |
 
 ## 2. Design decisions
 
@@ -124,24 +124,24 @@ can be measured later (§12 source for an OCR accuracy metric).
 
 ## 4. API surface
 
-| Route                                   | Permission | Purpose                                             |
-| --------------------------------------- | ---------- | --------------------------------------------------- |
-| `POST /ocr/prescriptions`               | ocr.upload | Create numbered shell                               |
-| `POST /ocr/prescriptions/:id/submit`    | ocr.upload | Validate attachment, enqueue `ocr.extract`          |
-| `GET /ocr/prescriptions`                | ocr.view   | List (status filter; MY_RECORDS scope = own)        |
-| `GET /ocr/prescriptions/:id`            | ocr.view   | Detail: lines + matched drug + availability + alts  |
-| `POST /ocr/prescriptions/:id/lines`     | ocr.review | Manual line entry (moves EXTRACTING/UPLOADED→REVIEW) |
-| `PATCH /ocr/lines/:lineId`              | ocr.review | Correct match / reject line                         |
-| `POST /ocr/prescriptions/:id/confirm`   | ocr.review | Confirm (optional ticketNo/orderNo link)            |
-| `POST /ocr/prescriptions/:id/reject`    | ocr.review | Reject with note                                    |
+| Route                                 | Permission | Purpose                                              |
+| ------------------------------------- | ---------- | ---------------------------------------------------- |
+| `POST /ocr/prescriptions`             | ocr.upload | Create numbered shell                                |
+| `POST /ocr/prescriptions/:id/submit`  | ocr.upload | Validate attachment, enqueue `ocr.extract`           |
+| `GET /ocr/prescriptions`              | ocr.view   | List (status filter; MY_RECORDS scope = own)         |
+| `GET /ocr/prescriptions/:id`          | ocr.view   | Detail: lines + matched drug + availability + alts   |
+| `POST /ocr/prescriptions/:id/lines`   | ocr.review | Manual line entry (moves EXTRACTING/UPLOADED→REVIEW) |
+| `POST /ocr/lines/:lineId/decide`      | ocr.review | Confirm / correct / reject one line                  |
+| `POST /ocr/prescriptions/:id/confirm` | ocr.review | Confirm (optional ticketNo/orderNo link)             |
+| `POST /ocr/prescriptions/:id/reject`  | ocr.review | Reject with note                                     |
 
 ## 5. Settings (ADR-008)
 
-| Key                         | Default             | Meaning                                  |
-| --------------------------- | ------------------- | ---------------------------------------- |
-| `integrations.ocr.endpoint` | `''`                | External OCR engine URL (§21)            |
-| `ocr.number.format`         | `PRX-{YYYY}-{SEQ:6}` | Prescription numbering                   |
-| `ocr.review.min_confidence` | `0.6`               | Below this a line is flagged low-confidence |
+| Key                         | Default              | Meaning                                     |
+| --------------------------- | -------------------- | ------------------------------------------- |
+| `integrations.ocr.endpoint` | `''`                 | External OCR engine URL (§21)               |
+| `ocr.number.format`         | `PRX-{YYYY}-{SEQ:6}` | Prescription numbering                      |
+| `ocr.review.min_confidence` | `0.6`                | Below this a line is flagged low-confidence |
 
 ## 6. Out of scope (this phase)
 
