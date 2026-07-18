@@ -487,7 +487,7 @@ describe('§21 Connectors (e2e)', () => {
         (c) => [c.key, c],
       ),
     );
-    expect(byKey.size).toBe(7);
+    expect(byKey.size).toBe(8); // 7 physical connectors + the §2.1 AI gateway
     expect(byKey.get('yeastar')!.configured).toBe(true);
     expect(byKey.get('ordering')!.configured).toBe(true);
     expect(byKey.get('dbs')!.enabled).toBe(true);

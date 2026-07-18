@@ -6,7 +6,7 @@ import { SettingsService } from '../settings/settings.service';
 import type { YeastarEventsDto } from './connectors.dto';
 
 /** §21 connector catalog shown on the admin card (integrations spec §3). */
-const CONNECTOR_KEYS = ['yeastar', 'ordering', 'ocr', 'dbs', 'email', 'sms', 'maps'] as const;
+const CONNECTOR_KEYS = ['yeastar', 'ordering', 'ocr', 'dbs', 'email', 'sms', 'maps', 'ai'] as const;
 
 interface MetricBucket {
   /** date ISO (yyyy-mm-dd) → metricKey → increment */
@@ -200,6 +200,8 @@ export class ConnectorsService {
       smsEndpoint,
       smsEnabled,
       mapsEndpoint,
+      aiEndpoint,
+      aiApproved,
     ] = await Promise.all([
       get('integrations.yeastar.inbound_token'),
       get('integrations.ordering.inbound_token'),
@@ -212,6 +214,8 @@ export class ConnectorsService {
       get('integrations.sms.endpoint'),
       get('integrations.sms.enabled'),
       get('integrations.maps.endpoint'),
+      get('integrations.ai.endpoint'),
+      get('ai.policy.approved'),
     ]);
     const set = (v: unknown) => Boolean(v) && String(v) !== '' && String(v) !== 'false';
     return {
@@ -226,6 +230,12 @@ export class ConnectorsService {
       email: { direction: 'outbound', configured: set(emailEndpoint), enabled: set(emailEnabled) },
       sms: { direction: 'outbound', configured: set(smsEndpoint), enabled: set(smsEnabled) },
       maps: { direction: 'sync', configured: set(mapsEndpoint), enabled: set(mapsEndpoint) },
+      // §2.1: enabled only when the data-sharing policy is approved too.
+      ai: {
+        direction: 'sync',
+        configured: set(aiEndpoint),
+        enabled: set(aiEndpoint) && set(aiApproved),
+      },
     };
   }
 }
