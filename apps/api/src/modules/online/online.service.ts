@@ -3,7 +3,6 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { skipTake, toPage } from '../../core/pagination';
 import { AuditService } from '../audit/audit.service';
-import type { AuthUser } from '../auth/current-user.decorator';
 import type { IngestOrdersDto, ListOnlineOrdersQueryDto, OnlineStatsQueryDto } from './online.dto';
 
 const ONLINE_TYPE_KEYS = ['ONLINE_ISSUE', 'ONLINE_REQUEST'] as const;
@@ -33,7 +32,12 @@ export class OnlineService {
 
   // ── Order ingest (§13 Daily Orders — integration readiness, F4) ────
 
-  async ingest(actor: AuthUser, dto: IngestOrdersDto, meta: { ip?: string }) {
+  /** Callable by users (online.ingest) and by the §21 ordering connector. */
+  async ingest(
+    actor: { userId: string | null; email: string },
+    dto: IngestOrdersDto,
+    meta: { ip?: string },
+  ) {
     const sources = new Set(
       (await this.prisma.orderSource.findMany({ where: { active: true } })).map((s) => s.key),
     );

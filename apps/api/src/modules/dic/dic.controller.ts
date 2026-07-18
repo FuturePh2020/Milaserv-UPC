@@ -39,6 +39,14 @@ export class DicController {
     return this.dic.get(id);
   }
 
+  /** §21 DBS: live availability refresh (integrations spec J3). */
+  @RequirePermission('dic.view')
+  @Post('drugs/:id/refresh-availability')
+  @HttpCode(200)
+  refreshAvailability(@CurrentUser() user: AuthUser, @Param('id') id: string, @Req() req: Request) {
+    return this.dic.refreshAvailability(user, id, { ip: req.ip });
+  }
+
   /** §15 master import — one chunk per call (spec H2). */
   @RequirePermission('dic.manage')
   @Post('import')

@@ -182,18 +182,33 @@ export class BranchesService {
     });
 
     const now = new Date();
-    const ranked = candidates
+    const top = candidates
       .map((b) => ({ branch: b, distanceKm: haversineKm(q.lat, q.lng, b.latitude!, b.longitude!) }))
       .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, maxResults)
+      .slice(0, maxResults);
+
+    // §21 Google Maps connector (integrations spec J6): driving distances
+    // when configured; straight-line math is always the fallback.
+    const driving = await this.drivingDistances(q.lat, q.lng, top);
+    const distanceSource = driving ? 'maps' : 'straight_line';
+
+    const ranked = top
       .map(({ branch, distanceKm }) => {
+        const road = driving?.get(branch.id);
+        return { branch, distanceKm: road?.km ?? distanceKm, driveMinutes: road?.minutes ?? null };
+      })
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .map(({ branch, distanceKm, driveMinutes }) => {
         const open = isOpen(branch.workingHours, now);
         let deliveryEtaMinutes: number | null = null;
         let deliveryUnavailableReason: string | null = null;
         if (branch.deliveryCovered !== true) deliveryUnavailableReason = 'NOT_COVERED';
         else if (distanceKm > maxKm) deliveryUnavailableReason = 'OUT_OF_RANGE';
         else if (!open) deliveryUnavailableReason = 'CLOSED';
-        else deliveryEtaMinutes = Math.round(baseMinutes + distanceKm * minutesPerKm);
+        else
+          deliveryEtaMinutes = Math.round(
+            baseMinutes + (driveMinutes ?? distanceKm * minutesPerKm),
+          );
         return {
           id: branch.id,
           code: branch.code,
@@ -216,7 +231,53 @@ export class BranchesService {
         };
       });
 
-    return { at: { lat: q.lat, lng: q.lng }, results: ranked };
+    return { at: { lat: q.lat, lng: q.lng }, distanceSource, results: ranked };
+  }
+
+  /** J6: POST origin+destinations to the maps bridge (3s timeout). Returns
+   *  null on any failure — the caller falls back to straight-line math. */
+  private async drivingDistances(
+    lat: number,
+    lng: number,
+    top: { branch: { id: string; latitude: number | null; longitude: number | null } }[],
+  ): Promise<Map<string, { km: number; minutes: number }> | null> {
+    const endpoint = String(
+      await this.settings.resolve('integrations.maps.endpoint').catch(() => ''),
+    );
+    if (!endpoint || top.length === 0) return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          origin: { lat, lng },
+          destinations: top.map(({ branch }) => ({
+            id: branch.id,
+            lat: branch.latitude,
+            lng: branch.longitude,
+          })),
+        }),
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`Maps endpoint returned HTTP ${res.status}`);
+      const body = (await res.json()) as {
+        distances?: { id: string; km: number; minutes: number }[];
+      };
+      if (!Array.isArray(body.distances) || body.distances.length === 0) return null;
+      return new Map(
+        body.distances
+          .filter((d) => Number.isFinite(d.km) && Number.isFinite(d.minutes))
+          .map((d) => [d.id, { km: d.km, minutes: d.minutes }]),
+      );
+    } catch {
+      // Locator must never break because Maps is down (J6) — fall back.
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 

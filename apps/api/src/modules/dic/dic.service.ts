@@ -4,12 +4,15 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import type { OnModuleInit } from '@nestjs/common';
+import type { IntegrationOperation } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { SettingsService } from '../settings/settings.service';
+import { IntegrationsService } from '../integrations/integrations.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import type { CreateChangeRequestDto, DecideChangeRequestDto, SearchQueryDto } from './dic.dto';
 
@@ -21,14 +24,72 @@ const EDITABLE_FIELDS = ['activeIngredient', 'usage', 'offers', 'note'] as const
  * spec docs/specs/dic-spec-v1.0.md).
  */
 @Injectable()
-export class DicService {
+export class DicService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly timeline: TimelineService,
     private readonly notifications: NotificationsService,
     private readonly settings: SettingsService,
+    private readonly integrations: IntegrationsService,
   ) {}
+
+  onModuleInit() {
+    // §21 DBS connector (integrations spec J3): live availability answers.
+    this.integrations.registerHandler('dbs', (op, response) =>
+      this.applyAvailability(op, response),
+    );
+  }
+
+  // ── §21 DBS: on-demand availability refresh (spec J3) ──────────────
+
+  async refreshAvailability(actor: AuthUser, drugId: string, meta: { ip?: string }) {
+    const drug = await this.prisma.drug.findUnique({ where: { id: drugId } });
+    if (!drug) throw new NotFoundException('Drug not found');
+    const enabled = await this.settings.resolve('integrations.dbs.enabled').catch(() => false);
+    if (!enabled || String(enabled) === 'false') {
+      throw new UnprocessableEntityException('DBS link is not enabled');
+    }
+    const op = await this.integrations.enqueue({
+      integrationKey: 'dbs',
+      operation: 'availability_check',
+      payload: { drugId, materialNo: drug.materialNo },
+    });
+    await this.audit.record({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      action: 'dic.availability_refresh',
+      entityType: 'drug',
+      entityId: drugId,
+      after: { operationId: op.id },
+      ...meta,
+    });
+    return { operationId: op.id, status: op.status };
+  }
+
+  private async applyAvailability(op: IntegrationOperation, response: unknown) {
+    const payload = op.payload as { drugId?: string };
+    if (!payload?.drugId) return;
+    const body = response as { availability?: Record<string, unknown> } | null;
+    if (!body || typeof body.availability !== 'object' || body.availability === null) {
+      throw new Error('DBS response missing availability{}');
+    }
+    const availability: Record<string, number> = {};
+    for (const [city, qty] of Object.entries(body.availability)) {
+      const n = Number(qty);
+      if (Number.isFinite(n)) availability[city] = n;
+    }
+    await this.prisma.drug.update({
+      where: { id: payload.drugId },
+      data: { availability },
+    });
+    await this.timeline.record({
+      entityType: 'drug',
+      entityId: payload.drugId,
+      eventType: 'availability_refreshed',
+      payload: { operationId: op.id, cities: Object.keys(availability).length },
+    });
+  }
 
   async catalogs() {
     const [itemTypes, companies, chunkSize] = await Promise.all([

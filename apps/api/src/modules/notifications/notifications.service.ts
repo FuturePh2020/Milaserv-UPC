@@ -6,6 +6,7 @@ import type { PaginationQuery } from '../../core/pagination';
 import { skipTake, toPage } from '../../core/pagination';
 import type { NotificationChannel, NotificationMessage } from './notification-channel';
 import { InAppChannel, unreadCacheKey } from './in-app.channel';
+import { EmailChannel } from './email.channel';
 
 const UNREAD_CACHE_TTL_SECONDS = 30;
 
@@ -17,10 +18,11 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     @Inject(REDIS) private readonly redis: Redis,
     inApp: InAppChannel,
+    email: EmailChannel,
   ) {
-    // Email/SMS channels join this list in later phases (§8), gated by the
-    // notifications.*_enabled settings.
-    this.channels = [inApp];
+    // §21 Email connector joined in Phase 11 (integrations spec J4); the
+    // channel itself checks notifications.email_enabled per delivery.
+    this.channels = [inApp, email];
   }
 
   /** Fan a message out to all enabled channels. Failures in one channel

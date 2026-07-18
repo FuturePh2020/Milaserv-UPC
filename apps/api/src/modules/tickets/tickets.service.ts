@@ -372,6 +372,33 @@ export class TicketsService {
         payload: { entityType: 'ticket', entityId: ticket.id },
       });
     }
+
+    // §21 Email connector (integrations spec J4): «إرسال لمشرف الفرع» —
+    // the supervisor may not be a platform user, so mail them directly.
+    const supervisorEmail = (branchSupervisorSnapshot as { email?: string } | undefined)?.email;
+    if (supervisorEmail) {
+      const emailEndpoint = String(
+        await this.settings.resolve('integrations.email.endpoint').catch(() => ''),
+      );
+      if (emailEndpoint) {
+        await this.integrations.enqueue({
+          integrationKey: 'email',
+          operation: 'send',
+          payload: {
+            to: supervisorEmail,
+            titleAr: `تذكرة فرع جديدة ${internalNumber}: ${dto.subject}`,
+            titleEn: `New branch ticket ${internalNumber}: ${dto.subject}`,
+            type: 'ticket.branch_supervisor',
+          },
+        });
+      }
+    }
+
+    // §21 SMS connector (integrations spec J5): complaint registered.
+    await this.sendLifecycleSms('created', ticket.customerPhone, {
+      number: ticket.customerComplaintNumber,
+      name: ticket.customerName,
+    });
     return ticket;
   }
 
@@ -900,12 +927,24 @@ export class TicketsService {
       }
     }
 
+    // §21 SMS connector (integrations spec J5): complaint resolved.
+    await this.sendLifecycleSms('resolved', ticket.customerPhone, {
+      number: ticket.customerComplaintNumber,
+      name: ticket.customerName,
+    });
+
     return this.transition(actor, scope, ticket, 'COMPLETED', meta);
   }
 
   async close(actor: AuthUser, scope: RequestScope, id: string, meta: Meta) {
     const ticket = await this.loadInScope(scope, id);
-    return this.transition(actor, scope, ticket, 'CLOSED', meta);
+    const closed = await this.transition(actor, scope, ticket, 'CLOSED', meta);
+    // §21 SMS connector (integrations spec J5): CSAT survey after closure.
+    await this.sendLifecycleSms('csat', ticket.customerPhone, {
+      number: ticket.customerComplaintNumber,
+      name: ticket.customerName,
+    });
+    return closed;
   }
 
   async reopen(actor: AuthUser, scope: RequestScope, id: string, dto: ReopenTicketDto, meta: Meta) {
@@ -946,6 +985,26 @@ export class TicketsService {
   }
 
   // ── Helpers ────────────────────────────────────────────────────────
+
+  /** §21 SMS (integrations spec J5): templated lifecycle message through
+   *  the retry queue. Silently a no-op when disabled or no phone. */
+  private async sendLifecycleSms(
+    stage: 'created' | 'resolved' | 'csat',
+    phone: string | null,
+    vars: { number: string; name: string | null },
+  ) {
+    if (!phone) return;
+    const enabled = await this.settings.resolve('integrations.sms.enabled').catch(() => false);
+    if (!enabled || String(enabled) === 'false') return;
+    const template = String(await this.settings.resolve(`sms.template.${stage}`).catch(() => ''));
+    if (!template) return;
+    const text = template.replaceAll('{number}', vars.number).replaceAll('{name}', vars.name ?? '');
+    await this.integrations.enqueue({
+      integrationKey: 'sms',
+      operation: 'send',
+      payload: { to: phone, text, stage },
+    });
+  }
 
   private async notifyTeamLeads(
     teamIds: string[],
