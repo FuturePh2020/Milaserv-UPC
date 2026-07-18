@@ -534,6 +534,23 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'نص رسالة حل الشكوى',
     labelEn: 'SMS template: complaint resolved',
   },
+  // AI readiness (blueprint §2.1, ai-readiness spec K2)
+  {
+    key: 'ai.policy.approved',
+    category: 'ai',
+    valueType: 'BOOLEAN',
+    value: false,
+    labelAr: 'اعتماد سياسة مشاركة البيانات مع الذكاء الاصطناعي',
+    labelEn: 'AI data-sharing policy approved',
+  },
+  {
+    key: 'integrations.ai.endpoint',
+    category: 'integrations',
+    valueType: 'STRING',
+    value: '',
+    labelAr: 'رابط جسر الذكاء الاصطناعي',
+    labelEn: 'AI bridge endpoint',
+  },
   {
     key: 'sms.template.csat',
     category: 'sms',
