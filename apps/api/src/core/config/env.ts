@@ -26,6 +26,29 @@ export const envSchema = z.object({
 
   SEED_ADMIN_EMAIL: z.string().email().optional(),
   SEED_ADMIN_PASSWORD: z.string().min(10).optional(),
+
+  // CR-001 Prescription Intelligence Engine (Sprint OCR-01) — infra-level
+  // config only; endpoint URLs and business tunables live in Settings.
+  PRESCRIPTION_STORAGE_DRIVER: z.enum(['local', 'minio']).default('local'),
+  PRESCRIPTION_STORAGE_DIR: z.string().default('./storage/prescriptions'),
+  MINIO_ENDPOINT: z.string().optional(),
+  MINIO_PORT: z.coerce.number().int().positive().optional(),
+  MINIO_ACCESS_KEY: z.string().optional(),
+  MINIO_SECRET_KEY: z.string().optional(),
+  MINIO_BUCKET_PRESCRIPTIONS: z.string().default('prescriptions'),
+  // z.coerce.boolean() would treat the string "false" as truthy — use an
+  // explicit enum+transform instead.
+  MINIO_USE_SSL: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  /// Same-shaped toggle as *_SWEEP_INTERVAL_SECONDS: full-regression runs set
+  /// this false so 17 unrelated suites don't each pay for a live BullMQ
+  /// worker; the prescriptions e2e suite runs with it enabled.
+  PRESCRIPTION_OCR_WORKER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

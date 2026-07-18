@@ -26,5 +26,13 @@ coverage/
 # prisma
 apps/api/prisma/*.db
 
-# attachments (local dev storage)
-storage/
+# attachments (local dev storage) — anchored paths so this doesn't also
+# match source directories like apps/api/src/**/storage/
+/storage/
+apps/api/storage/
+
+# Python (services/ocr-service)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

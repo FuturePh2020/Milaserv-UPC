@@ -34,6 +34,39 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
 
+  # CR-001 Prescription Intelligence Engine (Sprint OCR-01) —
+  # docs/change-requests/CR-001-prescription-intelligence-engine.md §1/§9.
+  # S3-compatible object storage for prescription files; the api container
+  # talks to it as PRESCRIPTION_STORAGE_DRIVER=minio.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    profiles: ['app']
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # First-party OCR pipeline microservice — never receives DB credentials,
+  # never leaves the private compose network (design spec §1/§2).
+  ocr-service:
+    build:
+      context: services/ocr-service
+    restart: unless-stopped
+    profiles: ['app']
+    ports:
+      - '8100:8100'
+
   api:
     build:
       context: .
@@ -45,6 +78,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      ocr-service:
+        condition: service_started
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       API_PORT: 4000
@@ -62,6 +99,13 @@ services:
       LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      PRESCRIPTION_STORAGE_DRIVER: minio
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET_PRESCRIPTIONS: ${MINIO_BUCKET_PRESCRIPTIONS:-prescriptions}
+      MINIO_USE_SSL: 'false'
     ports:
       - '4000:4000'
 
@@ -82,3 +126,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  minio_data:
