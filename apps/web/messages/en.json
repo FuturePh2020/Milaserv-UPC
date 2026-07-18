@@ -451,7 +451,8 @@
       "dbs": "DBS (availability)",
       "email": "Email (SMTP)",
       "sms": "SMS Gateway",
-      "maps": "Google Maps"
+      "maps": "Google Maps",
+      "ai": "AI Gateway (policy-gated)"
     },
     "direction": {
       "inbound": "Inbound webhook",
