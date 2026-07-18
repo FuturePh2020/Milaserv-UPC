@@ -23,7 +23,8 @@
     "online": "Online Operation",
     "integrations": "Integration Monitor",
     "locator": "Branch Locator",
-    "dic": "Drug Information Center"
+    "dic": "Drug Information Center",
+    "ocr": "Prescriptions (OCR)"
   },
   "auth": {
     "signIn": "Sign in",
@@ -498,7 +499,10 @@
     "proposeTitle": "Propose master-data change",
     "proposeHint": "Only the pharmacist-editable fields can change here; edits apply after approval.",
     "proposed": "Change request submitted for approval.",
-    "tabs": { "search": "Search", "approvals": "Approvals" },
+    "tabs": {
+      "search": "Search",
+      "approvals": "Approvals"
+    },
     "approvals": {
       "empty": "No pending change requests",
       "requested": "Requested changes",
@@ -523,5 +527,50 @@
     "coverageCompany": "Insurance company",
     "covApplied": "{applied} rows applied, {rejected} rejected",
     "parseError": "Could not read the file"
+  },
+  "ocr": {
+    "title": "OCR Prescription Processing",
+    "newBtn": "New prescription",
+    "newTitle": "Upload a prescription",
+    "newHint": "Attach the prescription image or PDF. Extraction runs through the OCR engine; a pharmacist reviews every line before anything is approved.",
+    "fileRequired": "Choose the prescription file first",
+    "submitBtn": "Upload & extract",
+    "allStatuses": "All statuses",
+    "empty": "No prescriptions yet",
+    "pickPrescription": "Pick a prescription to review it",
+    "lineCount": "{count} lines",
+    "extracting": "Extraction in progress… results appear here as soon as the engine answers.",
+    "noLines": "No lines yet — add them manually below",
+    "engineConf": "OCR",
+    "matchScore": "Match",
+    "unmatched": "No drug-master match — correct this line or reject it",
+    "alternatives": "Alternatives",
+    "lineConfirm": "Confirm",
+    "lineCorrect": "Correct…",
+    "lineReject": "Reject",
+    "addLinePlaceholder": "Add a drug line manually…",
+    "addLineBtn": "Add line",
+    "correctTitle": "Pick the correct drug",
+    "confirmBtn": "Confirm prescription",
+    "confirmTitle": "Confirm prescription",
+    "confirmHint": "Optionally link an existing ticket or order number — nothing is created automatically.",
+    "ticketNo": "Ticket number",
+    "orderNo": "Order number",
+    "rejectBtn": "Reject",
+    "rejectTitle": "Reject prescription",
+    "rejectNote": "Reason",
+    "status": {
+      "UPLOADED": "Uploaded",
+      "EXTRACTING": "Extracting",
+      "REVIEW": "In review",
+      "CONFIRMED": "Confirmed",
+      "REJECTED": "Rejected"
+    },
+    "lineStatus": {
+      "SUGGESTED": "Suggested",
+      "CONFIRMED": "Confirmed",
+      "CORRECTED": "Corrected",
+      "REJECTED": "Rejected"
+    }
   }
 }

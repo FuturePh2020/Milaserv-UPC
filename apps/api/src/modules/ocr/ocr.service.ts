@@ -12,6 +12,7 @@ import { TimelineService } from '../timeline/timeline.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NumberingService } from '../numbering/numbering.service';
 import { IntegrationsService } from '../integrations/integrations.service';
+import { SettingsService } from '../settings/settings.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import type { RequestScope } from '../permissions/scope';
 import { OcrMatchService } from './ocr-match.service';
@@ -40,12 +41,19 @@ export class OcrService implements OnModuleInit {
     private readonly notifications: NotificationsService,
     private readonly numbering: NumberingService,
     private readonly integrations: IntegrationsService,
+    private readonly settings: SettingsService,
     private readonly matcher: OcrMatchService,
   ) {}
 
   onModuleInit() {
     // I1: apply engine results when an ocr.extract operation succeeds.
     this.integrations.registerHandler('ocr', (op, response) => this.applyResults(op, response));
+  }
+
+  async config() {
+    return {
+      minConfidence: Number(await this.settings.resolve('ocr.review.min_confidence')),
+    };
   }
 
   // ── upload flow (spec I2) ──────────────────────────────────────────

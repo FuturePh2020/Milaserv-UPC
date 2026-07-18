@@ -19,6 +19,12 @@ import { OcrService } from './ocr.service';
 export class OcrController {
   constructor(private readonly ocr: OcrService) {}
 
+  @RequirePermission('ocr.view')
+  @Get('config')
+  config() {
+    return this.ocr.config();
+  }
+
   /** §17 upload flow: create shell → attach file → submit (spec I2). */
   @RequirePermission('ocr.upload')
   @Post('prescriptions')
