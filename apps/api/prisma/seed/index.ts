@@ -585,6 +585,17 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'رابط خدمة التعرف الضوئي على الوصفات (Python)',
     labelEn: 'Prescription OCR service endpoint (Python)',
   },
+  {
+    // Naming note: design spec §8.1 names the full 5-threshold engine's
+    // key `ocr.image.quality_minimum` — that engine ships in a later
+    // sprint (OCR-07) and may consolidate this key under that scheme.
+    key: 'prescriptions.ocr.quality_minimum',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 0.4,
+    labelAr: 'الحد الأدنى لجودة صورة الوصفة قبل رفضها لإعادة الرفع',
+    labelEn: 'Minimum prescription image quality before requiring re-upload',
+  },
 ];
 
 async function seedPermissions() {

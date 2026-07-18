@@ -26,6 +26,9 @@ coverage/
 # prisma
 apps/api/prisma/*.db
 
+# local redis dumps (manual dev redis-server runs)
+*.rdb
+
 # attachments (local dev storage) — anchored paths so this doesn't also
 # match source directories like apps/api/src/**/storage/
 /storage/

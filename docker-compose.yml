@@ -106,6 +106,10 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET_PRESCRIPTIONS: ${MINIO_BUCKET_PRESCRIPTIONS:-prescriptions}
       MINIO_USE_SSL: 'false'
+      # ocr-service (a separate container) fetches signed prescription
+      # file URLs through this — must be reachable from its network, not
+      # just the browser's.
+      API_PUBLIC_BASE_URL: http://api:4000
     ports:
       - '4000:4000'
 

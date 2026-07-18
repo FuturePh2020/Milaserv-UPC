@@ -47,12 +47,16 @@ export function newPrescriptionStorageKey(fileName: string): string {
 export class LocalDiskPrescriptionStorage implements PrescriptionStorageDriver {
   private readonly baseDir: string;
   private readonly hmacSecret: string;
+  private readonly publicBaseUrl: string;
 
   constructor(@Inject(ENV) env: Env) {
     this.baseDir = env.PRESCRIPTION_STORAGE_DIR;
     // Reuses the JWT signing secret as the HMAC key — same trust boundary,
     // no extra secret to provision for local/dev deployments.
     this.hmacSecret = env.JWT_ACCESS_SECRET;
+    // Absolute, not relative: the Python OCR service (a separate
+    // container/process) fetches this URL directly, not just the browser.
+    this.publicBaseUrl = env.API_PUBLIC_BASE_URL;
   }
 
   private path(key: string): string {
@@ -77,7 +81,7 @@ export class LocalDiskPrescriptionStorage implements PrescriptionStorageDriver {
     const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
     const sig = this.sign(key, exp);
     const encodedKey = Buffer.from(key, 'utf8').toString('base64url');
-    return `/api/v1/prescriptions/files/${encodedKey}?exp=${exp}&sig=${sig}`;
+    return `${this.publicBaseUrl}/api/v1/prescriptions/files/${encodedKey}?exp=${exp}&sig=${sig}`;
   }
 
   private sign(key: string, exp: number): string {

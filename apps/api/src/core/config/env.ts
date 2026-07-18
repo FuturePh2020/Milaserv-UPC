@@ -49,6 +49,16 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /// Base URL this API is reachable at from other containers/services (the
+  /// Python OCR service fetches signed file URLs through it). In
+  /// docker-compose this is the service name (http://api:4000); locally
+  /// it's localhost.
+  API_PUBLIC_BASE_URL: z.string().url().default('http://localhost:4000'),
+  /// Retry policy for the prescription-ocr BullMQ queue (design spec §10
+  /// "retry policies and a dead-letter queue"). Overridden to small values
+  /// by the e2e suite so exhausting retries doesn't require a 15s+ wait.
+  PRESCRIPTION_OCR_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  PRESCRIPTION_OCR_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5000),
 });
 
 export type Env = z.infer<typeof envSchema>;

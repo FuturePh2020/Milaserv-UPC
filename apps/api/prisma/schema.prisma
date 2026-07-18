@@ -1344,6 +1344,9 @@ model PrescriptionPage {
   pageNumber         Int
   originalStorageKey String
   enhancedStorageKey String?
+  /// sha256 of the uploaded bytes — duplicate-upload detection (never
+  /// silently deduplicated; only flagged, per design spec §11).
+  contentHash        String?
   /// 0–1, from Python's /v1/analyze-quality (design spec §5.1).
   imageQualityScore  Float?
   /// Degrees corrected during preprocessing (0/90/180/270).
@@ -1356,6 +1359,7 @@ model PrescriptionPage {
 
   @@unique([prescriptionId, pageNumber])
   @@index([processingStatus])
+  @@index([contentHash])
 }
 
 model OCRTextBlock {

@@ -14,8 +14,11 @@ import {
     {
       provide: PRESCRIPTION_STORAGE,
       inject: [ENV, LocalDiskPrescriptionStorage, MinioPrescriptionStorage],
-      useFactory: (env: Env, local: LocalDiskPrescriptionStorage, minio: MinioPrescriptionStorage) =>
-        env.PRESCRIPTION_STORAGE_DRIVER === 'minio' ? minio : local,
+      useFactory: (
+        env: Env,
+        local: LocalDiskPrescriptionStorage,
+        minio: MinioPrescriptionStorage,
+      ) => (env.PRESCRIPTION_STORAGE_DRIVER === 'minio' ? minio : local),
     },
   ],
   // LocalDiskPrescriptionStorage is exported directly too: the local
