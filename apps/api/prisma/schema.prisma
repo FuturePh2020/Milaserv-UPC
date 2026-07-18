@@ -52,53 +52,53 @@ enum SettingValueType {
 // ── Identity & organization ─────────────────────────────────────────
 
 model User {
-  id                  String     @id @default(cuid())
-  email               String     @unique
+  id                  String      @id @default(cuid())
+  email               String      @unique
   passwordHash        String
   nameAr              String
   nameEn              String
   phone               String?
-  status              UserStatus @default(ACTIVE)
+  status              UserStatus  @default(ACTIVE)
   departmentId        String?
   department          Department? @relation(fields: [departmentId], references: [id])
   lastSignInAt        DateTime?
-  failedLoginAttempts Int        @default(0)
+  failedLoginAttempts Int         @default(0)
   lockedUntil         DateTime?
-  mustChangePassword  Boolean    @default(false)
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  mustChangePassword  Boolean     @default(false)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
   deletedAt           DateTime?
 
-  roles         UserRole[]
-  teams         TeamMember[]
-  sessions      Session[]
-  notifications Notification[]
-  ticketsCreated     Ticket[]           @relation("ticketCreatedBy")
-  ticketsResponsible Ticket[]           @relation("ticketResponsible")
-  ticketOwnerships   TicketOwnership[]
-  ticketUpdates      TicketUpdate[]
-  kbContents         KbContent[]        @relation("kbOwner")
-  coursesAdministered Course[]          @relation("courseAdmin")
-  courseAssignments  CourseAssignment[] @relation("courseAssignee")
-  lessonProgress     LessonProgress[]   @relation("lessonProgress")
-  workSessions       WorkSession[]      @relation("workSessions")
-  leadBatches        LeadBatch[]        @relation("leadBatches")
-  assignedLeads      Lead[]             @relation("assignedLeads")
-  leadCalls          LeadCall[]         @relation("leadCalls")
-  telesalesOrders    TelesalesOrder[]   @relation("telesalesOrders")
+  roles               UserRole[]
+  teams               TeamMember[]
+  sessions            Session[]
+  notifications       Notification[]
+  ticketsCreated      Ticket[]           @relation("ticketCreatedBy")
+  ticketsResponsible  Ticket[]           @relation("ticketResponsible")
+  ticketOwnerships    TicketOwnership[]
+  ticketUpdates       TicketUpdate[]
+  kbContents          KbContent[]        @relation("kbOwner")
+  coursesAdministered Course[]           @relation("courseAdmin")
+  courseAssignments   CourseAssignment[] @relation("courseAssignee")
+  lessonProgress      LessonProgress[]   @relation("lessonProgress")
+  workSessions        WorkSession[]      @relation("workSessions")
+  leadBatches         LeadBatch[]        @relation("leadBatches")
+  assignedLeads       Lead[]             @relation("assignedLeads")
+  leadCalls           LeadCall[]         @relation("leadCalls")
+  telesalesOrders     TelesalesOrder[]   @relation("telesalesOrders")
 
   @@index([departmentId])
   @@index([status, deletedAt])
 }
 
 model Department {
-  id        String    @id @default(cuid())
-  code      String    @unique
+  id        String     @id @default(cuid())
+  code      String     @unique
   nameAr    String
   nameEn    String
   status    UserStatus @default(ACTIVE)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   deletedAt DateTime?
 
   users User[]
@@ -116,8 +116,8 @@ model Team {
   updatedAt    DateTime   @updatedAt
   deletedAt    DateTime?
 
-  members TeamMember[]
-  tickets TicketTeam[]
+  members           TeamMember[]
+  tickets           TicketTeam[]
   courseAssignments CourseAssignment[]
   workSessions      WorkSession[]
 
@@ -167,18 +167,18 @@ model Permission {
 }
 
 model RolePermission {
-  id           String     @id @default(cuid())
-  roleId       String
-  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permissionId String
-  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  id              String     @id @default(cuid())
+  roleId          String
+  role            Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId    String
+  permission      Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
   /// Blueprint §19.1: permission = action + data scope.
-  dataScope    DataScope  @default(MY_RECORDS)
+  dataScope       DataScope  @default(MY_RECORDS)
   /// Explicit team ids when dataScope = MULTIPLE_TEAMS.
-  scopeTeamIds String[]   @default([])
+  scopeTeamIds    String[]   @default([])
   /// Reserved for Phase 2+ (blueprint §19.1) — inactive until Branch/Partner masters exist.
-  scopeBranchIds String[] @default([])
-  scopePartnerIds String[] @default([])
+  scopeBranchIds  String[]   @default([])
+  scopePartnerIds String[]   @default([])
 
   @@unique([roleId, permissionId])
 }
@@ -428,12 +428,12 @@ model StatusTransition {
 }
 
 model UpdateType {
-  id     String  @id @default(cuid())
-  key    String  @unique
-  nameAr String
-  nameEn String
-  order  Int     @default(0)
-  active Boolean @default(true)
+  id        String  @id @default(cuid())
+  key       String  @unique
+  nameAr    String
+  nameEn    String
+  order     Int     @default(0)
+  active    Boolean @default(true)
   /// Waiting-type updates pause the SLA clock (spec US-4).
   pausesSla Boolean @default(false)
 
@@ -477,61 +477,61 @@ enum SlaState {
 }
 
 model Ticket {
-  id                      String    @id @default(cuid())
-  internalNumber          String    @unique
-  customerComplaintNumber String    @unique
+  id                      String         @id @default(cuid())
+  internalNumber          String         @unique
+  customerComplaintNumber String         @unique
   typeId                  String
-  type                    TicketType @relation(fields: [typeId], references: [id])
+  type                    TicketType     @relation(fields: [typeId], references: [id])
   categoryId              String
   category                TicketCategory @relation(fields: [categoryId], references: [id])
   urgencyId               String
-  urgency                 TicketUrgency @relation(fields: [urgencyId], references: [id])
+  urgency                 TicketUrgency  @relation(fields: [urgencyId], references: [id])
   statusId                String
-  status                  TicketStatus @relation(fields: [statusId], references: [id])
+  status                  TicketStatus   @relation(fields: [statusId], references: [id])
 
-  customerName            String
-  customerPhone           String
-  subject                 String
-  description             String
-  relatedOrderNo          String?
+  customerName     String
+  customerPhone    String
+  subject          String
+  description      String
+  relatedOrderNo   String?
   /// §13 "Request Source" — nullable; filled for online issue/request tickets.
-  requestSourceKey        String?
-  requestSource           RequestSource? @relation(fields: [requestSourceKey], references: [key])
-  customerVisitAt         DateTime?
-  sapMaterialNo           String?
-  itemNameAr              String?
-  itemNameEn              String?
+  requestSourceKey String?
+  requestSource    RequestSource? @relation(fields: [requestSourceKey], references: [key])
+  customerVisitAt  DateTime?
+  sapMaterialNo    String?
+  itemNameAr       String?
+  itemNameEn       String?
 
-  branchId                String?
-  branch                  Branch?   @relation(fields: [branchId], references: [id])
+  branchId                 String?
+  branch                   Branch? @relation(fields: [branchId], references: [id])
   /// ADR-007: immutable snapshot of supervisor data at creation time.
   branchSupervisorSnapshot Json?
 
   /// ADR-004: creator never changes.
-  createdById             String
-  createdBy               User      @relation("ticketCreatedBy", fields: [createdById], references: [id])
-  responsibleId           String?
-  responsible             User?     @relation("ticketResponsible", fields: [responsibleId], references: [id])
-  resolvedById            String?
-  resolvedAt              DateTime?
-  closedById              String?
-  closedAt                DateTime?
-  reopenCount             Int       @default(0)
-  lastCustomerResponseAt  DateTime?
+  createdById            String
+  createdBy              User      @relation("ticketCreatedBy", fields: [createdById], references: [id])
+  responsibleId          String?
+  responsible            User?     @relation("ticketResponsible", fields: [responsibleId], references: [id])
+  resolvedById           String?
+  resolvedAt             DateTime?
+  closedById             String?
+  closedAt               DateTime?
+  reopenCount            Int       @default(0)
+  lastCustomerResponseAt DateTime?
 
   // SLA (Sprint 4)
-  slaPolicyId             String?
-  slaPolicy               SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
-  firstResponseDueAt      DateTime?
-  resolutionDueAt         DateTime?
-  slaState                SlaState  @default(ON_TRACK)
-  slaPausedAt             DateTime?
-  slaPausedTotalMinutes   Int       @default(0)
-  firstRespondedAt        DateTime?
+  slaPolicyId           String?
+  slaPolicy             SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
+  firstResponseDueAt    DateTime?
+  resolutionDueAt       DateTime?
+  slaState              SlaState   @default(ON_TRACK)
+  slaPausedAt           DateTime?
+  slaPausedTotalMinutes Int        @default(0)
+  firstRespondedAt      DateTime?
 
-  createdAt               DateTime  @default(now())
-  updatedAt               DateTime  @updatedAt
-  deletedAt               DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   teams      TicketTeam[]
   ownerships TicketOwnership[]
@@ -623,10 +623,10 @@ enum KbStatus {
 }
 
 model KbContent {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   /// Version group: equals the first version's id (§10.4).
   rootId    String
-  version   Int      @default(1)
+  version   Int       @default(1)
   kind      KbKind
   titleAr   String
   titleEn   String
@@ -635,14 +635,14 @@ model KbContent {
   body      String?
   videoUrl  String?
   ownerId   String
-  owner     User     @relation("kbOwner", fields: [ownerId], references: [id])
-  status    KbStatus @default(DRAFT)
+  owner     User      @relation("kbOwner", fields: [ownerId], references: [id])
+  status    KbStatus  @default(DRAFT)
   publishAt DateTime?
   expiryAt  DateTime?
   /// Published+public content is visible to every kb.view holder (spec B3).
-  isPublic  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  isPublic  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   lessons CourseLesson[]
@@ -1171,11 +1171,13 @@ model Drug {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  alternatives   DrugAlternative[]
-  crossSells     DrugCrossSell[]
-  coverages      DrugCoverage[]
-  changeRequests    DrugChangeRequest[]
-  prescriptionLines PrescriptionLine[]
+  alternatives           DrugAlternative[]
+  crossSells             DrugCrossSell[]
+  coverages              DrugCoverage[]
+  changeRequests         DrugChangeRequest[]
+  prescriptionLines      PrescriptionLine[]
+  /// CR-001 Prescription Intelligence Engine (Sprint OCR-01).
+  prescriptionCandidates PrescriptionDrugCandidate[]
 
   @@index([nameEn])
   @@index([nameAr])
@@ -1254,6 +1256,11 @@ enum PrescriptionLineStatus {
 
 /// §17 prescription — extraction via the Integration Engine (I1);
 /// human review is mandatory before confirmation (I4).
+///
+/// CR-001 (docs/change-requests/CR-001-prescription-intelligence-engine.md)
+/// extends this table in place rather than duplicating it: `lines` is the
+/// Phase 10 pipeline (kept running unchanged until the OCR-12 migration),
+/// `pages`/`drugCandidates` are the new CR-001 pipeline (Sprint OCR-01+).
 model Prescription {
   id             String             @id @default(cuid())
   number         String             @unique
@@ -1270,6 +1277,16 @@ model Prescription {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
   lines          PrescriptionLine[]
+
+  /// CR-001 fields (design spec §4.6) — all nullable, additive.
+  customerId        String?
+  source            String?
+  processedFileUrl  String?
+  overallConfidence Float?
+  detectedLanguage  String?
+  completedAt       DateTime?
+  pages             PrescriptionPage[]
+  drugCandidates    PrescriptionDrugCandidate[]
 
   @@index([status, createdAt])
   @@index([uploadedById])
@@ -1291,4 +1308,117 @@ model PrescriptionLine {
   updatedAt        DateTime               @updatedAt
 
   @@unique([prescriptionId, lineNo])
+}
+
+// ── CR-001 Prescription Intelligence Engine ──────────────────────────
+// docs/change-requests/CR-001-prescription-intelligence-engine.md
+// Sprint OCR-01: entities only — no matching engine yet. Every candidate
+// created by the mock pipeline defaults to NEEDS_PHARMACIST_REVIEW; the
+// AUTO_MATCHED / AMBIGUOUS_MATCH / NOT_FOUND states become reachable once
+// the real matching + confidence engine ships (design spec §7/§8).
+
+enum PrescriptionPageStatus {
+  QUEUED
+  ANALYZING_QUALITY
+  PREPROCESSING
+  EXTRACTING_TEXT
+  DETECTING_CANDIDATES
+  COMPLETED
+  IMAGE_REUPLOAD_REQUIRED
+  FAILED
+}
+
+enum PrescriptionCandidateStatus {
+  AUTO_MATCHED
+  NEEDS_PHARMACIST_REVIEW
+  AMBIGUOUS_MATCH
+  NOT_FOUND
+  CONFIRMED
+  REJECTED
+}
+
+model PrescriptionPage {
+  id                 String                 @id @default(cuid())
+  prescriptionId     String
+  prescription       Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  pageNumber         Int
+  originalStorageKey String
+  enhancedStorageKey String?
+  /// 0–1, from Python's /v1/analyze-quality (design spec §5.1).
+  imageQualityScore  Float?
+  /// Degrees corrected during preprocessing (0/90/180/270).
+  orientation        Int?
+  processingStatus   PrescriptionPageStatus @default(QUEUED)
+  processingError    String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  textBlocks         OCRTextBlock[]
+
+  @@unique([prescriptionId, pageNumber])
+  @@index([processingStatus])
+}
+
+model OCRTextBlock {
+  id                 String                      @id @default(cuid())
+  prescriptionPageId String
+  page               PrescriptionPage            @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  rawText            String
+  normalizedText     String?
+  /// {x, y, width, height} in the enhanced image's coordinate space.
+  boundingBox        Json?
+  language           String?
+  ocrConfidence      Float?
+  lineNumber         Int
+  /// Python's medicine-line heuristic (design spec §2) — not a DIC match.
+  isMedicineLine     Boolean                     @default(false)
+  candidates         PrescriptionDrugCandidate[]
+
+  @@index([prescriptionPageId])
+}
+
+/// One OCR line may yield zero, one, or several ranked candidates —
+/// the structural reason this replaces PrescriptionLine's 1:1 model
+/// (design spec §4.6).
+model PrescriptionDrugCandidate {
+  id                  String                      @id @default(cuid())
+  prescriptionId      String
+  prescription        Prescription                @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  ocrTextBlockId      String?
+  ocrTextBlock        OCRTextBlock?               @relation(fields: [ocrTextBlockId], references: [id])
+  extractedDrugText   String
+  extractedStrength   String?
+  extractedDosageForm String?
+  matchedDrugId       String?
+  matchedDrug         Drug?                       @relation(fields: [matchedDrugId], references: [id])
+  matchConfidence     Float?
+  status              PrescriptionCandidateStatus @default(NEEDS_PHARMACIST_REVIEW)
+  /// Score breakdown / match reasons (design spec §7) — null until the
+  /// matching engine ships.
+  matchExplanation    Json?
+  reviewedById        String?
+  reviewedAt          DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  corrections         OCRCorrection[]
+
+  @@index([prescriptionId])
+  @@index([status])
+}
+
+/// Pharmacist corrections — analytics/training trail only; never writes
+/// to Drug/DrugAlias directly (design spec §12 "learn without silently
+/// modifying the master").
+model OCRCorrection {
+  id               String                    @id @default(cuid())
+  candidateId      String
+  candidate        PrescriptionDrugCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  originalOCRText  String
+  correctedText    String?
+  originalDrugId   String?
+  correctedDrugId  String?
+  correctedById    String
+  correctionReason String?
+  createdAt        DateTime                  @default(now())
+
+  @@index([candidateId])
 }

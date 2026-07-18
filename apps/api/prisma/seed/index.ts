@@ -559,6 +559,32 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'نص رسالة استبيان الرضا (CSAT)',
     labelEn: 'SMS template: CSAT survey',
   },
+  // CR-001 Prescription Intelligence Engine — Sprint OCR-01
+  // (docs/change-requests/CR-001-prescription-intelligence-engine.md)
+  {
+    key: 'prescriptions.upload.max_size_mb',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 15,
+    labelAr: 'الحد الأقصى لحجم ملف الوصفة (ميجابايت)',
+    labelEn: 'Max prescription file size (MB)',
+  },
+  {
+    key: 'prescriptions.upload.allowed_mime',
+    category: 'prescriptions',
+    valueType: 'JSON',
+    value: ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'],
+    labelAr: 'أنواع الملفات المسموح بها للوصفات',
+    labelEn: 'Allowed prescription file types',
+  },
+  {
+    key: 'prescriptions.ocr_service.endpoint',
+    category: 'prescriptions',
+    valueType: 'STRING',
+    value: '',
+    labelAr: 'رابط خدمة التعرف الضوئي على الوصفات (Python)',
+    labelEn: 'Prescription OCR service endpoint (Python)',
+  },
 ];
 
 async function seedPermissions() {
