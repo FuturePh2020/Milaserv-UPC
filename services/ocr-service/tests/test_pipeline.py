@@ -28,11 +28,10 @@ def test_analyze_quality_lowquality_marker_triggers_reupload_gate():
     assert "BLUR" in body["issues"]
 
 
-def test_preprocess_is_passthrough_in_ocr01():
-    res = client.post("/v1/preprocess", json={"imageUrl": "s3://bucket/rx-1.jpg"})
-    body = res.json()
-    assert body["enhancedImageUrl"] == "s3://bucket/rx-1.jpg"
-    assert body["orientation"] == 0
+# /v1/preprocess's real 18-step image-processing engine (CR-001 Sprint
+# OCR-02) is covered in tests/test_preprocessing.py — Sprint OCR-01's
+# mock-passthrough contract it replaced is gone; nothing else in this
+# file depended on it, only /v1/analyze-quality and /v1/detect-* below.
 
 
 def test_detect_and_recognize_is_deterministic():

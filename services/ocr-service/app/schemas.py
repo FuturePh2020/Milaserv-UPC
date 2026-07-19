@@ -22,16 +22,65 @@ class AnalyzeQualityResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class PreprocessingConfigDto(BaseModel):
+    """CR-001 Sprint OCR-02 — every threshold NestJS Settings owns
+    (ADR-008), passed in per-call since Python holds no Settings/DB
+    access. Omitted fields fall back to the same defaults the seed uses.
+    """
+
+    enabled: dict[str, bool] = Field(default_factory=dict)
+    min_image_width: int = Field(alias="minImageWidth", default=300)
+    min_image_height: int = Field(alias="minImageHeight", default=300)
+    min_quality_score: float = Field(alias="minQualityScore", default=50)
+    max_rotation_degrees: float = Field(alias="maxRotationDegrees", default=45)
+    min_contrast: float = Field(alias="minContrast", default=20)
+    max_noise: float = Field(alias="maxNoise", default=15)
+    version: str = "1.0.0"
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class PreprocessRequest(BaseModel):
     image_url: str = Field(alias="imageUrl")
+    config: PreprocessingConfigDto | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ImageVersionDto(BaseModel):
+    image_base64: str = Field(alias="imageBase64")
+    width: int
+    height: int
+    format: str = "PNG"
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class PagePreprocessDto(BaseModel):
+    quality_score: float = Field(alias="qualityScore")
+    quality_status: str = Field(alias="qualityStatus")
+    metrics: dict
+    versions: dict[str, ImageVersionDto]
+    stages_applied: list[str] = Field(alias="stagesApplied")
+    processor_timings_ms: dict[str, int] = Field(alias="processorTimingsMs")
+    processor_failures: list[str] = Field(alias="processorFailures")
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class PreprocessResponse(BaseModel):
-    enhanced_image_url: str = Field(alias="enhancedImageUrl")
-    orientation: int
-    stages_applied: list[str] = Field(alias="stagesApplied", default_factory=list)
+    quality_score: float = Field(alias="qualityScore")
+    quality_status: str = Field(alias="qualityStatus")
+    metrics: dict
+    versions: dict[str, ImageVersionDto]
+    stages_applied: list[str] = Field(alias="stagesApplied")
+    processor_timings_ms: dict[str, int] = Field(alias="processorTimingsMs")
+    processor_failures: list[str] = Field(alias="processorFailures")
+    processing_duration_ms: int = Field(alias="processingDurationMs")
+    page_count: int = Field(alias="pageCount")
+    # Populated only for multi-page PDFs (page_count > 1) — one entry per
+    # rasterized page, for callers that want more than page 1.
+    pages: list[PagePreprocessDto] | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 

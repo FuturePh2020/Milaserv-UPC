@@ -2,6 +2,12 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 
+# CR-001 Sprint OCR-02 — Image Processing & Quality Engine
+numpy==2.4.6
+pillow==12.3.0
+opencv-python-headless==5.0.0.93
+pymupdf==1.28.0
+httpx==0.28.1
+
 # test-only
 pytest==8.3.4
-httpx==0.28.1

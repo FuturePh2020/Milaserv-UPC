@@ -12,10 +12,14 @@ ProviderRegistry, with zero changes to this file's routes or to NestJS.
 
 from __future__ import annotations
 
+import base64
 import time
 
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, HTTPException
 
+from app.preprocessing.config import PreprocessingConfig
+from app.preprocessing.pipeline import ImageVersion, PagePreprocessResult, run_preprocessing
 from app.providers.base import registry
 from app.providers.mock import MockOCRProvider, mock_medicine_lines, mock_quality_score
 from app.schemas import (
@@ -27,9 +31,13 @@ from app.schemas import (
     DetectCandidatesRequest,
     DetectCandidatesResponse,
     HealthResponse,
+    ImageVersionDto,
+    PagePreprocessDto,
     PreprocessRequest,
     PreprocessResponse,
 )
+
+IMAGE_FETCH_TIMEOUT_SECONDS = 30
 
 registry.register(MockOCRProvider(), default=True)
 
@@ -48,16 +56,71 @@ def analyze_quality(req: AnalyzeQualityRequest) -> AnalyzeQualityResponse:
     return AnalyzeQualityResponse(qualityScore=score, issues=issues)
 
 
+def _versions_to_dto(versions: dict[str, ImageVersion]) -> dict[str, ImageVersionDto]:
+    return {
+        key: ImageVersionDto(
+            imageBase64=base64.b64encode(v.image_bytes).decode("ascii"),
+            width=v.width,
+            height=v.height,
+            format=v.format,
+        )
+        for key, v in versions.items()
+    }
+
+
+def _page_to_dto(page: PagePreprocessResult) -> PagePreprocessDto:
+    return PagePreprocessDto(
+        qualityScore=page.quality_score,
+        qualityStatus=page.quality_status,
+        metrics=page.metrics,
+        versions=_versions_to_dto(page.versions),
+        stagesApplied=page.stages_applied,
+        processorTimingsMs=page.processor_timings_ms,
+        processorFailures=page.processor_failures,
+    )
+
+
 @app.post("/v1/preprocess", response_model=PreprocessResponse)
 def preprocess(req: PreprocessRequest) -> PreprocessResponse:
-    # Sprint OCR-01: no real image transformation yet — the enhanced image
-    # is the original, orientation is assumed correct. OCR-02 replaces
-    # this body with real orientation/perspective/crop/denoise/contrast/
-    # sharpen/binarize stages; the response shape does not change.
+    """CR-001 Sprint OCR-02 — Image Processing & Quality Engine (design
+    spec: 18-step pipeline). No OCR text recognition happens here; that
+    is Sprint OCR-03's job, using the OCR-ready image this produces.
+    """
+    try:
+        resp = httpx.get(req.image_url, timeout=IMAGE_FETCH_TIMEOUT_SECONDS)
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=422, detail=f"could not fetch imageUrl: {exc}") from exc
+
+    config_dto = req.config
+    config = PreprocessingConfig(
+        enabled=config_dto.enabled if config_dto else {},
+        minImageWidth=config_dto.min_image_width if config_dto else 300,
+        minImageHeight=config_dto.min_image_height if config_dto else 300,
+        minQualityScore=config_dto.min_quality_score if config_dto else 50,
+        maxRotationDegrees=config_dto.max_rotation_degrees if config_dto else 45,
+        minContrast=config_dto.min_contrast if config_dto else 20,
+        maxNoise=config_dto.max_noise if config_dto else 15,
+        version=config_dto.version if config_dto else "1.0.0",
+    )
+
+    try:
+        result = run_preprocessing(resp.content, config)
+    except Exception as exc:  # noqa: BLE001 — surfaced as a clean 422, not a 500 stack trace
+        raise HTTPException(status_code=422, detail=f"could not process image: {exc}") from exc
+
+    primary = result.primary
     return PreprocessResponse(
-        enhancedImageUrl=req.image_url,
-        orientation=0,
-        stagesApplied=["mock_passthrough"],
+        qualityScore=primary.quality_score,
+        qualityStatus=primary.quality_status,
+        metrics=primary.metrics,
+        versions=_versions_to_dto(primary.versions),
+        stagesApplied=primary.stages_applied,
+        processorTimingsMs=primary.processor_timings_ms,
+        processorFailures=primary.processor_failures,
+        processingDurationMs=result.processing_duration_ms,
+        pageCount=result.page_count,
+        pages=[_page_to_dto(p) for p in result.pages] if result.page_count > 1 else None,
     )
 
 
