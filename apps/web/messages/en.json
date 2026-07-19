@@ -498,7 +498,10 @@
       "ingredient": "Active ingredient",
       "material": "Material no.",
       "nameAr": "Arabic name",
-      "nameEn": "English name"
+      "nameEn": "English name",
+      "barcode": "Barcode",
+      "scientific": "Scientific name",
+      "alias": "Alias"
     },
     "coded": "Coded",
     "notCoded": "Not coded",
@@ -527,7 +530,12 @@
     "proposed": "Change request submitted for approval.",
     "tabs": {
       "search": "Search",
-      "approvals": "Approvals"
+      "approvals": "Approvals",
+      "reference": "Reference data",
+      "aliases": "Alias approvals",
+      "alternatives": "Alternative approvals",
+      "import": "Staged import",
+      "quality": "Data quality"
     },
     "approvals": {
       "empty": "No pending change requests",
@@ -554,7 +562,149 @@
     "covApplied": "{applied} rows applied, {rejected} rejected",
     "parseError": "Could not read the file",
     "refreshAvailability": "Refresh availability",
-    "refreshing": "Refreshing…"
+    "refreshing": "Refreshing…",
+    "barcode": "Barcode",
+    "strengthText": "Strength",
+    "dosageForm": "Dosage form",
+    "manufacturer": "Manufacturer",
+    "ingredients": "Active ingredients",
+    "therapeuticClasses": "Therapeutic classes",
+    "mergedNotice": "This drug record was merged into another drug and is kept only as a redirect.",
+    "mergedGoTo": "Go to the current record",
+    "matchSource": {
+      "alias": "Matched via alias",
+      "scientific": "Matched via scientific name"
+    },
+    "dataQuality": {
+      "DRAFT": "Draft",
+      "INCOMPLETE": "Incomplete",
+      "NEEDS_REVIEW": "Needs review",
+      "VERIFIED": "Verified",
+      "REJECTED": "Rejected",
+      "ARCHIVED": "Archived"
+    },
+    "alias": {
+      "title": "Aliases",
+      "approvedTag": "Approved",
+      "pendingTag": "Pending",
+      "proposeBtn": "Propose alias",
+      "proposeTitle": "Propose a drug alias",
+      "proposed": "Alias proposed — pending approval.",
+      "duplicateWarning": "This alias text is already approved on: {names}",
+      "aliasText": "Alias text",
+      "language": "Language",
+      "aliasType": "Alias type",
+      "note": "Decision note (optional)",
+      "approve": "Approve",
+      "reject": "Reject",
+      "empty": "No pending alias proposals"
+    },
+    "alternative": {
+      "title": "Approved alternatives",
+      "proposeBtn": "Propose alternative",
+      "proposeTitle": "Propose an alternative drug link",
+      "proposed": "Alternative link proposed — pending approval.",
+      "targetDrug": "Alternative drug",
+      "type": "Alternative type",
+      "note": "Decision note (optional)",
+      "approve": "Approve",
+      "reject": "Reject",
+      "empty": "No pending alternative-link proposals"
+    },
+    "reference": {
+      "kind": {
+        "dosage-forms": "Dosage forms",
+        "units": "Measurement units",
+        "countries": "Countries",
+        "manufacturers": "Manufacturers",
+        "therapeutic-classes": "Therapeutic classes",
+        "active-ingredients": "Active ingredients"
+      },
+      "newBtn": "New",
+      "empty": "No records yet",
+      "nameEn": "English name",
+      "nameAr": "Arabic name",
+      "scientificNameEn": "Scientific name (English)",
+      "scientificNameAr": "Scientific name (Arabic)",
+      "status": "Status",
+      "actions": "Actions",
+      "active": "Active",
+      "inactive": "Inactive",
+      "activate": "Activate",
+      "deactivate": "Deactivate",
+      "code": "Code",
+      "unitCategory": "Unit category",
+      "create": "Create"
+    },
+    "quality": {
+      "card": {
+        "totalActiveDrugs": "Active drugs",
+        "pendingAliasApprovals": "Pending alias approvals",
+        "pendingAlternativeApprovals": "Pending alternative approvals",
+        "pendingImportBatches": "Open import batches",
+        "mergedDrugs": "Merged drugs"
+      },
+      "byStatus": "By data-quality status",
+      "missingFields": "Missing-field counts",
+      "noIssues": "No drugs match this rule",
+      "rule": {
+        "missing_name_ar": "Missing Arabic name",
+        "missing_dosage_form": "Missing dosage form",
+        "missing_manufacturer": "Missing manufacturer",
+        "missing_strength": "Missing strength",
+        "missing_barcode": "Missing barcode",
+        "needs_review": "Needs review",
+        "incomplete": "Incomplete"
+      }
+    },
+    "import2": {
+      "newBtn": "New staged import",
+      "empty": "No import batches yet",
+      "fileName": "File",
+      "status": "Status",
+      "counts": "Counts",
+      "countsLine": "{total} rows · {valid} valid · {invalid} invalid · {dup} duplicate · {imported} imported",
+      "actions": "Actions",
+      "continue": "Continue",
+      "errorReport": "Error report (CSV)",
+      "rollback": "Roll back",
+      "wizardTitle": "Staged drug import",
+      "uploadHint": "Upload a spreadsheet. Nothing is written to the drug master until you approve and execute.",
+      "uploadBtn": "Upload",
+      "mappingHint": "Map each column to a drug field, or leave it ignored.",
+      "ignore": "Ignore this column",
+      "field": {
+        "materialNo": "Material number",
+        "nameEn": "Name (English)",
+        "nameAr": "Name (Arabic)",
+        "brand": "Brand",
+        "barcode": "Barcode",
+        "strengthText": "Strength",
+        "activeIngredient": "Active ingredient",
+        "manufacturerName": "Manufacturer name",
+        "dosageFormCode": "Dosage form code"
+      },
+      "saveMapping": "Save mapping",
+      "runValidation": "Run validation",
+      "valid": "{count} valid",
+      "invalid": "{count} invalid",
+      "duplicate": "{count} duplicate",
+      "resolveHint": "Resolve each duplicate before approving the batch.",
+      "matchScore": "match score {score}",
+      "chooseResolution": "Choose resolution…",
+      "resolution": {
+        "CREATE_NEW": "Create as new drug",
+        "LINK_EXISTING": "Link to existing (enrich)",
+        "MERGE": "Merge into existing",
+        "REJECT_ROW": "Reject this row",
+        "DEFER_REVIEW": "Defer for later review"
+      },
+      "approveBtn": "Approve batch",
+      "executeBtn": "Execute import",
+      "imported": "{count} imported",
+      "failed": "{count} failed",
+      "skipped": "{count} skipped/invalid"
+    }
   },
   "ocr": {
     "title": "OCR Prescription Processing",

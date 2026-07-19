@@ -498,7 +498,10 @@
       "ingredient": "المادة الفعالة",
       "material": "رقم المادة",
       "nameAr": "الاسم العربي",
-      "nameEn": "الاسم الإنجليزي"
+      "nameEn": "الاسم الإنجليزي",
+      "barcode": "الباركود",
+      "scientific": "الاسم العلمي",
+      "alias": "اسم بديل"
     },
     "coded": "مكوّد",
     "notCoded": "غير مكوّد",
@@ -527,7 +530,12 @@
     "proposed": "تم إرسال طلب التعديل للاعتماد.",
     "tabs": {
       "search": "البحث",
-      "approvals": "الاعتمادات"
+      "approvals": "الاعتمادات",
+      "reference": "البيانات المرجعية",
+      "aliases": "اعتماد الأسماء البديلة",
+      "alternatives": "اعتماد البدائل",
+      "import": "الاستيراد المرحلي",
+      "quality": "جودة البيانات"
     },
     "approvals": {
       "empty": "لا توجد طلبات تعديل معلقة",
@@ -554,7 +562,149 @@
     "covApplied": "تم تطبيق {applied} صفًا ورفض {rejected}",
     "parseError": "تعذّرت قراءة الملف",
     "refreshAvailability": "تحديث التوفر",
-    "refreshing": "جارٍ التحديث…"
+    "refreshing": "جارٍ التحديث…",
+    "barcode": "الباركود",
+    "strengthText": "التركيز",
+    "dosageForm": "الشكل الصيدلاني",
+    "manufacturer": "الشركة المصنعة",
+    "ingredients": "المكونات الفعالة",
+    "therapeuticClasses": "الفئات العلاجية",
+    "mergedNotice": "تم دمج هذا الدواء في دواء آخر، وهذا السجل محفوظ فقط كإعادة توجيه.",
+    "mergedGoTo": "الانتقال إلى السجل الحالي",
+    "matchSource": {
+      "alias": "مطابقة عبر اسم بديل",
+      "scientific": "مطابقة عبر الاسم العلمي"
+    },
+    "dataQuality": {
+      "DRAFT": "مسودة",
+      "INCOMPLETE": "غير مكتمل",
+      "NEEDS_REVIEW": "يحتاج مراجعة",
+      "VERIFIED": "معتمد",
+      "REJECTED": "مرفوض",
+      "ARCHIVED": "مؤرشف"
+    },
+    "alias": {
+      "title": "الأسماء البديلة",
+      "approvedTag": "معتمد",
+      "pendingTag": "قيد المراجعة",
+      "proposeBtn": "اقتراح اسم بديل",
+      "proposeTitle": "اقتراح اسم بديل للدواء",
+      "proposed": "تم اقتراح الاسم البديل — بانتظار الاعتماد.",
+      "duplicateWarning": "هذا النص معتمد بالفعل كاسم بديل على: {names}",
+      "aliasText": "نص الاسم البديل",
+      "language": "اللغة",
+      "aliasType": "نوع الاسم البديل",
+      "note": "ملاحظة القرار (اختياري)",
+      "approve": "اعتماد",
+      "reject": "رفض",
+      "empty": "لا توجد اقتراحات أسماء بديلة بانتظار الاعتماد"
+    },
+    "alternative": {
+      "title": "البدائل المعتمدة",
+      "proposeBtn": "اقتراح بديل",
+      "proposeTitle": "اقتراح ربط دواء بديل",
+      "proposed": "تم اقتراح البديل — بانتظار الاعتماد.",
+      "targetDrug": "الدواء البديل",
+      "type": "نوع البديل",
+      "note": "ملاحظة القرار (اختياري)",
+      "approve": "اعتماد",
+      "reject": "رفض",
+      "empty": "لا توجد اقتراحات بدائل بانتظار الاعتماد"
+    },
+    "reference": {
+      "kind": {
+        "dosage-forms": "الأشكال الصيدلانية",
+        "units": "وحدات القياس",
+        "countries": "الدول",
+        "manufacturers": "الشركات المصنعة",
+        "therapeutic-classes": "الفئات العلاجية",
+        "active-ingredients": "المكونات الفعالة"
+      },
+      "newBtn": "جديد",
+      "empty": "لا توجد سجلات بعد",
+      "nameEn": "الاسم بالإنجليزية",
+      "nameAr": "الاسم بالعربية",
+      "scientificNameEn": "الاسم العلمي (إنجليزي)",
+      "scientificNameAr": "الاسم العلمي (عربي)",
+      "status": "الحالة",
+      "actions": "إجراءات",
+      "active": "فعال",
+      "inactive": "غير فعال",
+      "activate": "تفعيل",
+      "deactivate": "تعطيل",
+      "code": "الرمز",
+      "unitCategory": "فئة الوحدة",
+      "create": "إنشاء"
+    },
+    "quality": {
+      "card": {
+        "totalActiveDrugs": "الأدوية الفعالة",
+        "pendingAliasApprovals": "أسماء بديلة بانتظار الاعتماد",
+        "pendingAlternativeApprovals": "بدائل بانتظار الاعتماد",
+        "pendingImportBatches": "دفعات استيراد مفتوحة",
+        "mergedDrugs": "أدوية مدمجة"
+      },
+      "byStatus": "حسب حالة جودة البيانات",
+      "missingFields": "عدد الحقول الناقصة",
+      "noIssues": "لا توجد أدوية مطابقة لهذه القاعدة",
+      "rule": {
+        "missing_name_ar": "بدون اسم عربي",
+        "missing_dosage_form": "بدون شكل صيدلاني",
+        "missing_manufacturer": "بدون شركة مصنعة",
+        "missing_strength": "بدون تركيز",
+        "missing_barcode": "بدون باركود",
+        "needs_review": "يحتاج مراجعة",
+        "incomplete": "غير مكتمل"
+      }
+    },
+    "import2": {
+      "newBtn": "استيراد مرحلي جديد",
+      "empty": "لا توجد دفعات استيراد بعد",
+      "fileName": "الملف",
+      "status": "الحالة",
+      "counts": "الأعداد",
+      "countsLine": "{total} صف · {valid} صالح · {invalid} غير صالح · {dup} مكرر · {imported} مستورد",
+      "actions": "إجراءات",
+      "continue": "متابعة",
+      "errorReport": "تقرير الأخطاء (CSV)",
+      "rollback": "تراجع",
+      "wizardTitle": "استيراد الأدوية المرحلي",
+      "uploadHint": "ارفع ملف بيانات. لن تتم أي كتابة على قائمة الأدوية حتى الاعتماد والتنفيذ.",
+      "uploadBtn": "رفع",
+      "mappingHint": "اربط كل عمود بحقل الدواء المناسب، أو اتركه متجاهلًا.",
+      "ignore": "تجاهل هذا العمود",
+      "field": {
+        "materialNo": "رقم الصنف",
+        "nameEn": "الاسم (إنجليزي)",
+        "nameAr": "الاسم (عربي)",
+        "brand": "الماركة",
+        "barcode": "الباركود",
+        "strengthText": "التركيز",
+        "activeIngredient": "المكون الفعال",
+        "manufacturerName": "اسم الشركة المصنعة",
+        "dosageFormCode": "رمز الشكل الصيدلاني"
+      },
+      "saveMapping": "حفظ الربط",
+      "runValidation": "تشغيل التحقق",
+      "valid": "{count} صالح",
+      "invalid": "{count} غير صالح",
+      "duplicate": "{count} مكرر",
+      "resolveHint": "قم بحل كل تكرار قبل اعتماد الدفعة.",
+      "matchScore": "درجة التطابق {score}",
+      "chooseResolution": "اختر القرار…",
+      "resolution": {
+        "CREATE_NEW": "إنشاء دواء جديد",
+        "LINK_EXISTING": "ربط بدواء موجود (إثراء)",
+        "MERGE": "دمج مع دواء موجود",
+        "REJECT_ROW": "رفض هذا الصف",
+        "DEFER_REVIEW": "تأجيل للمراجعة لاحقًا"
+      },
+      "approveBtn": "اعتماد الدفعة",
+      "executeBtn": "تنفيذ الاستيراد",
+      "imported": "{count} تم استيراده",
+      "failed": "{count} فشل",
+      "skipped": "{count} تم تخطيه/غير صالح"
+    }
   },
   "ocr": {
     "title": "معالجة الوصفات بالتعرف الضوئي",

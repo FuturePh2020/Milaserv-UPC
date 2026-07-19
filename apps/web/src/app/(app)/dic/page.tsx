@@ -9,26 +9,72 @@ import { pickName } from '@/lib/names';
 import type {
   ChangeRequestRow,
   DicCatalogs,
-  DrugCard,
-  DrugSummary,
+  DrugAlternativeLink,
+  DrugCardExt,
+  DrugSummaryExt,
   ImportChunkResult,
 } from '@/lib/dic-types';
-import { Badge, Button, Dialog, EmptyState, ErrorState, Select, Spinner } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  Input,
+  Select,
+  Spinner,
+} from '@/components/ui';
+import { ReferenceTab } from './reference-tab';
+import { AliasTab } from './alias-tab';
+import { AlternativeTab } from './alternative-tab';
+import { ImportTab } from './import-tab';
+import { QualityTab } from './quality-tab';
 
-const SEARCH_FIELDS = ['all', 'brand', 'ingredient', 'material', 'nameAr', 'nameEn'] as const;
+const SEARCH_FIELDS = [
+  'all',
+  'brand',
+  'ingredient',
+  'material',
+  'nameAr',
+  'nameEn',
+  'barcode',
+  'scientific',
+  'alias',
+] as const;
 
 /** H5 pharmacist-editable fields — everything else is feed-owned. */
 const EDITABLE_FIELDS = ['activeIngredient', 'usage', 'offers', 'note'] as const;
 
+const ALL_TABS = [
+  'search',
+  'approvals',
+  'reference',
+  'aliases',
+  'alternatives',
+  'import',
+  'quality',
+] as const;
+type DicTab = (typeof ALL_TABS)[number];
+
 export default function DicPage() {
   const t = useTranslations();
   const { hasPermission } = useAuth();
-  const [tab, setTab] = useState<'search' | 'approvals'>('search');
+  const [tab, setTab] = useState<DicTab>('search');
   const [showImport, setShowImport] = useState(false);
   const [showCoverage, setShowCoverage] = useState(false);
 
   const canManage = hasPermission('dic.manage');
   const canApprove = hasPermission('dic.approve');
+
+  const visibleTabs = ALL_TABS.filter((k) => {
+    if (k === 'search' || k === 'reference') return true;
+    if (k === 'approvals') return canApprove;
+    if (k === 'aliases') return hasPermission('dic.approve_alias');
+    if (k === 'alternatives') return hasPermission('dic.approve_alternative');
+    if (k === 'import') return hasPermission('dic.import_staged');
+    if (k === 'quality') return hasPermission('dic.pharmacist_review');
+    return false;
+  });
 
   const { data: catalogs } = useQuery({
     queryKey: ['dic-catalogs'],
@@ -51,25 +97,29 @@ export default function DicPage() {
         </div>
       </div>
 
-      {canApprove && (
-        <div className="mb-4 flex gap-1 border-b border-gray-200">
-          {(['search', 'approvals'] as const).map((k) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={`border-b-2 px-4 py-2 text-sm font-medium ${
-                tab === k
-                  ? 'border-[#0b2545] text-[#0b2545]'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t(`dic.tabs.${k}`)}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-gray-200">
+        {visibleTabs.map((k) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`border-b-2 px-4 py-2 text-sm font-medium ${
+              tab === k
+                ? 'border-[#0b2545] text-[#0b2545]'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {t(`dic.tabs.${k}`)}
+          </button>
+        ))}
+      </div>
 
-      {tab === 'search' ? <SearchTab /> : <ApprovalsTab />}
+      {tab === 'search' && <SearchTab />}
+      {tab === 'approvals' && <ApprovalsTab />}
+      {tab === 'reference' && <ReferenceTab />}
+      {tab === 'aliases' && <AliasTab />}
+      {tab === 'alternatives' && <AlternativeTab />}
+      {tab === 'import' && <ImportTab />}
+      {tab === 'quality' && <QualityTab />}
 
       {showImport && catalogs && (
         <ImportDialog chunkSize={catalogs.chunkSize} onClose={() => setShowImport(false)} />
@@ -99,7 +149,7 @@ function SearchTab() {
   const { data: results, isFetching } = useQuery({
     queryKey: ['dic-search', debounced, field],
     queryFn: () =>
-      api<{ items: DrugSummary[] }>(
+      api<{ items: DrugSummaryExt[] }>(
         `/dic/search?q=${encodeURIComponent(debounced)}&field=${field}&limit=8`,
       ),
     enabled: debounced.length > 0,
@@ -107,7 +157,7 @@ function SearchTab() {
 
   const { data: drug, isLoading: drugLoading } = useQuery({
     queryKey: ['dic-drug', selectedId],
-    queryFn: () => api<DrugCard>(`/dic/drugs/${selectedId}`),
+    queryFn: () => api<DrugCardExt>(`/dic/drugs/${selectedId}`),
     enabled: selectedId !== null,
   });
 
@@ -169,6 +219,9 @@ function SearchTab() {
                           {d.coded ? t('dic.coded') : t('dic.notCoded')}
                         </Badge>
                         {d.raqeeb && <Badge tone="red">{t('dic.raqeeb')}</Badge>}
+                        {d.matchSource && d.matchSource !== 'primary' && (
+                          <Badge tone="blue">{t(`dic.matchSource.${d.matchSource}`)}</Badge>
+                        )}
                         {d.priceWithTax !== null && (
                           <span className="text-xs text-gray-500" dir="ltr">
                             {Number(d.priceWithTax).toFixed(2)}
@@ -215,12 +268,15 @@ function DrugCardView({
   locale,
   onNavigate,
 }: {
-  drug: DrugCard;
+  drug: DrugCardExt;
   locale: string;
   onNavigate: (id: string) => void;
 }) {
   const t = useTranslations();
+  const { hasPermission } = useAuth();
   const [propose, setPropose] = useState(false);
+  const [proposeAlias, setProposeAlias] = useState(false);
+  const [proposeAlt, setProposeAlt] = useState(false);
 
   const availability = Object.entries(drug.availability ?? {}).filter(([, v]) => v > 0);
 
@@ -262,6 +318,17 @@ function DrugCardView({
 
   return (
     <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-5">
+      {drug.mergedIntoDrugId && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
+          {t('dic.mergedNotice')}{' '}
+          <button
+            className="font-medium underline underline-offset-2"
+            onClick={() => onNavigate(drug.mergedIntoDrugId!)}
+          >
+            {t('dic.mergedGoTo')}
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">{drug.nameEn}</h2>
@@ -277,11 +344,24 @@ function DrugCardView({
             {drug.itemType && <Badge tone="blue">{pickName(locale, drug.itemType)}</Badge>}
             {drug.raqeeb && <Badge tone="red">{t('dic.raqeeb')}</Badge>}
             {drug.acuteChronic && <Badge tone="gray">{drug.acuteChronic}</Badge>}
+            <Badge tone="gray">{t(`dic.dataQuality.${drug.dataQualityStatus}`)}</Badge>
           </div>
         </div>
-        <Button variant="secondary" onClick={() => setPropose(true)}>
-          {t('dic.propose')}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {hasPermission('dic.edit') && (
+            <>
+              <Button variant="secondary" onClick={() => setProposeAlias(true)}>
+                {t('dic.alias.proposeBtn')}
+              </Button>
+              <Button variant="secondary" onClick={() => setProposeAlt(true)}>
+                {t('dic.alternative.proposeBtn')}
+              </Button>
+            </>
+          )}
+          <Button variant="secondary" onClick={() => setPropose(true)}>
+            {t('dic.propose')}
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -302,7 +382,50 @@ function DrugCardView({
           label={t('dic.categoryLabel')}
           value={[drug.category, drug.subCategory].filter(Boolean).join(' / ') || null}
         />
+        <Field label={t('dic.barcode')} value={drug.barcode} dir="ltr" />
+        <Field label={t('dic.strengthText')} value={drug.strengthText} dir="ltr" />
+        <Field
+          label={t('dic.dosageForm')}
+          value={drug.dosageForm ? pickName(locale, drug.dosageForm) : null}
+        />
+        <Field
+          label={t('dic.manufacturer')}
+          value={drug.manufacturer ? pickName(locale, drug.manufacturer) : null}
+        />
       </div>
+
+      {drug.ingredients.length > 0 && (
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">{t('dic.ingredients')}</h3>
+          <div className="flex flex-wrap gap-1.5">
+            {drug.ingredients.map((ing) => (
+              <Badge key={ing.id} tone="gray">
+                {pickName(locale, {
+                  nameEn: ing.activeIngredient.scientificNameEn,
+                  nameAr:
+                    ing.activeIngredient.scientificNameAr ?? ing.activeIngredient.scientificNameEn,
+                })}
+                {ing.ingredientStrength ? ` (${ing.ingredientStrength})` : ''}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {drug.therapeuticClasses.length > 0 && (
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">
+            {t('dic.therapeuticClasses')}
+          </h3>
+          <div className="flex flex-wrap gap-1.5">
+            {drug.therapeuticClasses.map((tc) => (
+              <Badge key={tc.therapeuticClass.id} tone={tc.primary ? 'blue' : 'gray'}>
+                {pickName(locale, tc.therapeuticClass)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label={t('dic.activeIngredient')} value={drug.activeIngredient} />
@@ -349,6 +472,56 @@ function DrugCardView({
         </div>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">
+            {t('dic.alias.title')} ({drug.aliases.length})
+          </h3>
+          {drug.aliases.length === 0 ? (
+            <p className="text-sm text-gray-400">—</p>
+          ) : (
+            <ul className="space-y-1">
+              {drug.aliases.map((a) => (
+                <li key={a.id} className="flex items-center gap-1.5 text-sm text-gray-700">
+                  <span>{a.alias}</span>
+                  <Badge tone={a.approved ? 'green' : 'amber'}>
+                    {a.approved ? t('dic.alias.approvedTag') : t('dic.alias.pendingTag')}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h3 className="mb-1 text-sm font-semibold text-gray-700">
+            {t('dic.alternative.title')} ({drug.approvedAlternatives.length})
+          </h3>
+          {drug.approvedAlternatives.length === 0 ? (
+            <p className="text-sm text-gray-400">—</p>
+          ) : (
+            <ul className="space-y-1">
+              {drug.approvedAlternatives.map((l) => (
+                <li key={l.id} className="text-sm">
+                  {l.alternativeDrug ? (
+                    <button
+                      className="text-start text-[#0b2545] underline-offset-2 hover:underline"
+                      onClick={() => onNavigate(l.alternativeDrug!.id)}
+                    >
+                      {locale === 'ar' && l.alternativeDrug.nameAr
+                        ? l.alternativeDrug.nameAr
+                        : l.alternativeDrug.nameEn}
+                    </button>
+                  ) : (
+                    '—'
+                  )}
+                  <span className="ms-1 text-xs text-gray-400">({l.alternativeType})</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
       <div>
         <div className="mb-1 flex items-center justify-between">
           <h3 className="text-sm font-semibold text-gray-700">{t('dic.availability')}</h3>
@@ -368,7 +541,239 @@ function DrugCardView({
       </div>
 
       {propose && <ProposeDialog drug={drug} onClose={() => setPropose(false)} />}
+      {proposeAlias && <ProposeAliasDialog drug={drug} onClose={() => setProposeAlias(false)} />}
+      {proposeAlt && <ProposeAlternativeDialog drug={drug} onClose={() => setProposeAlt(false)} />}
     </div>
+  );
+}
+
+// ── Phase 4 Step 4 — alias & alternative-link proposal (from the card) ──
+
+function ProposeAliasDialog({ drug, onClose }: { drug: DrugCardExt; onClose: () => void }) {
+  const t = useTranslations();
+  const queryClient = useQueryClient();
+  const [alias, setAlias] = useState('');
+  const [language, setLanguage] = useState('en');
+  const [aliasType, setAliasType] = useState('COMMON_MISSPELLING');
+  const [error, setError] = useState<string | null>(null);
+  const [duplicateOf, setDuplicateOf] = useState<{ id: string; nameEn: string }[] | null>(null);
+
+  const submit = useMutation({
+    mutationFn: () =>
+      api<{ duplicateOf: { id: string; nameEn: string }[] }>(`/dic/drugs/${drug.id}/aliases`, {
+        method: 'POST',
+        body: { alias, language, aliasType },
+      }),
+    onSuccess: (res) => {
+      setError(null);
+      setDuplicateOf(res.duplicateOf ?? []);
+      void queryClient.invalidateQueries({ queryKey: ['dic-drug', drug.id] });
+      void queryClient.invalidateQueries({ queryKey: ['dic-aliases-pending'] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  });
+
+  return (
+    <Dialog open onClose={onClose} title={t('dic.alias.proposeTitle')}>
+      {duplicateOf !== null ? (
+        <div className="space-y-3">
+          <p className="text-sm text-green-700">{t('dic.alias.proposed')}</p>
+          {duplicateOf.length > 0 && (
+            <p className="text-xs text-amber-700">
+              {t('dic.alias.duplicateWarning', {
+                names: duplicateOf.map((d) => d.nameEn).join(', '),
+              })}
+            </p>
+          )}
+          <div className="flex justify-end">
+            <Button onClick={onClose}>{t('common.close')}</Button>
+          </div>
+        </div>
+      ) : (
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit.mutate();
+          }}
+        >
+          {error && <ErrorState message={error} />}
+          <Input
+            label={t('dic.alias.aliasText')}
+            value={alias}
+            onChange={(e) => setAlias(e.target.value)}
+            required
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <Select
+              label={t('dic.alias.language')}
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+            >
+              <option value="en">EN</option>
+              <option value="ar">AR</option>
+            </Select>
+            <Select
+              label={t('dic.alias.aliasType')}
+              value={aliasType}
+              onChange={(e) => setAliasType(e.target.value)}
+            >
+              {[
+                'TRADE_NAME',
+                'SCIENTIFIC_NAME',
+                'ABBREVIATION',
+                'COMMON_MISSPELLING',
+                'OCR_VARIANT',
+                'LEGACY_NAME',
+                'ARABIC_TRANSLITERATION',
+                'ENGLISH_TRANSLITERATION',
+                'MANUFACTURER_VARIANT',
+                'PACKAGING_VARIANT',
+                'USER_CORRECTION',
+                'IMPORTED_ALIAS',
+              ].map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={submit.isPending}>
+              {t('dic.alias.proposeBtn')}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
+  );
+}
+
+function ProposeAlternativeDialog({ drug, onClose }: { drug: DrugCardExt; onClose: () => void }) {
+  const t = useTranslations();
+  const queryClient = useQueryClient();
+  const [q, setQ] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const [targetLabel, setTargetLabel] = useState('');
+  const [alternativeType, setAlternativeType] = useState('GENERIC_ALTERNATIVE');
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(q.trim()), 300);
+    return () => clearTimeout(id);
+  }, [q]);
+
+  const { data: results } = useQuery({
+    queryKey: ['dic-search', debounced, 'nameEn'],
+    queryFn: () =>
+      api<{ items: DrugSummaryExt[] }>(
+        `/dic/search?q=${encodeURIComponent(debounced)}&field=nameEn&limit=8`,
+      ),
+    enabled: debounced.length > 0,
+  });
+
+  const submit = useMutation({
+    mutationFn: () =>
+      api<DrugAlternativeLink>(`/dic/drugs/${drug.id}/alternative-links`, {
+        method: 'POST',
+        body: { alternativeDrugId: targetId, alternativeType },
+      }),
+    onSuccess: () => {
+      setError(null);
+      setDone(true);
+      void queryClient.invalidateQueries({ queryKey: ['dic-alternatives-pending'] });
+    },
+    onError: (e) => setError(e instanceof ApiError ? e.message : t('common.error')),
+  });
+
+  return (
+    <Dialog open onClose={onClose} title={t('dic.alternative.proposeTitle')}>
+      {done ? (
+        <div className="space-y-3">
+          <p className="text-sm text-green-700">{t('dic.alternative.proposed')}</p>
+          <div className="flex justify-end">
+            <Button onClick={onClose}>{t('common.close')}</Button>
+          </div>
+        </div>
+      ) : (
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit.mutate();
+          }}
+        >
+          {error && <ErrorState message={error} />}
+          <label className="block">
+            <span className="mb-1 block text-sm font-medium text-gray-700">
+              {t('dic.alternative.targetDrug')}
+            </span>
+            <input
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm outline-none focus:border-[#0b2545] focus:ring-2 focus:ring-[#0b2545]/20"
+              value={targetId ? targetLabel : q}
+              onChange={(e) => {
+                setTargetId(null);
+                setQ(e.target.value);
+              }}
+              placeholder={t('dic.searchPlaceholder')}
+            />
+          </label>
+          {!targetId && results && results.items.length > 0 && (
+            <ul className="max-h-40 divide-y divide-gray-100 overflow-y-auto rounded-md border border-gray-200">
+              {results.items
+                .filter((r) => r.id !== drug.id)
+                .map((r) => (
+                  <li key={r.id}>
+                    <button
+                      type="button"
+                      className="w-full px-2 py-1.5 text-start text-sm hover:bg-gray-50"
+                      onClick={() => {
+                        setTargetId(r.id);
+                        setTargetLabel(r.nameEn);
+                        setQ('');
+                      }}
+                    >
+                      {r.nameEn} <span className="text-xs text-gray-400">({r.materialNo})</span>
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          )}
+          <Select
+            label={t('dic.alternative.type')}
+            value={alternativeType}
+            onChange={(e) => setAlternativeType(e.target.value)}
+          >
+            {[
+              'SAME_ACTIVE_INGREDIENT',
+              'SAME_ACTIVE_AND_STRENGTH',
+              'SAME_ACTIVE_DIFFERENT_STRENGTH',
+              'SAME_DOSAGE_FORM',
+              'GENERIC_ALTERNATIVE',
+              'BRAND_ALTERNATIVE',
+              'THERAPEUTIC_ALTERNATIVE',
+            ].map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </Select>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="submit" disabled={!targetId || submit.isPending}>
+              {t('dic.alternative.proposeBtn')}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Dialog>
   );
 }
 
@@ -417,7 +822,7 @@ function DbsRefreshButton({ drugId }: { drugId: string }) {
 
 // ── §15.3 change requests (spec H8): propose → approve ────────────────
 
-function ProposeDialog({ drug, onClose }: { drug: DrugCard; onClose: () => void }) {
+function ProposeDialog({ drug, onClose }: { drug: DrugCardExt; onClose: () => void }) {
   const t = useTranslations();
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(EDITABLE_FIELDS.map((f) => [f, (drug[f] as string | null) ?? ''])),

@@ -77,3 +77,23 @@ export async function api<T>(
   }
   return data as T;
 }
+
+/** Fetches a non-JSON response (e.g. a CSV export) and triggers a
+ *  browser download — the bearer token lives in JS, not a cookie, so a
+ *  plain <a href> can't authenticate; this attaches it manually. */
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const token = getAccessToken();
+  const res = await fetch(`${BASE_URL}/api/v1${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, `Download failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
