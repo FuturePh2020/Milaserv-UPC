@@ -64,6 +64,30 @@ services:
       context: services/ocr-service
     restart: unless-stopped
     profiles: ['app']
+    environment:
+      # CR-001 Sprint OCR-03 — Real Text Detection & Recognition. Every
+      # value here is infra-level (device/model selection), distinct from
+      # the business tunables (thresholds, enabled processors) NestJS
+      # Settings resolves and passes per-call — see app/config.py.
+      OCR_PROVIDER: paddleocr
+      OCR_DEVICE: ${OCR_DEVICE:-cpu}
+      OCR_USE_GPU: ${OCR_USE_GPU:-false}
+      OCR_MODEL_CACHE_PATH: /models
+      OCR_DEFAULT_LANGUAGE: ${OCR_DEFAULT_LANGUAGE:-auto}
+      OCR_ENABLE_ARABIC: ${OCR_ENABLE_ARABIC:-true}
+      OCR_ENABLE_ENGLISH: ${OCR_ENABLE_ENGLISH:-true}
+      OCR_ENABLE_ORIENTATION: ${OCR_ENABLE_ORIENTATION:-true}
+      OCR_ENABLE_DOCUMENT_UNWARPING: ${OCR_ENABLE_DOCUMENT_UNWARPING:-true}
+      OCR_BATCH_SIZE: ${OCR_BATCH_SIZE:-4}
+      OCR_REQUEST_TIMEOUT_SECONDS: ${OCR_REQUEST_TIMEOUT_SECONDS:-120}
+      # Shared secret with the api container (design brief §12/§18) —
+      # unset means unauthenticated, logged loudly at startup; set it for
+      # any shared/production environment.
+      OCR_INTERNAL_TOKEN: ${OCR_INTERNAL_TOKEN:-}
+    volumes:
+      # Model weights survive `docker compose down && up` — never
+      # silently re-downloaded (design brief §3).
+      - ocr_models:/models
     ports:
       - '8100:8100'
 
@@ -110,6 +134,8 @@ services:
       # file URLs through this — must be reachable from its network, not
       # just the browser's.
       API_PUBLIC_BASE_URL: http://api:4000
+      # CR-001 Sprint OCR-03 — must match ocr-service's own value above.
+      OCR_INTERNAL_TOKEN: ${OCR_INTERNAL_TOKEN:-}
     ports:
       - '4000:4000'
 
@@ -131,3 +157,4 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  ocr_models:

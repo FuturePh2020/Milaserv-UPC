@@ -98,11 +98,15 @@ def detect_skew_angle(gray: np.ndarray, max_rotation_degrees: float) -> float:
     coords = cv2.findNonZero(thresh)
     if coords is None or len(coords) < 50:
         return 0.0
-    angle = cv2.minAreaRect(coords)[-1]
-    if angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
+    # cv2.minAreaRect's angle convention/range is not stable across major
+    # OpenCV versions (observed directly: the same rotated-rectangle
+    # geometry reports ~78° under OpenCV 4.10 where an older 5.0 build
+    # reported a value already within (-45, 45]) — normalize via modulo
+    # instead of a single -45 cutoff so this is robust to either.
+    angle = cv2.minAreaRect(coords)[-1] % 90
+    if angle > 45:
+        angle -= 90
+    angle = -angle
     if abs(angle) > max_rotation_degrees:
         return 0.0
     return round(float(angle), 2)

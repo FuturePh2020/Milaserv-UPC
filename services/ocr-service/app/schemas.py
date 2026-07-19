@@ -103,6 +103,17 @@ class DetectAndRecognizeRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class RecognitionCandidateDto(BaseModel):
+    """CR-001 Sprint OCR-03 — an alternative reading preserved when two
+    language passes scored a region closely (design brief §4 "Option B")."""
+
+    text: str
+    language: str
+    confidence: float = Field(ge=0, le=1)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class OCRBlock(BaseModel):
     raw_text: str = Field(alias="rawText")
     normalized_text: str = Field(alias="normalizedText")
@@ -110,6 +121,16 @@ class OCRBlock(BaseModel):
     language: str
     confidence: float = Field(ge=0, le=1)
     line_number: int = Field(alias="lineNumber")
+
+    # CR-001 Sprint OCR-03 — all additive/optional so MockOCRProvider's
+    # existing three fixtures (Sprint OCR-01) remain valid without change.
+    block_index: int = Field(alias="blockIndex", default=0)
+    bounding_polygon: list[list[float]] | None = Field(alias="boundingPolygon", default=None)
+    script: str | None = None
+    direction: str | None = None
+    recognition_candidates: list[RecognitionCandidateDto] = Field(
+        alias="recognitionCandidates", default_factory=list
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -25,6 +25,14 @@ class OCRProvider(Protocol):
 
     def health_check(self) -> bool: ...
 
+    # CR-001 Sprint OCR-03 (design brief §2) — model lifecycle and
+    # capability reporting, common to every real provider.
+    def initialize(self) -> None: ...
+
+    def is_ready(self) -> bool: ...
+
+    def get_provider_info(self) -> dict: ...
+
 
 class ProviderRegistry:
     """Selects the active provider. Sprint OCR-01 registers only the mock

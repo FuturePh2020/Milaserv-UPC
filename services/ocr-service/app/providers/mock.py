@@ -66,6 +66,29 @@ class MockOCRProvider:
     def health_check(self) -> bool:
         return True
 
+    def initialize(self) -> None:
+        return  # nothing to load — every response is a pure function
+
+    def is_ready(self) -> bool:
+        return True
+
+    def get_provider_info(self) -> dict:
+        return {
+            "name": self.name,
+            "ready": True,
+            "initError": None,
+            "languages": ["en"],
+            "models": {},
+            "device": "cpu",
+            "capabilities": {
+                "supportsPrintedText": True,
+                "supportsHandwriting": False,
+                "supportsArabic": False,
+                "supportsEnglish": True,
+                "supportsMixedLanguage": False,
+            },
+        }
+
 
 def mock_quality_score(image_url: str) -> tuple[float, list[str]]:
     """Filename convention drives the mock quality gate so callers can
