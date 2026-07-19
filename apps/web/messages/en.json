@@ -598,6 +598,46 @@
       "CONFIRMED": "Confirmed",
       "CORRECTED": "Corrected",
       "REJECTED": "Rejected"
+    },
+    "preprocessing": {
+      "noPages": "No pages uploaded yet.",
+      "page": "Page",
+      "status": {
+        "QUEUED": "Queued",
+        "ANALYZING_QUALITY": "Checking image quality",
+        "PREPROCESSING": "Preprocessing",
+        "READY_FOR_OCR": "Ready for OCR",
+        "EXTRACTING_TEXT": "Extracting text",
+        "DETECTING_CANDIDATES": "Detecting medicines",
+        "COMPLETED": "Completed",
+        "IMAGE_REUPLOAD_REQUIRED": "Re-upload required",
+        "FAILED": "Failed"
+      },
+      "quality": {
+        "EXCELLENT": "Excellent",
+        "GOOD": "Good",
+        "FAIR": "Fair",
+        "POOR": "Poor",
+        "REUPLOAD_REQUIRED": "Re-upload required"
+      },
+      "processorFailures": "Processor failures",
+      "blur": "Blur",
+      "brightness": "Brightness",
+      "contrast": "Contrast",
+      "noise": "Noise",
+      "rotation": "Rotation",
+      "cropConfidence": "Crop confidence",
+      "noImagesYet": "No processed images yet — preprocessing has not completed.",
+      "processedVersion": "Processed version",
+      "versionType": {
+        "ROTATED": "Rotated",
+        "CROPPED": "Cropped",
+        "ENHANCED": "Enhanced",
+        "OCR_READY": "OCR-ready"
+      },
+      "original": "Original",
+      "processed": "Processed",
+      "notAvailable": "Not available"
     }
   }
 }

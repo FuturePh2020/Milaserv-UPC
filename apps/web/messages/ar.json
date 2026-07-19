@@ -598,6 +598,46 @@
       "CONFIRMED": "معتمد",
       "CORRECTED": "مصحح",
       "REJECTED": "مرفوض"
+    },
+    "preprocessing": {
+      "noPages": "لم يتم رفع أي صفحات بعد.",
+      "page": "صفحة",
+      "status": {
+        "QUEUED": "في الانتظار",
+        "ANALYZING_QUALITY": "جارٍ فحص جودة الصورة",
+        "PREPROCESSING": "جارٍ تحسين الصورة",
+        "READY_FOR_OCR": "جاهزة للتعرف الضوئي",
+        "EXTRACTING_TEXT": "جارٍ استخراج النص",
+        "DETECTING_CANDIDATES": "جارٍ تحديد الأدوية",
+        "COMPLETED": "مكتملة",
+        "IMAGE_REUPLOAD_REQUIRED": "مطلوب إعادة الرفع",
+        "FAILED": "فشلت"
+      },
+      "quality": {
+        "EXCELLENT": "ممتازة",
+        "GOOD": "جيدة",
+        "FAIR": "مقبولة",
+        "POOR": "ضعيفة",
+        "REUPLOAD_REQUIRED": "مطلوب إعادة الرفع"
+      },
+      "processorFailures": "أخطاء في المعالجة",
+      "blur": "الوضوح",
+      "brightness": "السطوع",
+      "contrast": "التباين",
+      "noise": "التشويش",
+      "rotation": "زاوية الدوران",
+      "cropConfidence": "دقة القص",
+      "noImagesYet": "لا توجد صور معالَجة بعد — لم يكتمل التحسين.",
+      "processedVersion": "النسخة المعالَجة",
+      "versionType": {
+        "ROTATED": "مُدارة",
+        "CROPPED": "مقصوصة",
+        "ENHANCED": "محسَّنة",
+        "OCR_READY": "جاهزة للتعرف الضوئي"
+      },
+      "original": "الأصلية",
+      "processed": "المعالَجة",
+      "notAvailable": "غير متاحة"
     }
   }
 }
