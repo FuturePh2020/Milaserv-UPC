@@ -4,12 +4,15 @@ import { IntegrationsModule } from '../integrations/integrations.module';
 import { DicController } from './dic.controller';
 import { DicService } from './dic.service';
 import { DicImportService } from './dic-import.service';
+import { DicReferenceController } from './dic-reference.controller';
+import { DicReferenceService } from './dic-reference.service';
 
-/** United Pharmacy Center — DIC (blueprint §15). */
+/** United Pharmacy Center — DIC (blueprint §15; Phase 4 design doc
+ *  CR-002 for the Drug Master & Normalization Foundation additions). */
 @Module({
   imports: [SettingsModule, IntegrationsModule],
-  controllers: [DicController],
-  providers: [DicService, DicImportService],
-  exports: [DicService, DicImportService],
+  controllers: [DicController, DicReferenceController],
+  providers: [DicService, DicImportService, DicReferenceService],
+  exports: [DicService, DicImportService, DicReferenceService],
 })
 export class DicModule {}

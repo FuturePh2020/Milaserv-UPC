@@ -6,6 +6,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -88,4 +89,245 @@ export class DecideChangeRequestDto {
   @IsString()
   @MaxLength(1000)
   note?: string;
+}
+
+// ── Phase 4 — DIC Drug Master & Normalization Foundation ──────────────
+// docs/change-requests/CR-002-dic-drug-master-foundation.md
+
+export class CreateDosageFormDto {
+  @IsString()
+  @MaxLength(40)
+  code!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameEn!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameAr!: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  synonyms?: string[];
+}
+
+export class UpdateDosageFormDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameAr?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  synonyms?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class CreateMeasurementUnitDto {
+  @IsString()
+  @MaxLength(20)
+  code!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameEn!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameAr!: string;
+
+  @IsString()
+  @MaxLength(40)
+  unitCategory!: string;
+
+  @IsOptional()
+  @IsNumber()
+  normalizationFactor?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  baseUnitCode?: string;
+}
+
+export class UpdateMeasurementUnitDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameAr?: string;
+
+  @IsOptional()
+  @IsNumber()
+  normalizationFactor?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class CreateCountryDto {
+  @IsString()
+  @MaxLength(2)
+  isoCode!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameEn!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameAr!: string;
+}
+
+export class UpdateCountryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameAr?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class CreateManufacturerDto {
+  @IsString()
+  @MaxLength(200)
+  nameEn!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  countryId?: string;
+}
+
+export class UpdateManufacturerDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  countryId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class CreateTherapeuticClassDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(60)
+  code?: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameEn!: string;
+
+  @IsString()
+  @MaxLength(120)
+  nameAr!: string;
+
+  @IsOptional()
+  @IsString()
+  parentId?: string;
+}
+
+export class UpdateTherapeuticClassDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  nameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  parentId?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class CreateActiveIngredientDto {
+  @IsString()
+  @MaxLength(200)
+  scientificNameEn!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  scientificNameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  abbreviation?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  atcCode?: string;
+}
+
+export class UpdateActiveIngredientDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  scientificNameEn?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  scientificNameAr?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  abbreviation?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  atcCode?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
 }
