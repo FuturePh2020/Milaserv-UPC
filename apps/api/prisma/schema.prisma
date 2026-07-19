@@ -1233,13 +1233,16 @@ model Drug {
   mergedInto                 Drug?             @relation("drugMerge", fields: [mergedIntoDrugId], references: [id])
   mergedFrom                 Drug[]            @relation("drugMerge")
 
-  alternatives           DrugAlternative[]
-  crossSells             DrugCrossSell[]
-  coverages              DrugCoverage[]
-  changeRequests         DrugChangeRequest[]
-  prescriptionLines      PrescriptionLine[]
+  alternatives             DrugAlternative[]
+  crossSells               DrugCrossSell[]
+  coverages                DrugCoverage[]
+  changeRequests           DrugChangeRequest[]
+  prescriptionLines        PrescriptionLine[]
   /// CR-001 Prescription Intelligence Engine (Sprint OCR-01).
-  prescriptionCandidates PrescriptionDrugCandidate[]
+  prescriptionCandidates   PrescriptionDrugCandidate[]
+  /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
+  medicationLineSelections PrescriptionMedicationLine[]
+  matchDecisions           DrugMatchDecision[]
 
   // ── Phase 4 relations ────────────────────────────────────────────────
   ingredients          DrugIngredient[]
@@ -1789,6 +1792,10 @@ model Prescription {
   pages             PrescriptionPage[]
   drugCandidates    PrescriptionDrugCandidate[]
 
+  /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
+  medicationLines PrescriptionMedicationLine[]
+  matchRuns       DrugMatchRun[]
+
   @@index([status, createdAt])
   @@index([uploadedById])
 }
@@ -1969,7 +1976,7 @@ model PrescriptionPage {
   /// an additional gate (design doc §10's OCR_LOW_CONFIDENCE/
   /// OCR_REVIEW_REQUIRED intent, expressed as a flag instead of new
   /// enum values that would duplicate what this flag already says).
-  requiresOcrReview  Boolean              @default(false)
+  requiresOcrReview  Boolean                      @default(false)
   ocrFailureCode     String?
   ocrFailureReason   String?
   /// Not a hard FK (like PrescriptionRegion.spawnedPageId elsewhere in
@@ -1980,6 +1987,8 @@ model PrescriptionPage {
   /// §16 "never silently overwrite previous OCR runs").
   currentOcrRunId    String?
   ocrRuns            PrescriptionOcrRun[]
+  /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
+  medicationLines    PrescriptionMedicationLine[]
 
   @@unique([prescriptionId, pageNumber])
   @@index([processingStatus])
@@ -2131,8 +2140,8 @@ model PrescriptionDrugCandidate {
   matchedDrug         Drug?                       @relation(fields: [matchedDrugId], references: [id])
   matchConfidence     Float?
   status              PrescriptionCandidateStatus @default(NEEDS_PHARMACIST_REVIEW)
-  /// Score breakdown / match reasons (design spec §7) — null until the
-  /// matching engine ships.
+  /// Score breakdown / match reasons (design spec §7) — populated for
+  /// real by the Phase 5 matching engine; null on any pre-Phase-5 row.
   matchExplanation    Json?
   reviewedById        String?
   reviewedAt          DateTime?
@@ -2140,8 +2149,53 @@ model PrescriptionDrugCandidate {
   updatedAt           DateTime                    @updatedAt
   corrections         OCRCorrection[]
 
+  // ── CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine ────────
+  // All nullable/defaulted, additive; null on any row a pre-Phase-5
+  // pipeline created. This table doubles as the design summary's
+  // "DrugMatchCandidate" — extended in place rather than duplicated,
+  // since it already existed for exactly this purpose (see the
+  // pre-Phase-5 matchExplanation comment above).
+  medicationLineId         String?
+  medicationLine           PrescriptionMedicationLine?  @relation("LineCandidates", fields: [medicationLineId], references: [id], onDelete: Cascade)
+  matchRunId               String?
+  matchRun                 DrugMatchRun?                @relation(fields: [matchRunId], references: [id], onDelete: Cascade)
+  /// 1 = top-ranked candidate for this line.
+  rank                     Int?
+  nameScore                Float?
+  ingredientScore          Float?
+  strengthScore            Float?
+  dosageFormScore          Float?
+  contextScore             Float?
+  dataQualityScore         Float?
+  /// Small +/- adjustment from OCR/page confidence — never a weighted
+  /// share of the score, so an unreliable read tempers confidence
+  /// rather than silently boosting a lucky fuzzy match.
+  ocrReliabilityAdjustment Float?
+  conflictPenalty          Float?
+  confidenceLevel          MatchConfidenceLevel?
+  /// This candidate's totalScore minus the next-ranked candidate's —
+  /// classifyConfidence() never trusts an absolute score alone
+  /// (design summary §17).
+  candidateMargin          Float?
+  /// DrugMatchEvidence[] — type/sourceText/matchedDICValue/rawScore/
+  /// weightedScore/explanation/sourceBlockIds per signal that fed this
+  /// candidate's score (design summary §7).
+  evidenceJson             Json?
+  /// Conflict codes detected against this specific candidate (design
+  /// summary §15) — e.g. STRENGTH_CONFLICT, DISCONTINUED_DRUG.
+  conflictsJson            Json?
+  /// Human-readable explanation — never only in logs (design summary
+  /// §23).
+  explanationText          String?
+  selected                 Boolean                      @default(false)
+  rejected                 Boolean                      @default(false)
+  selectedForLines         PrescriptionMedicationLine[] @relation("SelectedCandidate")
+  selectedForDecisions     DrugMatchDecision[]          @relation("DecisionCandidate")
+
   @@index([prescriptionId])
   @@index([status])
+  @@index([medicationLineId])
+  @@index([matchRunId])
 }
 
 /// Pharmacist corrections — analytics/training trail only; never writes
@@ -2172,4 +2226,174 @@ model OCRCorrection {
 
   @@index([candidateId])
   @@index([ocrTextBlockId])
+}
+
+// ── CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine ─────────
+// docs/change-requests/CR-001-prescription-intelligence-engine.md
+//
+// Explicitly out of scope: branch inventory availability, stock
+// reservation, pharmaceutical substitution recommendation, order
+// creation, automatic prescription approval. No confidence band ever
+// auto-confirms a medication — every candidate the engine produces
+// still requires a pharmacist decision (design summary §2/§16).
+
+enum PrescriptionLineType {
+  MEDICATION
+  DOSAGE_INSTRUCTION
+  PATIENT_INFORMATION
+  DOCTOR_INFORMATION
+  DATE
+  DIAGNOSIS
+  HEADER
+  FOOTER
+  WHATSAPP_UI
+  UNKNOWN
+}
+
+enum MedicationLineMatchingStatus {
+  CANDIDATES_FOUND
+  HIGH_CONFIDENCE
+  AMBIGUOUS
+  LOW_CONFIDENCE
+  UNRESOLVED
+  CONFIRMED
+  REJECTED
+  MANUALLY_SELECTED
+  NOT_A_MEDICATION
+}
+
+enum DrugMatchRunStatus {
+  MATCHING_QUEUED
+  MATCHING_PROCESSING
+  MATCHING_COMPLETED
+  MATCHING_REVIEW_REQUIRED
+  MATCHING_PARTIALLY_RESOLVED
+  MATCHING_RESOLVED
+  MATCHING_FAILED
+}
+
+enum MatchConfidenceLevel {
+  VERY_HIGH
+  HIGH
+  MEDIUM
+  LOW
+  UNRESOLVED
+}
+
+enum MatchDecisionType {
+  CANDIDATE_CONFIRMED
+  CANDIDATE_REJECTED
+  MANUAL_DRUG_SELECTED
+  NO_DRUG_FOUND
+  NON_MEDICATION_LINE
+  REQUIRES_CLARIFICATION
+}
+
+/// One prescription-level attempt at the full SEGMENT -> EXTRACT ->
+/// GENERATE -> SCORE -> DETECT_CONFLICTS -> SAVE -> ROUTE pipeline
+/// (design summary §20). Never deleted — a reprocess creates a new run
+/// alongside every prior one, mirroring PrescriptionOcrRun's own
+/// "never silently overwrite" rule for OCR.
+model DrugMatchRun {
+  id                        String             @id @default(cuid())
+  prescriptionId            String
+  prescription              Prescription       @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  /// Every page's currentOcrRunId this run read from, at trigger time.
+  ocrRunIdsJson             Json
+  matchingEngineVersion     String
+  /// Every matching weight/threshold resolved from Settings at the
+  /// moment this run started — reproducible even after weights change
+  /// later (mirrors PrescriptionOcrRun.settingsSnapshotJson).
+  configurationSnapshotJson Json
+  status                    DrugMatchRunStatus @default(MATCHING_QUEUED)
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  durationMs                Int?
+  lineCount                 Int                @default(0)
+  matchedLineCount          Int                @default(0)
+  unresolvedLineCount       Int                @default(0)
+  /// Set only for a manually-triggered reprocess; null for the
+  /// automatic post-OCR trigger.
+  initiatedById             String?
+  failureCode               String?
+  failureReason             String?
+  createdAt                 DateTime           @default(now())
+
+  medicationLines PrescriptionMedicationLine[]
+  candidates      PrescriptionDrugCandidate[]
+
+  @@index([prescriptionId])
+  @@index([status])
+}
+
+/// Segmentation output (design summary §4) — logical prescription
+/// lines grouped from one or more OCRTextBlocks, distinct from the
+/// legacy per-block PrescriptionLine model (blueprint §17, frozen).
+/// Belongs to a specific DrugMatchRun (never overwritten by a
+/// reprocess) so a line's own candidates/decisions stay historically
+/// intact even after re-segmentation.
+model PrescriptionMedicationLine {
+  id                   String                       @id @default(cuid())
+  prescriptionId       String
+  prescription         Prescription                 @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  prescriptionPageId   String
+  page                 PrescriptionPage             @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  matchRunId           String
+  matchRun             DrugMatchRun                 @relation(fields: [matchRunId], references: [id], onDelete: Cascade)
+  lineIndex            Int
+  rawText              String
+  normalizedText       String?
+  /// OCRTextBlock ids this line was grouped from, in reading order.
+  sourceBlockIdsJson   Json
+  boundingRegionJson   Json?
+  probableLineType     PrescriptionLineType         @default(UNKNOWN)
+  detectedLanguage     String?
+  /// Average OCR recognition confidence (0-1) across the source blocks.
+  ocrConfidence        Float?
+  /// The phrase extractor's own confidence in the line-type/phrase
+  /// split (0-1), distinct from ocrConfidence.
+  extractionConfidence Float?
+  matchingStatus       MedicationLineMatchingStatus @default(CANDIDATES_FOUND)
+  selectedDrugId       String?
+  selectedDrug         Drug?                        @relation(fields: [selectedDrugId], references: [id])
+  selectedCandidateId  String?
+  selectedCandidate    PrescriptionDrugCandidate?   @relation("SelectedCandidate", fields: [selectedCandidateId], references: [id])
+  selectedById         String?
+  selectedAt           DateTime?
+  /// Never auto-cleared to false — only a recorded decision does that
+  /// (design summary §2: "never silently confirm").
+  reviewRequired       Boolean                      @default(true)
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+
+  candidates PrescriptionDrugCandidate[] @relation("LineCandidates")
+  decisions  DrugMatchDecision[]
+
+  @@unique([matchRunId, lineIndex])
+  @@index([prescriptionId])
+  @@index([prescriptionPageId])
+  @@index([matchingStatus])
+}
+
+/// Append-only decision history — distinct from the *live* state on
+/// PrescriptionMedicationLine, mirroring how OCRCorrection/
+/// DrugChangeRequest never overwrite, only append (design summary §18).
+model DrugMatchDecision {
+  id                  String                     @id @default(cuid())
+  medicationLineId    String
+  medicationLine      PrescriptionMedicationLine @relation(fields: [medicationLineId], references: [id], onDelete: Cascade)
+  selectedDrugId      String?
+  selectedDrug        Drug?                      @relation(fields: [selectedDrugId], references: [id])
+  selectedCandidateId String?
+  selectedCandidate   PrescriptionDrugCandidate? @relation("DecisionCandidate", fields: [selectedCandidateId], references: [id])
+  decisionType        MatchDecisionType
+  decidedById         String
+  decidedAt           DateTime                   @default(now())
+  notes               String?
+  /// The line's previously-selected drug, if any — lets a decision
+  /// history show what changed, not just the final state.
+  previousDrugId      String?
+  auditMetadataJson   Json?
+
+  @@index([medicationLineId])
 }

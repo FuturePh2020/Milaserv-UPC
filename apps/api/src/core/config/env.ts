@@ -63,6 +63,15 @@ export const envSchema = z.object({
   /// X-Internal-Token). Unset in dev/test; ocr-service accepts unauthenticated
   /// calls (with a startup warning) in that case, matching the Python side.
   OCR_INTERNAL_TOKEN: z.string().optional(),
+
+  /// Phase 5 — Intelligent OCR-to-Drug Matching Engine. Same shape as the
+  /// prescription-ocr queue's own toggle/retry vars above.
+  PRESCRIPTION_MATCHING_WORKER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  PRESCRIPTION_MATCHING_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  PRESCRIPTION_MATCHING_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5000),
 });
 
 export type Env = z.infer<typeof envSchema>;
