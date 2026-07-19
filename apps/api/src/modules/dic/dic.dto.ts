@@ -55,6 +55,10 @@ export const SEARCH_FIELDS = [
   'material',
   'nameAr',
   'nameEn',
+  // Phase 4 — DIC Drug Master & Normalization Foundation
+  'barcode',
+  'scientific',
+  'alias',
 ] as const;
 export type SearchField = (typeof SEARCH_FIELDS)[number];
 

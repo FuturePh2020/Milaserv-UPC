@@ -15,6 +15,9 @@ import { SettingsService } from '../settings/settings.service';
 import { IntegrationsService } from '../integrations/integrations.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import type { CreateChangeRequestDto, DecideChangeRequestDto, SearchQueryDto } from './dic.dto';
+import { normalizeSearchInput } from './normalization';
+
+type MatchSource = 'primary' | 'alias' | 'scientific';
 
 /** H5 pharmacist-editable fields (plus coverage) — the H8 approval surface. */
 const EDITABLE_FIELDS = ['activeIngredient', 'usage', 'offers', 'note'] as const;
@@ -117,8 +120,14 @@ export class DicService implements OnModuleInit {
     // so use queryRaw for wildcard queries and the ORM for plain ones.
     const field = q.field ?? 'all';
     const limit = q.limit ?? 20;
+    const rawQuery = pattern.replaceAll('%', '');
 
     if (q.q.includes('*')) {
+      // Phase 4 (design doc §15/§16) — alias/scientific-name matching
+      // isn't extended to wildcard queries: those need a relation join
+      // raw SQL doesn't compose with the same simplicity as the ORM
+      // path below, and wildcard search is the rarer of the two. barcode
+      // joins the existing single-column set.
       const column =
         field === 'brand'
           ? 'brand'
@@ -130,7 +139,9 @@ export class DicService implements OnModuleInit {
                 ? 'nameAr'
                 : field === 'nameEn'
                   ? 'nameEn'
-                  : null;
+                  : field === 'barcode'
+                    ? 'barcode'
+                    : null;
       const rows = column
         ? await this.prisma.$queryRawUnsafe<{ id: string }[]>(
             `SELECT id FROM "Drug" WHERE "${column}" ILIKE $1 LIMIT $2`,
@@ -140,11 +151,59 @@ export class DicService implements OnModuleInit {
         : await this.prisma.$queryRawUnsafe<{ id: string }[]>(
             `SELECT id FROM "Drug" WHERE "nameEn" ILIKE $1 OR "nameAr" ILIKE $1
                OR "brand" ILIKE $1 OR "materialNo" ILIKE $1
-               OR "activeIngredient" ILIKE $1 LIMIT $2`,
+               OR "activeIngredient" ILIKE $1 OR "barcode" ILIKE $1 LIMIT $2`,
             pattern,
             limit,
           );
       return this.hydrate(rows.map((r) => r.id));
+    }
+
+    // Phase 4 — alias and scientific-name matches are separate relation
+    // queries rather than folded into one giant OR: this keeps each
+    // match's source visible (design doc §16 "match source") instead of
+    // losing it in a flat list, and lets a caller ask for exactly one
+    // source without the others' false positives.
+    if (field === 'alias') {
+      const normalizedQuery = normalizeSearchInput(q.q);
+      const drugs = await this.prisma.drug.findMany({
+        where: {
+          aliases: {
+            some: {
+              OR: [
+                { alias: { contains: rawQuery, mode: 'insensitive' } },
+                { normalizedAlias: { contains: normalizedQuery } },
+              ],
+            },
+          },
+        },
+        include: { itemType: true, coverages: true },
+        orderBy: { nameEn: 'asc' },
+        take: limit,
+      });
+      return { items: drugs.map((d) => this.summary(d, 'alias')) };
+    }
+
+    if (field === 'scientific') {
+      const normalizedQuery = normalizeSearchInput(q.q);
+      const drugs = await this.prisma.drug.findMany({
+        where: {
+          ingredients: {
+            some: {
+              activeIngredient: {
+                OR: [
+                  { scientificNameEn: { contains: rawQuery, mode: 'insensitive' } },
+                  { scientificNameAr: { contains: rawQuery, mode: 'insensitive' } },
+                  { normalizedScientificNameEn: { contains: normalizedQuery } },
+                ],
+              },
+            },
+          },
+        },
+        include: { itemType: true, coverages: true },
+        orderBy: { nameEn: 'asc' },
+        take: limit,
+      });
+      return { items: drugs.map((d) => this.summary(d, 'scientific')) };
     }
 
     const where: Prisma.DrugWhereInput =
@@ -156,6 +215,7 @@ export class DicService implements OnModuleInit {
               like('brand'),
               like('materialNo'),
               like('activeIngredient'),
+              like('barcode'),
             ],
           }
         : field === 'brand'
@@ -166,7 +226,9 @@ export class DicService implements OnModuleInit {
               ? like('materialNo')
               : field === 'nameAr'
                 ? like('nameAr')
-                : like('nameEn');
+                : field === 'barcode'
+                  ? like('barcode')
+                  : like('nameEn');
 
     const items = await this.prisma.drug.findMany({
       where,
@@ -174,7 +236,46 @@ export class DicService implements OnModuleInit {
       orderBy: { nameEn: 'asc' },
       take: limit,
     });
-    return { items: items.map((d) => this.summary(d)) };
+    const results = items.map((d) => this.summary(d, 'primary'));
+
+    // "all" also surfaces alias/scientific matches the primary OR above
+    // can't reach (they live on related tables) — appended after
+    // primary matches, never replacing them, de-duplicated by drug id.
+    if (field === 'all' && results.length < limit) {
+      const normalizedQuery = normalizeSearchInput(q.q);
+      const seen = new Set(results.map((r) => r.id));
+      const remaining = limit - results.length;
+      const [aliasMatches, scientificMatches] = await Promise.all([
+        this.prisma.drug.findMany({
+          where: {
+            id: { notIn: [...seen] },
+            aliases: { some: { normalizedAlias: { contains: normalizedQuery } } },
+          },
+          include: { itemType: true, coverages: true },
+          take: remaining,
+        }),
+        this.prisma.drug.findMany({
+          where: {
+            id: { notIn: [...seen] },
+            ingredients: {
+              some: {
+                activeIngredient: { normalizedScientificNameEn: { contains: normalizedQuery } },
+              },
+            },
+          },
+          include: { itemType: true, coverages: true },
+          take: remaining,
+        }),
+      ]);
+      const aliasIds = new Set(aliasMatches.map((d) => d.id));
+      for (const d of [...aliasMatches, ...scientificMatches]) {
+        if (seen.has(d.id) || results.length >= limit) continue;
+        seen.add(d.id);
+        results.push(this.summary(d, aliasIds.has(d.id) ? 'alias' : 'scientific'));
+      }
+    }
+
+    return { items: results };
   }
 
   private async hydrate(ids: string[]) {
@@ -187,18 +288,21 @@ export class DicService implements OnModuleInit {
     return { items: items.map((d) => this.summary(d)) };
   }
 
-  private summary(d: {
-    id: string;
-    materialNo: string;
-    nameEn: string;
-    nameAr: string | null;
-    brand: string | null;
-    priceWithTax: Prisma.Decimal | null;
-    coded: boolean;
-    raqeeb: boolean;
-    itemType: { key: string; nameAr: string; nameEn: string } | null;
-    coverages: { companyKey: string; covered: boolean }[];
-  }) {
+  private summary(
+    d: {
+      id: string;
+      materialNo: string;
+      nameEn: string;
+      nameAr: string | null;
+      brand: string | null;
+      priceWithTax: Prisma.Decimal | null;
+      coded: boolean;
+      raqeeb: boolean;
+      itemType: { key: string; nameAr: string; nameEn: string } | null;
+      coverages: { companyKey: string; covered: boolean }[];
+    },
+    matchSource: MatchSource = 'primary',
+  ) {
     return {
       id: d.id,
       materialNo: d.materialNo,
@@ -210,6 +314,7 @@ export class DicService implements OnModuleInit {
       raqeeb: d.raqeeb,
       itemType: d.itemType,
       coveredBy: d.coverages.filter((c) => c.covered).map((c) => c.companyKey),
+      matchSource,
     };
   }
 
@@ -223,6 +328,37 @@ export class DicService implements OnModuleInit {
         coverages: { include: { company: true } },
         alternatives: { orderBy: { order: 'asc' } },
         crossSells: true,
+        // ── Phase 4 — DIC Drug Master & Normalization Foundation ──────
+        dosageForm: true,
+        manufacturer: { include: { country: true } },
+        countryOfOrigin: true,
+        ingredients: {
+          where: { active: true },
+          orderBy: { sequence: 'asc' },
+          include: { activeIngredient: true, ingredientUnit: true },
+        },
+        strengthComponents: { orderBy: { sequence: 'asc' }, include: { activeIngredient: true } },
+        packages: { where: { active: true } },
+        aliases: { orderBy: { createdAt: 'desc' } },
+        therapeuticClasses: {
+          where: { active: true },
+          include: { therapeuticClass: true },
+        },
+        alternativeLinksFrom: {
+          where: { active: true, pharmacistApproved: true },
+          orderBy: { priority: 'asc' },
+          include: {
+            alternativeDrug: {
+              select: {
+                id: true,
+                materialNo: true,
+                nameEn: true,
+                nameAr: true,
+                priceWithTax: true,
+              },
+            },
+          },
+        },
       },
     });
     if (!drug) throw new NotFoundException('Drug not found');
@@ -256,6 +392,11 @@ export class DicService implements OnModuleInit {
         materialNo: c.materialNo,
         drug: byMaterial.get(c.materialNo) ?? null,
       })),
+      // Renamed from the raw relation name — "approved alternatives" is
+      // the design doc's own term (§10/§17), distinct from the feed's
+      // unapproved `alternatives` above.
+      approvedAlternatives: drug.alternativeLinksFrom,
+      alternativeLinksFrom: undefined,
     };
   }
 
