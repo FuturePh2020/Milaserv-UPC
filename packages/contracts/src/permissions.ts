@@ -232,6 +232,49 @@ export const PERMISSIONS = [
     module: 'dic',
     label: { en: 'Approve drug master changes', ar: 'اعتماد تغييرات بيانات الأدوية' },
   },
+  // Phase 4 — DIC Drug Master & Normalization Foundation
+  {
+    key: 'dic.edit',
+    module: 'dic',
+    label: {
+      en: 'Create/edit drugs, ingredients, packaging, aliases',
+      ar: 'إنشاء وتعديل الأدوية والمكونات والعبوات والأسماء البديلة',
+    },
+  },
+  {
+    key: 'dic.pharmacist_review',
+    module: 'dic',
+    label: {
+      en: 'Review data quality & duplicate candidates',
+      ar: 'مراجعة جودة البيانات والتكرارات المحتملة',
+    },
+  },
+  {
+    key: 'dic.approve_alias',
+    module: 'dic',
+    label: { en: 'Approve/reject drug aliases', ar: 'اعتماد أو رفض الأسماء البديلة للأدوية' },
+  },
+  {
+    key: 'dic.approve_alternative',
+    module: 'dic',
+    label: { en: 'Approve/reject drug alternatives', ar: 'اعتماد أو رفض بدائل الأدوية' },
+  },
+  {
+    key: 'dic.import_staged',
+    module: 'dic',
+    label: {
+      en: 'Run staged drug import (upload, validate, execute)',
+      ar: 'تشغيل استيراد الأدوية المرحلي',
+    },
+  },
+  {
+    key: 'dic.admin',
+    module: 'dic',
+    label: {
+      en: 'Merge drugs, roll back imports, manage reference catalogs',
+      ar: 'دمج الأدوية والتراجع عن الاستيراد وإدارة قوائم المرجع',
+    },
+  },
   {
     key: 'ocr.view',
     module: 'ocr',

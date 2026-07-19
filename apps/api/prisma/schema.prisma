@@ -1121,12 +1121,18 @@ model DrugItemType {
 }
 
 /// §15.3 — MEENA/TAWUNIYA/BUPA seeded; additional companies are inserts.
+/// Phase 4: also doubles as the design doc's "CoverageProvider" — extended
+/// in place (providerType) rather than renamed, since companyKey is a real
+/// FK target for thousands of existing DrugCoverage rows.
 model InsuranceCompany {
-  id     String  @id @default(cuid())
-  key    String  @unique
-  nameAr String
-  nameEn String
-  active Boolean @default(true)
+  id           String  @id @default(cuid())
+  key          String  @unique
+  nameAr       String
+  nameEn       String
+  /// e.g. "INSURANCE" | "PROGRAM" | "INTERNAL" — informational grouping,
+  /// not enforced by an enum since new provider kinds shouldn't need a migration.
+  providerType String?
+  active       Boolean @default(true)
 
   coverages DrugCoverage[]
 }
@@ -1160,6 +1166,8 @@ model Drug {
   acuteChronic String?
 
   /// Pharmacist-maintained fields (spec H5) — edited via the 15.3 approval flow.
+  /// Free text, kept for backward compatibility; DrugIngredient below is the
+  /// new structured form (Phase 4) — progressively populated, not required.
   activeIngredient String?
   usage            String?
   offers           String?
@@ -1171,6 +1179,60 @@ model Drug {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ── Phase 4 — DIC Drug Master & Normalization Foundation ────────────
+  // docs/change-requests/CR-002-dic-drug-master-foundation.md
+  // All additive/nullable so every existing row (22,732 real drugs) stays
+  // valid without a backfill. barcode is distinct from the existing
+  // ean/gtin (feed-native identifiers, kept as-is).
+  barcode                    String?
+  normalizedTradeNameEnglish String?
+  normalizedTradeNameArabic  String?
+  searchNameEnglish          String?
+  searchNameArabic           String?
+  /// Concatenation of every searchable field (names, aliases, ingredient,
+  /// manufacturer, strength, dosage form) — the single trigram-indexed
+  /// column the "all fields" search matches against (design doc §15).
+  combinedSearchText         String?
+  dosageFormId               String?
+  dosageForm                 DosageForm?       @relation(fields: [dosageFormId], references: [id])
+  /// Original free-text strength (e.g. "500 mg") — always preserved;
+  /// DrugStrengthComponent below is the structured form.
+  strengthText               String?
+  manufacturerId             String?
+  manufacturer               Manufacturer?     @relation(fields: [manufacturerId], references: [id])
+  countryOfOriginId          String?
+  countryOfOrigin            Country?          @relation(fields: [countryOfOriginId], references: [id])
+  /// Free descriptive category beyond itemType/DrugItemType — e.g. an
+  /// SFDA regulatory bucket. Deliberately not an enum (design doc §2):
+  /// regulatory categories vary by authority and shouldn't need a
+  /// migration to add one.
+  regulatoryCategory         String?
+  requiresPrescription       Boolean?
+  requiresSpecialHandling    Boolean           @default(false)
+  controlledDrug             Boolean           @default(false)
+  coldChain                  Boolean           @default(false)
+  active                     Boolean           @default(true)
+  discontinued               Boolean           @default(false)
+  discontinuationDate        DateTime?
+  discontinuationReason      String?
+  /// Where this record came from — the feed importer, the new staged
+  /// import, or a manual entry (design doc §2/§20).
+  sourceSystem               String?
+  sourceRecordId             String?
+  dataQualityStatus          DataQualityStatus @default(NEEDS_REVIEW)
+  createdById                String?
+  updatedById                String?
+  approvedById               String?
+  approvedAt                 DateTime?
+  /// Optimistic lock (design doc §22) — incremented on every update by
+  /// the service layer, never by the client.
+  version                    Int               @default(0)
+  /// Set only once merged into another Drug (design doc §22) — a merged
+  /// record is never deleted, only redirected.
+  mergedIntoDrugId           String?
+  mergedInto                 Drug?             @relation("drugMerge", fields: [mergedIntoDrugId], references: [id])
+  mergedFrom                 Drug[]            @relation("drugMerge")
+
   alternatives           DrugAlternative[]
   crossSells             DrugCrossSell[]
   coverages              DrugCoverage[]
@@ -1179,9 +1241,24 @@ model Drug {
   /// CR-001 Prescription Intelligence Engine (Sprint OCR-01).
   prescriptionCandidates PrescriptionDrugCandidate[]
 
+  // ── Phase 4 relations ────────────────────────────────────────────────
+  ingredients          DrugIngredient[]
+  strengthComponents   DrugStrengthComponent[]
+  packages             DrugPackage[]
+  aliases              DrugAlias[]
+  therapeuticClasses   DrugTherapeuticClass[]
+  alternativeLinksFrom DrugAlternativeLink[]   @relation("alternativeLinkSource")
+  alternativeLinksTo   DrugAlternativeLink[]   @relation("alternativeLinkTarget")
+  importRows           DrugImportRow[]
+
   @@index([nameEn])
   @@index([nameAr])
   @@index([brand])
+  @@index([barcode])
+  @@index([dataQualityStatus])
+  @@index([active, discontinued])
+  @@index([manufacturerId])
+  @@index([dosageFormId])
 }
 
 /// §15.2 Alternatives — Mapped Product 1..22 (ordered).
@@ -1205,7 +1282,9 @@ model DrugCrossSell {
   @@unique([drugId, materialNo])
 }
 
-/// §15.3 coverage mapping rows.
+/// §15.3 coverage mapping rows. Phase 4 extends this in place — `covered`
+/// stays the boolean every existing caller/test reads; `coverageStatus`
+/// is the new richer status, backfilled from `covered` in the migration.
 model DrugCoverage {
   id         String           @id @default(cuid())
   drugId     String
@@ -1216,8 +1295,19 @@ model DrugCoverage {
   note       String?
   updatedAt  DateTime         @updatedAt
 
+  // ── Phase 4 additions ────────────────────────────────────────────────
+  coverageStatus   CoverageStatus @default(UNKNOWN)
+  requiresApproval Boolean        @default(false)
+  coverageNotes    String?
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  sourceSystem     String?
+  lastVerifiedAt   DateTime?
+  active           Boolean        @default(true)
+
   @@unique([drugId, companyKey])
   @@index([companyKey, covered])
+  @@index([coverageStatus])
 }
 
 /// §15.3 Approval Workflow for Master Data Changes (spec H8).
@@ -1235,6 +1325,417 @@ model DrugChangeRequest {
   decidedAt     DateTime?
 
   @@index([status, createdAt])
+}
+
+// ── Phase 4 — DIC Drug Master & Normalization Foundation ────────────
+// docs/change-requests/CR-002-dic-drug-master-foundation.md
+// Extends the §15 DIC module above rather than replacing it — the
+// existing monthly feed importer keeps writing the flat Drug columns
+// unchanged; everything below is additive normalized structure layered
+// on top. No OCR-to-drug matching, inventory availability checking, or
+// automatic alternative recommendation ships in this phase.
+
+enum DataQualityStatus {
+  DRAFT
+  INCOMPLETE
+  NEEDS_REVIEW
+  VERIFIED
+  REJECTED
+  ARCHIVED
+}
+
+enum AliasType {
+  TRADE_NAME
+  SCIENTIFIC_NAME
+  ABBREVIATION
+  COMMON_MISSPELLING
+  OCR_VARIANT
+  LEGACY_NAME
+  ARABIC_TRANSLITERATION
+  ENGLISH_TRANSLITERATION
+  MANUFACTURER_VARIANT
+  PACKAGING_VARIANT
+  USER_CORRECTION
+  IMPORTED_ALIAS
+}
+
+enum AliasSource {
+  MANUAL
+  IMPORT
+  OCR_CORRECTION
+  LEGACY_DATABASE
+  SYSTEM_GENERATED
+  PHARMACIST_APPROVED
+}
+
+enum IngredientRole {
+  PRIMARY
+  SECONDARY
+  COMBINATION_COMPONENT
+  EXCIPIENT
+  OTHER
+}
+
+enum DrugAlternativeType {
+  SAME_ACTIVE_INGREDIENT
+  SAME_ACTIVE_AND_STRENGTH
+  SAME_ACTIVE_DIFFERENT_STRENGTH
+  SAME_DOSAGE_FORM
+  GENERIC_ALTERNATIVE
+  BRAND_ALTERNATIVE
+  THERAPEUTIC_ALTERNATIVE
+}
+
+enum CoverageStatus {
+  COVERED
+  NOT_COVERED
+  PARTIALLY_COVERED
+  REQUIRES_APPROVAL
+  UNKNOWN
+}
+
+enum ImportBatchStatus {
+  UPLOADED
+  MAPPING
+  VALIDATING
+  VALIDATED
+  APPROVED
+  EXECUTING
+  COMPLETED
+  FAILED
+  ROLLED_BACK
+}
+
+enum ImportRowStatus {
+  PENDING
+  VALID
+  INVALID
+  DUPLICATE
+  IMPORTED
+  SKIPPED
+  FAILED
+}
+
+enum DuplicateResolution {
+  CREATE_NEW
+  LINK_EXISTING
+  MERGE
+  REJECT_ROW
+  DEFER_REVIEW
+}
+
+/// Country — manufacturer / drug country-of-origin reference.
+model Country {
+  id      String  @id @default(cuid())
+  isoCode String  @unique
+  nameEn  String
+  nameAr  String
+  active  Boolean @default(true)
+
+  manufacturers Manufacturer[]
+  drugs         Drug[]
+
+  @@index([active])
+}
+
+/// Manufacturer — the normalized form of Drug.brand (kept as free text
+/// for backward compatibility; manufacturerId is populated progressively,
+/// never required).
+model Manufacturer {
+  id               String   @id @default(cuid())
+  nameEn           String
+  nameAr           String?
+  normalizedNameEn String
+  normalizedNameAr String?
+  countryId        String?
+  country          Country? @relation(fields: [countryId], references: [id])
+  active           Boolean  @default(true)
+  sourceSystem     String?
+  sourceRecordId   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  drugs Drug[]
+
+  @@index([normalizedNameEn])
+  @@index([active])
+}
+
+/// Controlled dosage-form catalog (Tablet, Capsule, Syrup, ...) — never
+/// free text (design doc §4).
+model DosageForm {
+  id               String  @id @default(cuid())
+  code             String  @unique
+  nameEn           String
+  nameAr           String
+  normalizedNameEn String
+  normalizedNameAr String
+  /// Alternate spellings/synonyms this form is known by — a search aid,
+  /// never authoritative on its own.
+  synonymsJson     Json?
+  active           Boolean @default(true)
+
+  drugs Drug[]
+
+  @@index([active])
+}
+
+/// Controlled unit catalog (mg, ml, IU, %, tablet, ...) — never free
+/// text (design doc §4).
+model MeasurementUnit {
+  id                  String   @id @default(cuid())
+  code                String   @unique
+  nameEn              String
+  nameAr              String
+  unitCategory        String
+  /// Multiply a value in this unit by this factor to reach baseUnitCode
+  /// (e.g. g → mg is 1000).
+  normalizationFactor Decimal? @db.Decimal(18, 6)
+  baseUnitCode        String?
+  active              Boolean  @default(true)
+
+  numeratorStrengths   DrugStrengthComponent[] @relation("strengthNumeratorUnit")
+  denominatorStrengths DrugStrengthComponent[] @relation("strengthDenominatorUnit")
+  drugIngredients      DrugIngredient[]
+  packages             DrugPackage[]
+
+  @@index([active])
+}
+
+/// Active-ingredient master (scientific/generic names) — distinct from
+/// Drug.activeIngredient (free text, kept for backward compatibility
+/// until every drug has a structured DrugIngredient link).
+model ActiveIngredient {
+  id                         String   @id @default(cuid())
+  scientificNameEn           String
+  scientificNameAr           String?
+  normalizedScientificNameEn String
+  normalizedScientificNameAr String?
+  searchNameEn               String
+  searchNameAr               String?
+  abbreviation               String?
+  atcCode                    String?
+  active                     Boolean  @default(true)
+  createdById                String?
+  updatedById                String?
+  approvedById               String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  drugIngredients    DrugIngredient[]
+  strengthComponents DrugStrengthComponent[]
+
+  @@index([normalizedScientificNameEn])
+  @@index([atcCode])
+  @@index([active])
+}
+
+/// Drug ↔ ActiveIngredient join — one row per ingredient, so a
+/// combination medicine is simply multiple rows for the same drugId
+/// (design doc §3).
+model DrugIngredient {
+  id                        String           @id @default(cuid())
+  drugId                    String
+  drug                      Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  activeIngredientId        String
+  activeIngredient          ActiveIngredient @relation(fields: [activeIngredientId], references: [id])
+  /// Original strength text as entered/imported (e.g. "500 mg") — always
+  /// preserved alongside the structured numeric form below.
+  ingredientStrength        String?
+  ingredientStrengthNumeric Decimal?         @db.Decimal(18, 6)
+  ingredientUnitId          String?
+  ingredientUnit            MeasurementUnit? @relation(fields: [ingredientUnitId], references: [id])
+  concentrationText         String?
+  ingredientRole            IngredientRole   @default(PRIMARY)
+  sequence                  Int              @default(0)
+  active                    Boolean          @default(true)
+
+  @@unique([drugId, activeIngredientId])
+  @@index([drugId])
+  @@index([activeIngredientId])
+}
+
+/// Structured strength (design doc §7) — "500 mg", "250 mg / 5 ml", and
+/// "875 mg + 125 mg" (one row per component) are all representable as
+/// numerator[/denominator] pairs. Drug.strengthText always keeps the
+/// original free-text form; this is never the only representation.
+model DrugStrengthComponent {
+  id                     String            @id @default(cuid())
+  drugId                 String
+  drug                   Drug              @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  activeIngredientId     String?
+  activeIngredient       ActiveIngredient? @relation(fields: [activeIngredientId], references: [id])
+  numeratorValue         Decimal?          @db.Decimal(18, 6)
+  numeratorUnitId        String?
+  numeratorUnit          MeasurementUnit?  @relation("strengthNumeratorUnit", fields: [numeratorUnitId], references: [id])
+  denominatorValue       Decimal?          @db.Decimal(18, 6)
+  denominatorUnitId      String?
+  denominatorUnit        MeasurementUnit?  @relation("strengthDenominatorUnit", fields: [denominatorUnitId], references: [id])
+  originalStrengthText   String
+  normalizedStrengthText String?
+  sequence               Int               @default(0)
+
+  @@index([drugId])
+}
+
+/// Packaging — distinct from strength (design doc §8): "20 tablets",
+/// "100 ml bottle", never confused with the dose itself.
+model DrugPackage {
+  id                     String           @id @default(cuid())
+  drugId                 String
+  drug                   Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  packageType            String
+  packSize               Decimal?         @db.Decimal(18, 3)
+  packUnitId             String?
+  packUnit               MeasurementUnit? @relation(fields: [packUnitId], references: [id])
+  unitsPerPackage        Int?
+  packagingDescriptionEn String?
+  packagingDescriptionAr String?
+  barcode                String?
+  active                 Boolean          @default(true)
+
+  @@index([drugId])
+  @@index([barcode])
+}
+
+/// Hierarchical pharmacological classification — distinct from
+/// Drug.className/subClassName, which are feed-provided merchandising
+/// categories (Excel "Class"/"Sub_Class" columns), never this.
+model TherapeuticClass {
+  id       String             @id @default(cuid())
+  code     String?            @unique
+  nameEn   String
+  nameAr   String
+  parentId String?
+  parent   TherapeuticClass?  @relation("therapeuticClassHierarchy", fields: [parentId], references: [id])
+  children TherapeuticClass[] @relation("therapeuticClassHierarchy")
+  active   Boolean            @default(true)
+
+  drugClasses DrugTherapeuticClass[]
+
+  @@index([parentId])
+}
+
+model DrugTherapeuticClass {
+  id                 String           @id @default(cuid())
+  drugId             String
+  drug               Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  therapeuticClassId String
+  therapeuticClass   TherapeuticClass @relation(fields: [therapeuticClassId], references: [id])
+  primary            Boolean          @default(false)
+  active             Boolean          @default(true)
+
+  @@unique([drugId, therapeuticClassId])
+  @@index([drugId])
+}
+
+/// Alternate names a drug is known by — trade/scientific/abbreviation/
+/// OCR variant/transliteration/etc. Never auto-authoritative:
+/// system-generated and OCR-sourced aliases always start unapproved
+/// (design doc §6).
+model DrugAlias {
+  id              String      @id @default(cuid())
+  drugId          String
+  drug            Drug        @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  alias           String
+  normalizedAlias String
+  language        String
+  script          String?
+  aliasType       AliasType
+  source          AliasSource
+  confidence      Float?
+  approved        Boolean     @default(false)
+  active          Boolean     @default(true)
+  createdById     String?
+  approvedById    String?
+  approvedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([drugId, normalizedAlias])
+  @@index([normalizedAlias])
+  @@index([drugId])
+  @@index([approved])
+}
+
+/// Pharmacist-approved alternative between two distinct drugs — named
+/// "*Link*" to avoid colliding with the existing feed-declared
+/// DrugAlternative (Mapped Product 1-22, unapproved, above this
+/// section). Only pharmacistApproved rows may ever be surfaced as an
+/// approved alternative (design doc §10) — this phase builds the data
+/// structure only, never an auto-recommendation engine.
+model DrugAlternativeLink {
+  id                   String              @id @default(cuid())
+  sourceDrugId         String
+  sourceDrug           Drug                @relation("alternativeLinkSource", fields: [sourceDrugId], references: [id], onDelete: Cascade)
+  alternativeDrugId    String
+  alternativeDrug      Drug                @relation("alternativeLinkTarget", fields: [alternativeDrugId], references: [id], onDelete: Cascade)
+  alternativeType      DrugAlternativeType
+  equivalenceLevel     String?
+  sameActiveIngredient Boolean             @default(false)
+  sameStrength         Boolean             @default(false)
+  sameDosageForm       Boolean             @default(false)
+  pharmacistApproved   Boolean             @default(false)
+  approvedById         String?
+  approvedAt           DateTime?
+  priority             Int                 @default(0)
+  notes                String?
+  active               Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([sourceDrugId, alternativeDrugId])
+  @@index([sourceDrugId])
+  @@index([pharmacistApproved])
+}
+
+/// One uploaded Excel/CSV file — staged (design doc §7/§20). Never
+/// written straight to Drug; DrugImportRow below is the row-level
+/// staging area, promoted to real Drug/DrugAlias/... rows only once
+/// status reaches APPROVED and execution runs.
+model DrugImportBatch {
+  id             String            @id @default(cuid())
+  fileName       String
+  fileHash       String
+  uploadedById   String
+  status         ImportBatchStatus @default(UPLOADED)
+  totalRows      Int               @default(0)
+  validRows      Int               @default(0)
+  invalidRows    Int               @default(0)
+  duplicateRows  Int               @default(0)
+  importedRows   Int               @default(0)
+  failedRows     Int               @default(0)
+  mappingJson    Json?
+  approvedById   String?
+  approvedAt     DateTime?
+  rolledBackById String?
+  rolledBackAt   DateTime?
+  createdAt      DateTime          @default(now())
+  completedAt    DateTime?
+
+  rows DrugImportRow[]
+
+  @@index([status, createdAt])
+}
+
+/// One staged row within a DrugImportBatch (design doc §20/§21).
+model DrugImportRow {
+  id                      String               @id @default(cuid())
+  batchId                 String
+  batch                   DrugImportBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber               Int
+  rawDataJson             Json
+  normalizedDataJson      Json?
+  validationErrorsJson    Json?
+  duplicateCandidatesJson Json?
+  resolution              DuplicateResolution?
+  status                  ImportRowStatus      @default(PENDING)
+  linkedDrugId            String?
+  linkedDrug              Drug?                @relation(fields: [linkedDrugId], references: [id])
+  createdAt               DateTime             @default(now())
+
+  @@index([batchId])
+  @@index([status])
 }
 
 // ── §17 OCR Prescription Processing (spec docs/specs/ocr-spec-v1.0.md) ──

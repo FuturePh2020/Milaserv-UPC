@@ -18,6 +18,7 @@ import { seedCrmCatalogs } from './crm';
 import { seedOnlineCatalogs } from './online';
 import { seedBranchTypes } from './branches';
 import { seedDicCatalogs } from './dic';
+import { seedDicReferenceData } from './dic-reference';
 
 const prisma = new PrismaClient();
 
@@ -47,6 +48,10 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['integration.monitor', DataScope.ALL_DATA],
     ['dic.view', DataScope.ALL_DATA],
     ['dic.approve', DataScope.ALL_DATA],
+    // Phase 4 — DIC Drug Master & Normalization Foundation
+    ['dic.pharmacist_review', DataScope.ALL_DATA],
+    ['dic.approve_alias', DataScope.ALL_DATA],
+    ['dic.approve_alternative', DataScope.ALL_DATA],
     ['ocr.view', DataScope.ALL_DATA],
     ['ocr.review', DataScope.ALL_DATA],
   ],
@@ -82,6 +87,10 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['dic.view', DataScope.DEPARTMENT],
     ['dic.manage', DataScope.DEPARTMENT],
     ['dic.approve', DataScope.DEPARTMENT],
+    // Phase 4 — DIC Drug Master & Normalization Foundation
+    ['dic.edit', DataScope.DEPARTMENT],
+    ['dic.approve_alias', DataScope.DEPARTMENT],
+    ['dic.approve_alternative', DataScope.DEPARTMENT],
     ['ocr.view', DataScope.DEPARTMENT],
     ['ocr.upload', DataScope.MY_RECORDS],
     ['ocr.review', DataScope.DEPARTMENT],
@@ -162,6 +171,8 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['integration.monitor', DataScope.ALL_DATA],
     ['dic.manage', DataScope.ALL_DATA],
     ['dic.view', DataScope.ALL_DATA],
+    // Phase 4 — DIC Drug Master & Normalization Foundation
+    ['dic.import_staged', DataScope.ALL_DATA],
     ['ocr.view', DataScope.ALL_DATA],
   ],
 };
@@ -910,6 +921,7 @@ async function main() {
   await seedOnlineCatalogs(prisma);
   await seedBranchTypes(prisma);
   await seedDicCatalogs(prisma);
+  await seedDicReferenceData(prisma);
   await seedSuperAdmin();
 }
 
