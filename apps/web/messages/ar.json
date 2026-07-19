@@ -677,6 +677,31 @@
       "original": "الأصلية",
       "processed": "المعالَجة",
       "notAvailable": "غير متاحة"
+    },
+    "results": {
+      "title": "نتائج التعرف الضوئي",
+      "noRunYet": "لم يتم تشغيل التعرف الضوئي لهذه الصفحة بعد.",
+      "noBlocks": "لم يتم اكتشاف أي نص.",
+      "pageConfidence": "ثقة الصفحة",
+      "requiresReview": "بحاجة لمراجعة",
+      "runLabel": "التشغيلة #{number}",
+      "rerunBtn": "إعادة تشغيل التعرف الضوئي",
+      "rerunning": "جارٍ إعادة التشغيل…",
+      "hideOverlay": "إخفاء التراكب",
+      "showOverlay": "إظهار التراكب",
+      "showRaw": "إظهار النص الخام",
+      "showNormalized": "إظهار النص المُطبَّع",
+      "emptyText": "(فارغ)",
+      "markCorrect": "تعليم كصحيح",
+      "markUnreadable": "تعليم كغير مقروء",
+      "markIrrelevant": "تعليم كغير ذي صلة",
+      "editText": "تعديل النص",
+      "edited": "مُعدَّل",
+      "markedAs": {
+        "correct": "صحيح",
+        "unreadable": "غير مقروء",
+        "irrelevant_ui": "غير ذي صلة"
+      }
     }
   },
   "dropzone": {

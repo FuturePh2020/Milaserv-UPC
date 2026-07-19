@@ -677,6 +677,31 @@
       "original": "Original",
       "processed": "Processed",
       "notAvailable": "Not available"
+    },
+    "results": {
+      "title": "OCR results",
+      "noRunYet": "OCR has not run for this page yet.",
+      "noBlocks": "No text was detected.",
+      "pageConfidence": "Page confidence",
+      "requiresReview": "Needs review",
+      "runLabel": "Run #{number}",
+      "rerunBtn": "Re-run OCR",
+      "rerunning": "Re-running…",
+      "hideOverlay": "Hide overlay",
+      "showOverlay": "Show overlay",
+      "showRaw": "Show raw text",
+      "showNormalized": "Show normalized text",
+      "emptyText": "(empty)",
+      "markCorrect": "Mark correct",
+      "markUnreadable": "Mark unreadable",
+      "markIrrelevant": "Mark irrelevant",
+      "editText": "Edit text",
+      "edited": "Edited",
+      "markedAs": {
+        "correct": "Correct",
+        "unreadable": "Unreadable",
+        "irrelevant_ui": "Irrelevant"
+      }
     }
   },
   "dropzone": {

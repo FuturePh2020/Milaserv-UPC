@@ -21,6 +21,20 @@ import type {
 import { Badge, Button, EmptyState, ErrorState, Select, Spinner } from '@/components/ui';
 import { DropZone } from '@/components/DropZone';
 import { PageCropWorkspace } from './crop-workspace';
+import { OcrResultsPanel } from './ocr-results';
+
+/** CR-001 Sprint OCR-03 — mirrors the worker's own OCR-image fallback
+ *  chain (prescription-ocr.worker.ts's OCR_IMAGE_PRIORITY) so the
+ *  results overlay lines up with whichever image OCR actually ran
+ *  against. */
+const OCR_IMAGE_PRIORITY = ['OCR_READY', 'ENHANCED', 'CROPPED', 'ROTATED', 'ORIGINAL'] as const;
+function pickOcrImageVersion(versions: ImageVersionEntry[]): ImageVersionEntry | undefined {
+  for (const type of OCR_IMAGE_PRIORITY) {
+    const v = versions.find((v) => v.versionType === type);
+    if (v) return v;
+  }
+  return undefined;
+}
 
 const QUALITY_TONES: Record<string, 'green' | 'blue' | 'amber' | 'red' | 'gray'> = {
   EXCELLENT: 'green',
@@ -195,6 +209,8 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
         return (
           <PageInspector
             key={page.id}
+            prescriptionId={id}
+            pageId={page.id}
             pageNumber={page.pageNumber}
             processingStatus={page.processingStatus}
             processingError={page.processingError}
@@ -208,6 +224,9 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
             screenshotApplicationHint={page.screenshotApplicationHint}
             regions={page.regions}
             selectedRegionIndex={page.selectedRegionIndex}
+            requiresOcrReview={page.requiresOcrReview}
+            ocrPageConfidence={page.ocrPageConfidence}
+            hasOcrRun={!!page.currentOcrRunId}
           />
         );
       })}
@@ -233,6 +252,8 @@ function ScoreBar({ label, value }: { label: string; value: number | null }) {
 }
 
 function PageInspector({
+  prescriptionId,
+  pageId,
   pageNumber,
   processingStatus,
   processingError,
@@ -246,7 +267,12 @@ function PageInspector({
   screenshotApplicationHint,
   regions,
   selectedRegionIndex,
+  requiresOcrReview,
+  ocrPageConfidence,
+  hasOcrRun,
 }: {
+  prescriptionId: string;
+  pageId: string;
   pageNumber: number;
   processingStatus: string;
   processingError: string | null;
@@ -260,6 +286,9 @@ function PageInspector({
   screenshotApplicationHint: string | null;
   regions: PrescriptionRegionEntry[];
   selectedRegionIndex: number | null;
+  requiresOcrReview: boolean;
+  ocrPageConfidence: number | null;
+  hasOcrRun: boolean;
 }) {
   const t = useTranslations();
   const original = versions.find((v) => v.versionType === 'ORIGINAL');
@@ -293,6 +322,7 @@ function PageInspector({
               {quality.finalQualityScore !== null && ` — ${quality.finalQualityScore}/100`}
             </Badge>
           )}
+          {requiresOcrReview && <Badge tone="amber">{t('ocr.results.requiresReview')}</Badge>}
         </div>
       </div>
 
@@ -364,6 +394,15 @@ function PageInspector({
           </div>
         </div>
       )}
+
+      <OcrResultsPanel
+        prescriptionId={prescriptionId}
+        pageId={pageId}
+        requiresOcrReview={requiresOcrReview}
+        ocrPageConfidence={ocrPageConfidence}
+        hasRun={hasOcrRun}
+        ocrImageVersion={pickOcrImageVersion(versions)}
+      />
     </div>
   );
 }

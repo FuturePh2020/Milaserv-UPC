@@ -66,6 +66,83 @@ export interface PrescriptionPageDetail {
   originalHeight: number | null;
   selectedRegionIndex: number | null;
   regions: PrescriptionRegionEntry[];
+  /** CR-001 Sprint OCR-03 — page-level OCR rollup, present once the
+   *  extraction stage has run at least once. */
+  requiresOcrReview: boolean;
+  ocrPageConfidence: number | null;
+  currentOcrRunId: string | null;
+}
+
+// ── CR-001 Sprint OCR-03 — Real Text Detection & Recognition ──────────
+
+export interface OcrCorrectionEntry {
+  id: string;
+  originalOCRText: string;
+  correctedText: string | null;
+  markedAs: 'correct' | 'unreadable' | 'irrelevant_ui' | null;
+  correctedById: string;
+  correctionReason: string | null;
+  createdAt: string;
+}
+
+export interface OcrRecognitionCandidate {
+  text: string;
+  language: string;
+  confidence: number;
+}
+
+export interface OcrTextBlockEntry {
+  id: string;
+  rawText: string;
+  normalizedText: string | null;
+  boundingBox: { x: number; y: number; width: number; height: number } | null;
+  language: string | null;
+  ocrConfidence: number | null;
+  lineNumber: number;
+  isMedicineLine: boolean;
+  blockIndex: number;
+  detectedScript: string | null;
+  textDirection: string | null;
+  /** [x, y] pixel pairs in the OCR-ready image's coordinate space —
+   *  null for providers/fixtures that never produced a polygon. */
+  boundingPolygonJson: [number, number][] | null;
+  recognitionCandidatesJson: OcrRecognitionCandidate[] | null;
+  providerName: string | null;
+  modelName: string | null;
+  corrections: OcrCorrectionEntry[];
+}
+
+export interface PrescriptionOcrRunEntry {
+  id: string;
+  runNumber: number;
+  providerName: string;
+  providerVersion: string | null;
+  trigger: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  durationMs: number | null;
+  blockCount: number | null;
+  pageConfidence: number | null;
+  failureCode: string | null;
+  failureReason: string | null;
+}
+
+export interface PrescriptionPageTextResponse {
+  pageId: string;
+  run: PrescriptionOcrRunEntry | null;
+  blocks: OcrTextBlockEntry[];
+  rawPageText: string | null;
+  normalizedPageText: string | null;
+  ocrPageConfidence: number | null;
+  requiresOcrReview: boolean;
+}
+
+export interface RerunOcrResponse {
+  run: PrescriptionOcrRunEntry;
+  blockCount: number;
+  pageConfidence: number;
+  requiresOcrReview: boolean;
 }
 
 export interface PrescriptionSummary {
