@@ -1321,11 +1321,34 @@ enum PrescriptionPageStatus {
   QUEUED
   ANALYZING_QUALITY
   PREPROCESSING
+  /// CR-001 Sprint OCR-02: the 18-step image-processing engine has run and
+  /// produced an OCR-ready image; a transient status between PREPROCESSING
+  /// and EXTRACTING_TEXT (Sprint OCR-01's mock text stage, unchanged).
+  READY_FOR_OCR
   EXTRACTING_TEXT
   DETECTING_CANDIDATES
   COMPLETED
   IMAGE_REUPLOAD_REQUIRED
   FAILED
+}
+
+/// CR-001 Sprint OCR-02 (Milaserv360 OCR Phase 2 — Image Processing &
+/// Quality Engine). Distinct from PrescriptionPageStatus: this is a
+/// descriptive quality band, not a workflow state.
+enum PreprocessingQualityStatus {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  REUPLOAD_REQUIRED
+}
+
+enum PrescriptionImageVersionType {
+  ORIGINAL
+  ROTATED
+  CROPPED
+  ENHANCED
+  OCR_READY
 }
 
 enum PrescriptionCandidateStatus {
@@ -1357,9 +1380,51 @@ model PrescriptionPage {
   updatedAt          DateTime               @updatedAt
   textBlocks         OCRTextBlock[]
 
+  /// CR-001 Sprint OCR-02 (Image Processing & Quality Engine) — all
+  /// nullable, additive; populated by the 18-step preprocessing pipeline.
+  blurScore                Float?
+  brightnessScore          Float?
+  contrastScore            Float?
+  noiseScore               Float?
+  rotationAngle            Float?
+  cropConfidence           Float?
+  /// Algorithm/config version that produced these scores — lets a future
+  /// re-run be told apart from a stale one after the pipeline changes.
+  preprocessingVersion     String?
+  /// Wall-clock time of the full preprocessing pipeline, in milliseconds.
+  preprocessingDuration    Int?
+  /// 0–100 aggregate — distinct from imageQualityScore (0–1, Sprint OCR-01's
+  /// coarse pre-preprocessing gate, kept unchanged).
+  finalQualityScore        Float?
+  qualityStatus            PreprocessingQualityStatus?
+  preprocessingStartedAt   DateTime?
+  preprocessingCompletedAt DateTime?
+  imageVersions            PrescriptionPageImageVersion[]
+
   @@unique([prescriptionId, pageNumber])
   @@index([processingStatus])
   @@index([contentHash])
+}
+
+/// CR-001 Sprint OCR-02 — one row per stored image version, never
+/// overwriting the original (design spec: "Store multiple versions").
+model PrescriptionPageImageVersion {
+  id                 String                       @id @default(cuid())
+  prescriptionPageId String
+  page               PrescriptionPage             @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  versionType        PrescriptionImageVersionType
+  storageKey         String
+  width              Int?
+  height             Int?
+  /// Which PDF page this version came from (0 for plain images and for a
+  /// PDF's first page — Sprint OCR-02 stores one PrescriptionPage's worth
+  /// of versions per the Sprint OCR-01 one-file-one-page data model; a
+  /// multi-page PDF's later pages are analyzed but not persisted here).
+  sourcePageIndex    Int                          @default(0)
+  createdAt          DateTime                     @default(now())
+
+  @@unique([prescriptionPageId, versionType, sourcePageIndex])
+  @@index([prescriptionPageId])
 }
 
 model OCRTextBlock {
