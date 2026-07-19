@@ -506,3 +506,40 @@ export class DecideAlternativeLinkDto {
   @MaxLength(1000)
   note?: string;
 }
+
+// ── Phase 4 Step 5 — staged Excel import ───────────────────────────────
+
+export class CreateImportBatchDto {
+  @IsString()
+  @MaxLength(255)
+  fileName!: string;
+
+  /** Raw sheet rows, headers as-is (mapped in a separate step). */
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(5000)
+  rows!: Record<string, unknown>[];
+}
+
+export class SetImportMappingDto {
+  /** sourceColumnHeader -> canonical Drug field (IMPORTABLE_FIELDS). */
+  @IsObject()
+  mapping!: Record<string, string>;
+}
+
+export const DUPLICATE_RESOLUTIONS = [
+  'CREATE_NEW',
+  'LINK_EXISTING',
+  'MERGE',
+  'REJECT_ROW',
+  'DEFER_REVIEW',
+] as const;
+
+export class ResolveImportRowDto {
+  @IsIn(DUPLICATE_RESOLUTIONS as unknown as string[])
+  resolution!: (typeof DUPLICATE_RESOLUTIONS)[number];
+
+  @IsOptional()
+  @IsString()
+  linkedDrugId?: string;
+}
