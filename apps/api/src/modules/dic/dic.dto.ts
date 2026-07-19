@@ -335,3 +335,174 @@ export class UpdateActiveIngredientDto {
   @IsBoolean()
   active?: boolean;
 }
+
+// ── Phase 4 Step 4 — alias & alternative-link approval workflows ──────
+
+export const ALIAS_TYPES = [
+  'TRADE_NAME',
+  'SCIENTIFIC_NAME',
+  'ABBREVIATION',
+  'COMMON_MISSPELLING',
+  'OCR_VARIANT',
+  'LEGACY_NAME',
+  'ARABIC_TRANSLITERATION',
+  'ENGLISH_TRANSLITERATION',
+  'MANUFACTURER_VARIANT',
+  'PACKAGING_VARIANT',
+  'USER_CORRECTION',
+  'IMPORTED_ALIAS',
+] as const;
+
+export const ALIAS_SOURCES = [
+  'MANUAL',
+  'IMPORT',
+  'OCR_CORRECTION',
+  'LEGACY_DATABASE',
+  'SYSTEM_GENERATED',
+  'PHARMACIST_APPROVED',
+] as const;
+
+export const DRUG_ALTERNATIVE_TYPES = [
+  'SAME_ACTIVE_INGREDIENT',
+  'SAME_ACTIVE_AND_STRENGTH',
+  'SAME_ACTIVE_DIFFERENT_STRENGTH',
+  'SAME_DOSAGE_FORM',
+  'GENERIC_ALTERNATIVE',
+  'BRAND_ALTERNATIVE',
+  'THERAPEUTIC_ALTERNATIVE',
+] as const;
+
+export class CreateAliasDto {
+  @IsString()
+  @MaxLength(255)
+  alias!: string;
+
+  @IsString()
+  @MaxLength(10)
+  language!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  script?: string;
+
+  @IsIn(ALIAS_TYPES as unknown as string[])
+  aliasType!: (typeof ALIAS_TYPES)[number];
+
+  @IsOptional()
+  @IsIn(ALIAS_SOURCES as unknown as string[])
+  source?: (typeof ALIAS_SOURCES)[number];
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  confidence?: number;
+}
+
+export class UpdateAliasDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  alias?: string;
+
+  @IsOptional()
+  @IsIn(ALIAS_TYPES as unknown as string[])
+  aliasType?: (typeof ALIAS_TYPES)[number];
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class DecideAliasDto {
+  @IsIn(['approve', 'reject'])
+  decision!: 'approve' | 'reject';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
+export class CreateAlternativeLinkDto {
+  @IsString()
+  alternativeDrugId!: string;
+
+  @IsIn(DRUG_ALTERNATIVE_TYPES as unknown as string[])
+  alternativeType!: (typeof DRUG_ALTERNATIVE_TYPES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  equivalenceLevel?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  sameActiveIngredient?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sameStrength?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sameDosageForm?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}
+
+export class UpdateAlternativeLinkDto {
+  @IsOptional()
+  @IsIn(DRUG_ALTERNATIVE_TYPES as unknown as string[])
+  alternativeType?: (typeof DRUG_ALTERNATIVE_TYPES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  equivalenceLevel?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  sameActiveIngredient?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sameStrength?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sameDosageForm?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  priority?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+}
+
+export class DecideAlternativeLinkDto {
+  @IsIn(['approve', 'reject'])
+  decision!: 'approve' | 'reject';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
