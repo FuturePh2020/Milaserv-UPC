@@ -543,3 +543,85 @@ export class ResolveImportRowDto {
   @IsString()
   linkedDrugId?: string;
 }
+
+// ── Phase 4 Step 6 — merge/versioning & data-quality dashboard ────────
+
+export class MergeDrugDto {
+  @IsString()
+  targetDrugId!: string;
+
+  @IsOptional()
+  @IsInt()
+  expectedSourceVersion?: number;
+
+  @IsOptional()
+  @IsInt()
+  expectedTargetVersion?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reason?: string;
+}
+
+export class UpdateDrugFieldsDto {
+  @IsInt()
+  expectedVersion!: number;
+
+  @IsOptional()
+  @IsString()
+  dosageFormId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  manufacturerId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  countryOfOriginId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  strengthText?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  regulatoryCategory?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresPrescription?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresSpecialHandling?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  controlledDrug?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  coldChain?: boolean;
+}
+
+export const DATA_QUALITY_STATUSES = [
+  'DRAFT',
+  'INCOMPLETE',
+  'NEEDS_REVIEW',
+  'VERIFIED',
+  'REJECTED',
+  'ARCHIVED',
+] as const;
+
+export class SetDataQualityStatusDto {
+  @IsIn(DATA_QUALITY_STATUSES as unknown as string[])
+  status!: (typeof DATA_QUALITY_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}

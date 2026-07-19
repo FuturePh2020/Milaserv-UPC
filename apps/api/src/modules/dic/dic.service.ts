@@ -144,14 +144,15 @@ export class DicService implements OnModuleInit {
                     : null;
       const rows = column
         ? await this.prisma.$queryRawUnsafe<{ id: string }[]>(
-            `SELECT id FROM "Drug" WHERE "${column}" ILIKE $1 LIMIT $2`,
+            `SELECT id FROM "Drug" WHERE "mergedIntoDrugId" IS NULL AND "${column}" ILIKE $1 LIMIT $2`,
             pattern,
             limit,
           )
         : await this.prisma.$queryRawUnsafe<{ id: string }[]>(
-            `SELECT id FROM "Drug" WHERE "nameEn" ILIKE $1 OR "nameAr" ILIKE $1
+            `SELECT id FROM "Drug" WHERE "mergedIntoDrugId" IS NULL AND (
+               "nameEn" ILIKE $1 OR "nameAr" ILIKE $1
                OR "brand" ILIKE $1 OR "materialNo" ILIKE $1
-               OR "activeIngredient" ILIKE $1 OR "barcode" ILIKE $1 LIMIT $2`,
+               OR "activeIngredient" ILIKE $1 OR "barcode" ILIKE $1) LIMIT $2`,
             pattern,
             limit,
           );
@@ -167,6 +168,7 @@ export class DicService implements OnModuleInit {
       const normalizedQuery = normalizeSearchInput(q.q);
       const drugs = await this.prisma.drug.findMany({
         where: {
+          mergedIntoDrugId: null,
           aliases: {
             some: {
               OR: [
@@ -187,6 +189,7 @@ export class DicService implements OnModuleInit {
       const normalizedQuery = normalizeSearchInput(q.q);
       const drugs = await this.prisma.drug.findMany({
         where: {
+          mergedIntoDrugId: null,
           ingredients: {
             some: {
               activeIngredient: {
@@ -206,8 +209,9 @@ export class DicService implements OnModuleInit {
       return { items: drugs.map((d) => this.summary(d, 'scientific')) };
     }
 
-    const where: Prisma.DrugWhereInput =
-      field === 'all'
+    const where: Prisma.DrugWhereInput = {
+      mergedIntoDrugId: null,
+      ...(field === 'all'
         ? {
             OR: [
               like('nameEn'),
@@ -228,7 +232,8 @@ export class DicService implements OnModuleInit {
                 ? like('nameAr')
                 : field === 'barcode'
                   ? like('barcode')
-                  : like('nameEn');
+                  : like('nameEn')),
+    };
 
     const items = await this.prisma.drug.findMany({
       where,
@@ -249,6 +254,7 @@ export class DicService implements OnModuleInit {
         this.prisma.drug.findMany({
           where: {
             id: { notIn: [...seen] },
+            mergedIntoDrugId: null,
             aliases: { some: { normalizedAlias: { contains: normalizedQuery } } },
           },
           include: { itemType: true, coverages: true },
@@ -257,6 +263,7 @@ export class DicService implements OnModuleInit {
         this.prisma.drug.findMany({
           where: {
             id: { notIn: [...seen] },
+            mergedIntoDrugId: null,
             ingredients: {
               some: {
                 activeIngredient: { normalizedScientificNameEn: { contains: normalizedQuery } },
