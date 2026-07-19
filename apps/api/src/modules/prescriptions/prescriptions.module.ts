@@ -5,6 +5,7 @@ import { PrescriptionsController } from './prescriptions.controller';
 import { PrescriptionsService } from './prescriptions.service';
 import { PythonOcrClientService } from './python-ocr-client.service';
 import { PreprocessingConfigService } from './preprocessing-config.service';
+import { OcrConfigService } from './ocr-config.service';
 import { RegionDetectionConfigService } from './region-detection-config.service';
 import { PrescriptionStorageModule } from './storage/prescription-storage.module';
 import {
@@ -27,6 +28,7 @@ import { PrescriptionOcrWorkerService } from './queue/prescription-ocr.worker';
     PrescriptionsService,
     PythonOcrClientService,
     PreprocessingConfigService,
+    OcrConfigService,
     RegionDetectionConfigService,
     prescriptionQueueRedisProvider,
     PrescriptionQueueRedisShutdown,

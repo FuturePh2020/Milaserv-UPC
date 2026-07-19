@@ -73,6 +73,27 @@ export class ConfirmCropDto {
   manualCropBox?: CropBoxDto;
 }
 
+/** CR-001 Sprint OCR-03 — Manual OCR Review Foundation (design doc §15).
+ *  Exactly one of `markedAs`/`correctedText` matters per call: a reviewer
+ *  either confirms/flags the block (`markedAs`) or edits its text
+ *  (`correctedText`) — both may be sent together (e.g. "unreadable" with
+ *  no text change), enforced loosely here since either alone is valid. */
+export class CorrectOcrBlockDto {
+  @IsOptional()
+  @IsIn(['correct', 'unreadable', 'irrelevant_ui'])
+  markedAs?: 'correct' | 'unreadable' | 'irrelevant_ui';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000)
+  correctedText?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+}
+
 export class ListPrescriptionsQueryDto {
   @IsOptional()
   @IsIn(['UPLOADED', 'EXTRACTING', 'REVIEW', 'CONFIRMED', 'REJECTED'])

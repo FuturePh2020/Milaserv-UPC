@@ -37,6 +37,13 @@ export class PrescriptionOcrQueueService implements OnModuleDestroy {
       'process-page',
       { pageId },
       {
+        // A fixed jobId per page makes a duplicate enqueuePage() call
+        // (e.g. a retried HTTP request) idempotent — BullMQ returns the
+        // existing waiting/active job instead of stacking a second one.
+        // Safe to reuse across a page's lifetime: once the prior job
+        // completes/fails it's removed (below), freeing the id for a
+        // later legitimate re-enqueue.
+        jobId: pageId,
         attempts: this.env.PRESCRIPTION_OCR_JOB_ATTEMPTS,
         backoff: { type: 'exponential', delay: this.env.PRESCRIPTION_OCR_JOB_BACKOFF_MS },
         removeOnComplete: { age: 3600, count: 1000 },

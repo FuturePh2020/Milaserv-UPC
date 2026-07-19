@@ -59,6 +59,10 @@ export const envSchema = z.object({
   /// by the e2e suite so exhausting retries doesn't require a 15s+ wait.
   PRESCRIPTION_OCR_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
   PRESCRIPTION_OCR_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5000),
+  /// Sprint OCR-03 — shared secret with the ocr-service container (sent as
+  /// X-Internal-Token). Unset in dev/test; ocr-service accepts unauthenticated
+  /// calls (with a startup warning) in that case, matching the Python side.
+  OCR_INTERNAL_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

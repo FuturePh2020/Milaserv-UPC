@@ -26,6 +26,7 @@ import { newPrescriptionStorageKey } from './storage/prescription-storage';
 import { validatePrescriptionFile } from './file-validation';
 import type {
   ConfirmCropDto,
+  CorrectOcrBlockDto,
   CreatePrescriptionDto,
   ListPrescriptionsQueryDto,
   UploadPageDto,
@@ -675,5 +676,130 @@ export class PrescriptionsService {
       }),
     );
     return { prescriptionId: id, pages };
+  }
+
+  private async requirePage(prescriptionId: string, pageId: string) {
+    const page = await this.prisma.prescriptionPage.findUnique({ where: { id: pageId } });
+    if (!page || page.prescriptionId !== prescriptionId) {
+      throw new NotFoundException('Prescription page not found');
+    }
+    return page;
+  }
+
+  /** CR-001 Sprint OCR-03 — OCR Results Viewer data (design doc §14): the
+   *  *current* run's text blocks (never a mix of runs — see
+   *  PrescriptionOcrWorkerService.runOcrPipeline's doc comment), each
+   *  block's own correction history, and the page-level OCR summary. */
+  async getPageText(id: string, pageId: string) {
+    const page = await this.requirePage(id, pageId);
+    if (!page.currentOcrRunId) {
+      return {
+        pageId,
+        run: null,
+        blocks: [] as unknown[],
+        rawPageText: page.rawPageText,
+        normalizedPageText: page.normalizedPageText,
+        ocrPageConfidence: page.ocrPageConfidence,
+        requiresOcrReview: page.requiresOcrReview,
+      };
+    }
+    const [run, blocks] = await Promise.all([
+      this.prisma.prescriptionOcrRun.findUnique({ where: { id: page.currentOcrRunId } }),
+      this.prisma.oCRTextBlock.findMany({
+        where: { ocrRunId: page.currentOcrRunId },
+        orderBy: { lineNumber: 'asc' },
+        include: { corrections: { orderBy: { createdAt: 'desc' } } },
+      }),
+    ]);
+    return {
+      pageId,
+      run,
+      blocks,
+      rawPageText: page.rawPageText,
+      normalizedPageText: page.normalizedPageText,
+      ocrPageConfidence: page.ocrPageConfidence,
+      requiresOcrReview: page.requiresOcrReview,
+    };
+  }
+
+  /** CR-001 Sprint OCR-03 — Manual OCR Review Foundation (design doc
+   *  §15): records a reviewer's verdict on one text block. Deliberately
+   *  does not touch DrugAlias/matching or the block's own text — this is
+   *  the review record only; the block's rawText/normalizedText stay
+   *  exactly what OCR produced (design doc: "corrected text stored
+   *  separately"). */
+  async correctBlock(
+    actor: AuthUser,
+    prescriptionId: string,
+    pageId: string,
+    blockId: string,
+    dto: CorrectOcrBlockDto,
+    meta: { ip?: string },
+  ) {
+    await this.requirePage(prescriptionId, pageId);
+    const block = await this.prisma.oCRTextBlock.findUnique({ where: { id: blockId } });
+    if (!block || block.prescriptionPageId !== pageId) {
+      throw new NotFoundException('OCR text block not found');
+    }
+    if (!dto.markedAs && dto.correctedText === undefined) {
+      throw new BadRequestException('Provide markedAs and/or correctedText');
+    }
+    const correction = await this.prisma.oCRCorrection.create({
+      data: {
+        ocrTextBlockId: blockId,
+        originalOCRText: block.rawText,
+        correctedText: dto.correctedText ?? null,
+        markedAs: dto.markedAs ?? null,
+        correctedById: actor.userId,
+        correctionReason: dto.reason ?? null,
+      },
+    });
+    await this.timeline.record({
+      entityType: 'prescription_page',
+      entityId: pageId,
+      eventType: 'ocr_block_corrected',
+      actorId: actor.userId,
+      payload: {
+        blockId,
+        markedAs: dto.markedAs ?? null,
+        hasTextEdit: dto.correctedText !== undefined,
+      },
+    });
+    await this.audit.record({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      action: 'prescriptions.correct_ocr_block',
+      entityType: 'ocr_text_block',
+      entityId: blockId,
+      after: { markedAs: dto.markedAs ?? null, correctedText: dto.correctedText ?? null },
+      ...meta,
+    });
+    return correction;
+  }
+
+  /** CR-001 Sprint OCR-03 — manual OCR re-run (design doc §16): runs
+   *  synchronously (like confirmCrop()/uploadPage()'s other Python calls)
+   *  rather than through BullMQ, since it's a single reviewer-initiated
+   *  action, not part of the automatic pipeline. Every prior run's blocks
+   *  stay in place — this only adds a new run and repoints the page's
+   *  "current" pointer at it. */
+  async rerunOcr(actor: AuthUser, prescriptionId: string, pageId: string, meta: { ip?: string }) {
+    await this.requirePage(prescriptionId, pageId);
+    const outcome = await this.worker.rerunOcr(pageId, actor.userId);
+    await this.audit.record({
+      actorId: actor.userId,
+      actorEmail: actor.email,
+      action: 'prescriptions.rerun_ocr',
+      entityType: 'prescription_page',
+      entityId: pageId,
+      after: {
+        runId: outcome.run.id,
+        runNumber: outcome.run.runNumber,
+        blockCount: outcome.blockCount,
+        pageConfidence: outcome.pageConfidence,
+      },
+      ...meta,
+    });
+    return outcome;
   }
 }

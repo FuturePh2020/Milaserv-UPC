@@ -1,7 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import { ENV } from '../../core/config/config.module';
+import type { Env } from '../../core/config/env';
 import { SettingsService } from '../settings/settings.service';
 
 const REQUEST_TIMEOUT_MS = 30_000;
+
+export interface RecognitionCandidateDto {
+  text: string;
+  language: string;
+  confidence: number;
+}
 
 export interface OcrBlockDto {
   rawText: string;
@@ -10,6 +18,15 @@ export interface OcrBlockDto {
   language: string;
   confidence: number;
   lineNumber: number;
+  /// Sprint OCR-03 additions — all optional so MockOCRProvider responses
+  /// (which predate these fields) keep validating without change. Mirrors
+  /// app/schemas.py's OCRBlock (boundingPolygon is a list of [x, y] pairs,
+  /// matching Python's list[list[float]]).
+  blockIndex?: number;
+  boundingPolygon?: Array<[number, number]>;
+  script?: string;
+  direction?: string;
+  recognitionCandidates?: RecognitionCandidateDto[];
 }
 
 export interface AnalyzeQualityResult {
@@ -83,6 +100,18 @@ export interface DetectAndRecognizeResult {
   processingTimeMs: number;
 }
 
+/** Shape of GET /v1/providers/{name}/status — matches
+ *  app/providers/*.get_provider_info(); ocr-service returns this as a
+ *  raw dict (no Pydantic model), so every field beyond the ones this
+ *  codebase reads is treated as opaque/passthrough. */
+export interface ProviderStatusResult {
+  name: string;
+  ready: boolean;
+  models?: Record<string, string>;
+  device?: string;
+  capabilities?: Record<string, unknown>;
+}
+
 export interface CandidateLineDto {
   blockIndex: number;
   extractedDrugText: string;
@@ -143,7 +172,10 @@ export interface DetectRegionResult {
  */
 @Injectable()
 export class PythonOcrClientService {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   private async endpoint(): Promise<string> {
     const url = String(
@@ -158,9 +190,13 @@ export class PythonOcrClientService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (this.env.OCR_INTERNAL_TOKEN) {
+        headers['X-Internal-Token'] = this.env.OCR_INTERNAL_TOKEN;
+      }
       const res = await fetch(`${base}${path}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify(body),
         signal: controller.signal,
       });
@@ -169,6 +205,36 @@ export class PythonOcrClientService {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  private async get<T>(path: string): Promise<T> {
+    const base = await this.endpoint();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const headers: Record<string, string> = {};
+      if (this.env.OCR_INTERNAL_TOKEN) {
+        headers['X-Internal-Token'] = this.env.OCR_INTERNAL_TOKEN;
+      }
+      const res = await fetch(`${base}${path}`, {
+        method: 'GET',
+        headers,
+        signal: controller.signal,
+      });
+      if (!res.ok) throw new Error(`OCR service ${path} returned HTTP ${res.status}`);
+      return (await res.json()) as T;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Best-effort provider/model metadata for a PrescriptionOcrRun's
+   *  modelInfoJson (design brief: run history must record what actually
+   *  produced it, never just "OCR ran"). Callers should tolerate this
+   *  throwing/rejecting — it's for honesty in the audit trail, not
+   *  required for the OCR result itself. */
+  getProviderStatus(name: string): Promise<ProviderStatusResult> {
+    return this.get(`/v1/providers/${encodeURIComponent(name)}/status`);
   }
 
   analyzeQuality(imageUrl: string): Promise<AnalyzeQualityResult> {
@@ -187,8 +253,12 @@ export class PythonOcrClientService {
     });
   }
 
-  detectAndRecognize(imageUrl: string): Promise<DetectAndRecognizeResult> {
-    return this.post('/v1/detect-and-recognize', { imageUrl });
+  /** `provider` mirrors app/schemas.py's DetectAndRecognizeRequest.provider —
+   *  an explicit business-level override (Settings key
+   *  `prescriptions.ocr.provider`); empty/undefined lets ocr-service's own
+   *  OCR_PROVIDER env var decide. */
+  detectAndRecognize(imageUrl: string, provider?: string): Promise<DetectAndRecognizeResult> {
+    return this.post('/v1/detect-and-recognize', { imageUrl, provider: provider || undefined });
   }
 
   detectCandidates(blocks: OcrBlockDto[]): Promise<DetectCandidatesResult> {

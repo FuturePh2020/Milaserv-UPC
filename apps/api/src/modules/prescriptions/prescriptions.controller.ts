@@ -23,6 +23,7 @@ import { PermissionScope } from '../permissions/permission-scope.decorator';
 import type { RequestScope } from '../permissions/scope';
 import {
   ConfirmCropDto,
+  CorrectOcrBlockDto,
   CreatePrescriptionDto,
   ListPrescriptionsQueryDto,
   UploadPageDto,
@@ -137,6 +138,45 @@ export class PrescriptionsController {
   @Get(':id/preprocessing')
   getPreprocessing(@Param('id') id: string) {
     return this.prescriptions.getPreprocessing(id);
+  }
+
+  /** CR-001 Sprint OCR-03 — the current OCR run's text blocks plus their
+   *  correction history (OCR Results Viewer). */
+  @RequirePermission('ocr.view')
+  @Get(':id/pages/:pageId/text')
+  getPageText(@Param('id') id: string, @Param('pageId') pageId: string) {
+    return this.prescriptions.getPageText(id, pageId);
+  }
+
+  /** CR-001 Sprint OCR-03 — Manual OCR Review Foundation: mark a text
+   *  block correct/unreadable/irrelevant and/or store a corrected reading,
+   *  without ever mutating what OCR actually produced. */
+  @RequirePermission('ocr.review')
+  @Post(':id/pages/:pageId/blocks/:blockId/correct')
+  correctBlock(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('pageId') pageId: string,
+    @Param('blockId') blockId: string,
+    @Body() dto: CorrectOcrBlockDto,
+    @Req() req: Request,
+  ) {
+    return this.prescriptions.correctBlock(user, id, pageId, blockId, dto, { ip: req.ip });
+  }
+
+  /** CR-001 Sprint OCR-03 — OCR Reprocessing: runs a brand-new OCR pass
+   *  synchronously and records it as a new PrescriptionOcrRun, never
+   *  overwriting any prior run. */
+  @RequirePermission('ocr.review')
+  @Post(':id/pages/:pageId/rerun-ocr')
+  @HttpCode(200)
+  rerunOcr(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('pageId') pageId: string,
+    @Req() req: Request,
+  ) {
+    return this.prescriptions.rerunOcr(user, id, pageId, { ip: req.ip });
   }
 
   /**
