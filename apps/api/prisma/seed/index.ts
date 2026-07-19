@@ -746,6 +746,63 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelEn:
       'Enable the secondary WhatsApp-specific detection hint (a secondary signal only, never the primary basis for cropping)',
   },
+  // CR-001 Sprint OCR-03 — Real Text Detection & Recognition. Business-
+  // level tunables only (ADR-008); infra-level model/device selection
+  // (OCR_PROVIDER, OCR_DEVICE, etc.) lives in ocr-service's own env vars
+  // — this service holds no Settings/DB access, matching every other
+  // Python-side config split in this sprint set.
+  {
+    // Empty = let ocr-service's own OCR_PROVIDER env var decide (its
+    // process-level default). Set to "paddleocr" or "mock" here to
+    // override per-deployment without touching ocr-service's env.
+    key: 'prescriptions.ocr.provider',
+    category: 'prescriptions',
+    valueType: 'STRING',
+    value: '',
+    labelAr: 'محرك التعرف الضوئي المستخدم للوصفات (فارغ = افتراضي الخدمة)',
+    labelEn: 'OCR provider to request for prescriptions (empty = ocr-service default)',
+  },
+  {
+    key: 'prescriptions.ocr.language_mode',
+    category: 'prescriptions',
+    valueType: 'STRING',
+    value: 'AUTO',
+    labelAr: 'وضع اللغة للتعرف الضوئي (تلقائي/عربي فقط/إنجليزي فقط)',
+    labelEn: 'OCR language mode (AUTO / ARABIC_ONLY / ENGLISH_ONLY)',
+  },
+  {
+    // 0-100, matches PrescriptionPage.ocrPageConfidence's scale.
+    key: 'prescriptions.ocr.review_confidence_threshold',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 60,
+    labelAr: 'الحد الأدنى لثقة صفحة التعرف الضوئي قبل تعليمها للمراجعة',
+    labelEn: 'Minimum OCR page confidence (0-100) before flagging requiresOcrReview',
+  },
+  {
+    key: 'prescriptions.ocr.return_bounding_boxes',
+    category: 'prescriptions',
+    valueType: 'BOOLEAN',
+    value: true,
+    labelAr: 'إرجاع إحداثيات مربعات النص المكتشف',
+    labelEn: 'Return per-block bounding polygons in the OCR response',
+  },
+  {
+    key: 'prescriptions.ocr.return_alternatives',
+    category: 'prescriptions',
+    valueType: 'BOOLEAN',
+    value: true,
+    labelAr: 'إرجاع القراءات البديلة عند تقارب درجات الثقة بين اللغتين',
+    labelEn: 'Return alternative-language readings when two passes score closely',
+  },
+  {
+    key: 'prescriptions.ocr.max_pages_per_job',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 1,
+    labelAr: 'الحد الأقصى لعدد الصفحات لكل مهمة تعرف ضوئي',
+    labelEn: 'Maximum pages processed per OCR job (design brief §17)',
+  },
 ];
 
 async function seedPermissions() {

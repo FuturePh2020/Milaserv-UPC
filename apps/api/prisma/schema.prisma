@@ -1443,9 +1443,82 @@ model PrescriptionPage {
   selectedRegionIndex        Int?
   regions                    PrescriptionRegion[]
 
+  /// CR-001 Sprint OCR-03 (Real Text Detection & Recognition) — all
+  /// nullable/defaulted, additive; populated once real OCR recognition
+  /// runs. Distinct from imageQualityScore/finalQualityScore (Sprint
+  /// OCR-01/02's *image*-quality gates) — these describe how confidently
+  /// the *text* was recognized.
+  ocrProviderName    String?
+  ocrProviderVersion String?
+  ocrModelInfoJson   Json?
+  ocrStartedAt       DateTime?
+  ocrCompletedAt     DateTime?
+  ocrDurationMs      Int?
+  ocrBlockCount      Int?
+  /// 0-100 aggregate of every block's recognition confidence.
+  ocrPageConfidence  Float?
+  rawPageText        String?
+  normalizedPageText String?
+  /// True whenever ocrPageConfidence (or an individual block) falls
+  /// below the configurable review threshold. Surfaced as a prominent
+  /// warning in the reviewer UI rather than a separate blocking
+  /// processingStatus value: every prescription already reaches human
+  /// REVIEW regardless (no auto-confirm path exists until the matching
+  /// engine ships — Sprint OCR-05/06), so this is an attention flag, not
+  /// an additional gate (design doc §10's OCR_LOW_CONFIDENCE/
+  /// OCR_REVIEW_REQUIRED intent, expressed as a flag instead of new
+  /// enum values that would duplicate what this flag already says).
+  requiresOcrReview  Boolean              @default(false)
+  ocrFailureCode     String?
+  ocrFailureReason   String?
+  /// Not a hard FK (like PrescriptionRegion.spawnedPageId elsewhere in
+  /// this schema) — avoids a circular relation with PrescriptionOcrRun,
+  /// which itself points back at this page. Points at whichever run's
+  /// OCRTextBlock rows are the "live" ones the rest of the app reads;
+  /// every prior run's blocks stay queryable for history (design doc
+  /// §16 "never silently overwrite previous OCR runs").
+  currentOcrRunId    String?
+  ocrRuns            PrescriptionOcrRun[]
+
   @@unique([prescriptionId, pageNumber])
   @@index([processingStatus])
   @@index([contentHash])
+}
+
+/// CR-001 Sprint OCR-03 — one row per OCR attempt on a page (design doc
+/// §16 "OCR Reprocessing"). OCRTextBlock rows belong to exactly one run;
+/// PrescriptionPage.currentOcrRunId points at the "live" one.
+model PrescriptionOcrRun {
+  id                   String           @id @default(cuid())
+  prescriptionPageId   String
+  page                 PrescriptionPage @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  /// 1, 2, 3... per page.
+  runNumber            Int
+  providerName         String
+  providerVersion      String?
+  modelInfoJson        Json?
+  /// "initial" | "manual_rerun" | "recrop" — what triggered this run.
+  trigger              String           @default("initial")
+  /// Every OCR setting resolved at the time this run started (design doc
+  /// §16 "settings snapshot") — a historical run never re-reads live
+  /// Settings.
+  settingsSnapshotJson Json?
+  /// "RUNNING" | "COMPLETED" | "FAILED" — plain string, no enum: this is
+  /// run bookkeeping, not a PrescriptionPageStatus-style pipeline stage.
+  status               String           @default("RUNNING")
+  startedAt            DateTime         @default(now())
+  completedAt          DateTime?
+  durationMs           Int?
+  blockCount           Int?
+  pageConfidence       Float?
+  failureCode          String?
+  failureReason        String?
+  /// Set only for a manually-triggered rerun (design doc §16 "provider").
+  requestedById        String?
+  textBlocks           OCRTextBlock[]
+
+  @@unique([prescriptionPageId, runNumber])
+  @@index([prescriptionPageId])
 }
 
 /// CR-001 Sprint OCR-02 Extension — one row per candidate document region
@@ -1514,7 +1587,31 @@ model OCRTextBlock {
   isMedicineLine     Boolean                     @default(false)
   candidates         PrescriptionDrugCandidate[]
 
+  /// CR-001 Sprint OCR-03 — nullable for backward compatibility with any
+  /// pre-Sprint-OCR-03 rows; every row this sprint's pipeline creates
+  /// sets it. Every block belongs to exactly one OCR run — reprocessing
+  /// creates new rows under a new run rather than overwriting these
+  /// (design doc §16).
+  ocrRunId String?
+  ocrRun   PrescriptionOcrRun? @relation(fields: [ocrRunId], references: [id], onDelete: Cascade)
+
+  /// The pre-reading-order merge index — a stable identity across
+  /// re-sorts, distinct from lineNumber (existing field above), which is
+  /// the reading-order position.
+  blockIndex                Int             @default(0)
+  detectedScript            String?
+  textDirection             String?
+  boundingPolygonJson       Json?
+  recognitionCandidatesJson Json?
+  providerName              String?
+  providerVersion           String?
+  modelName                 String?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  corrections               OCRCorrection[]
+
   @@index([prescriptionPageId])
+  @@index([ocrRunId])
 }
 
 /// One OCR line may yield zero, one, or several ranked candidates —
@@ -1550,16 +1647,28 @@ model PrescriptionDrugCandidate {
 /// to Drug/DrugAlias directly (design spec §12 "learn without silently
 /// modifying the master").
 model OCRCorrection {
-  id               String                    @id @default(cuid())
-  candidateId      String
-  candidate        PrescriptionDrugCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  id               String                     @id @default(cuid())
+  /// CR-001 Sprint OCR-03 — widened from required to optional: this row
+  /// now also covers block-level corrections (design doc §15 "Manual
+  /// OCR Review Foundation"), which reuse this same shape rather than a
+  /// parallel table. Exactly one of candidateId/ocrTextBlockId is set —
+  /// enforced in the service layer, mirroring how ConfirmCropDto's
+  /// "exactly one of" rule is enforced (Sprint OCR-02 Extension).
+  candidateId      String?
+  candidate        PrescriptionDrugCandidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  ocrTextBlockId   String?
+  ocrTextBlock     OCRTextBlock?              @relation(fields: [ocrTextBlockId], references: [id], onDelete: Cascade)
   originalOCRText  String
   correctedText    String?
   originalDrugId   String?
   correctedDrugId  String?
+  /// CR-001 Sprint OCR-03 — block-level correction actions beyond a
+  /// plain text edit: "unreadable" | "irrelevant_ui" | null.
+  markedAs         String?
   correctedById    String
   correctionReason String?
-  createdAt        DateTime                  @default(now())
+  createdAt        DateTime                   @default(now())
 
   @@index([candidateId])
+  @@index([ocrTextBlockId])
 }
