@@ -47,6 +47,11 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
   let manager: { id: string };
   let engine: Server;
   let engineCalls: { path: string }[];
+  let lastPreprocessRequest: { imageUrl: string; config?: Record<string, unknown> } | null;
+  /** CR-001 Sprint OCR-02 — a tiny valid 1x1 PNG so decoded "versions" are
+   *  real, parseable image bytes, not placeholder text. */
+  const ONE_PX_PNG_BASE64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
   interface Script {
     quality: number;
@@ -62,6 +67,16 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     detectedLanguage: string;
     candidateIndices: number[];
     failAnalyzeQuality: boolean;
+    /** CR-001 Sprint OCR-02 — the rich preprocessing engine's own gate,
+     *  independent of Sprint OCR-01's coarse failAnalyzeQuality path. */
+    preprocessQualityScore: number;
+    preprocessQualityStatus: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | 'REUPLOAD_REQUIRED';
+    /** Empty by default (Sprint OCR-01 tests don't care) — populated by
+     *  OCR-02 tests that need real, decodable image version bytes. */
+    preprocessVersions: Record<
+      string,
+      { imageBase64: string; width: number; height: number; format: string }
+    >;
   }
   let script: Script;
 
@@ -89,6 +104,9 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     detectedLanguage: 'en',
     candidateIndices: [0], // only the high-confidence block is a medicine line
     failAnalyzeQuality: false,
+    preprocessQualityScore: 82,
+    preprocessQualityStatus: 'GOOD',
+    preprocessVersions: {},
   });
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -203,6 +221,7 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     // real services/ocr-service mock, which hashes the image URL and
     // cannot be steered from a test).
     engineCalls = [];
+    lastPreprocessRequest = null;
     script = defaultScript();
     engine = createServer((req, res) => {
       engineCalls.push({ path: req.url ?? '' });
@@ -218,12 +237,40 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
           }
           res.end(JSON.stringify({ qualityScore: script.quality, issues: script.issues }));
         } else if (req.url === '/v1/preprocess') {
-          const { imageUrl } = JSON.parse(body) as { imageUrl: string };
+          // CR-001 Sprint OCR-02 contract — stubbed here rather than
+          // depending on the real Python engine, same rationale as every
+          // other route in this file (deterministic, test-controlled).
+          lastPreprocessRequest = JSON.parse(body) as {
+            imageUrl: string;
+            config?: Record<string, unknown>;
+          };
           res.end(
             JSON.stringify({
-              enhancedImageUrl: imageUrl,
-              orientation: 0,
-              stagesApplied: ['grayscale'],
+              qualityScore: script.preprocessQualityScore,
+              qualityStatus: script.preprocessQualityStatus,
+              metrics: {
+                resolutionOk: true,
+                width: 900,
+                height: 1200,
+                rotationAngle: 0,
+                blurScore: 0.9,
+                blurVariance: 500,
+                brightnessScore: 0.9,
+                brightnessMean: 200,
+                contrastScore: 0.8,
+                contrastStdDev: 50,
+                noiseScore: 0.9,
+                noiseLevel: 2,
+                cropConfidence: 0.5,
+                readableArea: 0.1,
+              },
+              versions: script.preprocessVersions,
+              stagesApplied: ['blurDetection', 'brightnessAnalysis', 'binarization'],
+              processorTimingsMs: { blurDetection: 5 },
+              processorFailures: [],
+              processingDurationMs: 12,
+              pageCount: 1,
+              pages: null,
             }),
           );
         } else if (req.url === '/v1/detect-and-recognize') {
@@ -493,5 +540,135 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     const expiredUrl = await localStorage.getSignedUrl(page.originalStorageKey, -10);
     const expiredPath = expiredUrl.replace(/^https?:\/\/[^/]+/, '');
     await request(http).get(expiredPath).expect(403);
+  });
+
+  // ── CR-001 Sprint OCR-02 — Image Processing & Quality Engine ──────────
+
+  it('PX-11 preprocessing engine persists scores/versions and the three new endpoints expose them', async () => {
+    script = defaultScript();
+    script.preprocessQualityScore = 91.5;
+    script.preprocessQualityStatus = 'EXCELLENT';
+    script.preprocessVersions = {
+      ENHANCED: { imageBase64: ONE_PX_PNG_BASE64, width: 1, height: 1, format: 'PNG' },
+      OCR_READY: { imageBase64: ONE_PX_PNG_BASE64, width: 1, height: 1, format: 'PNG' },
+    };
+    const { id, pageId } = await createSubmittedPrescription(agentToken);
+    await waitForPrescriptionStatus(id, ['REVIEW']);
+
+    const page = await prisma.prescriptionPage.findUniqueOrThrow({ where: { id: pageId } });
+    expect(page.finalQualityScore).toBe(91.5);
+    expect(page.qualityStatus).toBe('EXCELLENT');
+    expect(page.blurScore).toBeCloseTo(0.9);
+    expect(page.preprocessingVersion).toBe('1.0.0');
+    expect(page.preprocessingDuration).toBe(12);
+    expect(page.preprocessingStartedAt).not.toBeNull();
+    expect(page.preprocessingCompletedAt).not.toBeNull();
+    expect(page.enhancedStorageKey).not.toBeNull();
+
+    const images = await request(http)
+      .get(`/api/v1/prescriptions/${id}/images`)
+      .set(auth(agentToken))
+      .expect(200);
+    const versionTypes = (
+      images.body.pages[0].versions as { versionType: string; url: string }[]
+    ).map((v) => v.versionType);
+    expect(versionTypes).toEqual(expect.arrayContaining(['ORIGINAL', 'ENHANCED', 'OCR_READY']));
+    // Never overwritten — the original bytes are still fetchable and unrelated to the mock PNG.
+    const originalEntry = images.body.pages[0].versions.find(
+      (v: { versionType: string }) => v.versionType === 'ORIGINAL',
+    );
+    const originalPath = (originalEntry.url as string).replace(/^https?:\/\/[^/]+/, '');
+    const originalBytes = await request(http).get(originalPath).expect(200);
+    expect(Buffer.isBuffer(originalBytes.body)).toBe(true);
+
+    const quality = await request(http)
+      .get(`/api/v1/prescriptions/${id}/quality`)
+      .set(auth(agentToken))
+      .expect(200);
+    expect(quality.body.pages[0].finalQualityScore).toBe(91.5);
+    expect(quality.body.pages[0].qualityStatus).toBe('EXCELLENT');
+
+    const preprocessing = await request(http)
+      .get(`/api/v1/prescriptions/${id}/preprocessing`)
+      .set(auth(agentToken))
+      .expect(200);
+    expect(preprocessing.body.pages[0].preprocessingVersion).toBe('1.0.0');
+    expect(preprocessing.body.pages[0].preprocessingDuration).toBe(12);
+    expect(preprocessing.body.pages[0].processorFailures).toEqual([]);
+
+    script = defaultScript();
+  });
+
+  it('PX-12 the preprocessing engine’s own quality gate (distinct from the coarse OCR-01 gate) also routes to IMAGE_REUPLOAD_REQUIRED', async () => {
+    script = defaultScript();
+    script.preprocessQualityScore = 22;
+    script.preprocessQualityStatus = 'REUPLOAD_REQUIRED';
+    const { id, pageId } = await createSubmittedPrescription(agentToken);
+
+    const rx = await waitForPrescriptionStatus(id, ['REVIEW']);
+    expect(rx.status).toBe('REVIEW'); // never silently vanishes
+
+    const page = await prisma.prescriptionPage.findUniqueOrThrow({ where: { id: pageId } });
+    expect(page.processingStatus).toBe('IMAGE_REUPLOAD_REQUIRED');
+    expect(page.finalQualityScore).toBe(22);
+    expect(page.qualityStatus).toBe('REUPLOAD_REQUIRED');
+    // The pipeline never reached text extraction for a rejected image.
+    const blocks = await prisma.oCRTextBlock.findMany({ where: { prescriptionPageId: pageId } });
+    expect(blocks).toHaveLength(0);
+
+    script = defaultScript();
+  });
+
+  it('PX-13 every configurable threshold is resolved from Settings and sent to the preprocessing engine (ADR-008)', async () => {
+    script = defaultScript();
+    // Reset — otherwise a leftover capture from an earlier test would
+    // satisfy the poll loop below immediately, before this test's own job
+    // ever runs.
+    lastPreprocessRequest = null;
+    await setSetting('prescriptions.preprocessing.min_quality_score', 77);
+    await setSetting('prescriptions.preprocessing.max_rotation_degrees', 12);
+    await setSetting('prescriptions.preprocessing.enabled_processors', {
+      validation: true,
+      qualityScoring: true,
+      blurDetection: false,
+      brightnessAnalysis: true,
+      contrastAnalysis: true,
+      noiseEstimation: true,
+      orientationDetection: true,
+      autoRotation: true,
+      perspectiveCorrection: true,
+      edgeDetection: true,
+      autoCrop: true,
+      backgroundCleanup: true,
+      shadowRemoval: true,
+      contrastEnhancement: true,
+      sharpening: true,
+      grayscale: true,
+      binarization: true,
+    });
+
+    await createSubmittedPrescription(agentToken);
+    const deadline = Date.now() + 5000;
+    while (!lastPreprocessRequest && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    expect(lastPreprocessRequest).not.toBeNull();
+    expect(lastPreprocessRequest?.config?.minQualityScore).toBe(77);
+    expect(lastPreprocessRequest?.config?.maxRotationDegrees).toBe(12);
+    expect((lastPreprocessRequest?.config?.enabled as Record<string, boolean>).blurDetection).toBe(
+      false,
+    );
+
+    await setSetting('prescriptions.preprocessing.min_quality_score', 50);
+    await setSetting('prescriptions.preprocessing.max_rotation_degrees', 45);
+  });
+
+  it('PX-14 image/quality/preprocessing endpoints are gated by ocr.view like every other prescriptions route', async () => {
+    const { id } = await createSubmittedPrescription(agentToken);
+    await waitForPrescriptionStatus(id, ['REVIEW']);
+    await request(http).get(`/api/v1/prescriptions/${id}/images`).expect(401);
+    await request(http).get(`/api/v1/prescriptions/${id}/quality`).expect(401);
+    await request(http).get(`/api/v1/prescriptions/${id}/preprocessing`).expect(401);
   });
 });
