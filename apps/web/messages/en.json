@@ -24,7 +24,8 @@
     "integrations": "Integration Monitor",
     "locator": "Branch Locator",
     "dic": "Drug Information Center",
-    "ocr": "Prescriptions (OCR)"
+    "ocr": "Prescriptions (OCR)",
+    "prescriptionsIntake": "Prescription Intake"
   },
   "auth": {
     "signIn": "Sign in",
@@ -599,9 +600,47 @@
       "CORRECTED": "Corrected",
       "REJECTED": "Rejected"
     },
+    "intake": {
+      "title": "Prescription Intake",
+      "newBtn": "New prescription",
+      "newTitle": "Start a new prescription",
+      "newHint": "Create the prescription record first, then attach pages by dragging, pasting, or taking a photo on the next screen.",
+      "note": "Note",
+      "source": "Source",
+      "createBtn": "Create",
+      "number": "Number",
+      "pages": "Pages",
+      "candidates": "Candidates",
+      "statusHeader": "Status",
+      "createdAt": "Created"
+    },
     "preprocessing": {
       "noPages": "No pages uploaded yet.",
       "page": "Page",
+      "addPagesTitle": "Add pages",
+      "duplicateHint": "Possible duplicate of another prescription",
+      "pendingCropWarning": "{count} page(s) still need a crop confirmed before they will be processed.",
+      "submitForProcessingBtn": "Submit for processing",
+      "manualCropRequired": "Manual crop required",
+      "sourceType": {
+        "CAMERA": "Camera photo",
+        "SCANNER": "Scanned document",
+        "SCREENSHOT": "Screenshot",
+        "WHATSAPP_SCREENSHOT": "WhatsApp screenshot",
+        "PDF": "PDF",
+        "UNKNOWN": "Unknown source"
+      },
+      "screenshotDetected": "Screenshot detected",
+      "cropWorkspaceHint": "We couldn't confidently isolate the prescription. Pick one of the detected regions below, select more than one to split them into separate pages, or drag on the image to draw your own crop.",
+      "multipleRegionsHint": "{count} candidate regions were detected.",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "rotateBtn": "Rotate",
+      "resetCropBtn": "Reset crop",
+      "rotateDisablesDraw": "Reset rotation to 0° to select or draw a crop region.",
+      "regionLabel": "Region {index} · {confidence}%",
+      "confirmCropBtn": "Confirm crop",
+      "autoCroppedHint": "Auto-cropped to region {index} of {total} candidates ({confidence}% confidence).",
       "status": {
         "QUEUED": "Queued",
         "ANALYZING_QUALITY": "Checking image quality",
@@ -638,6 +677,30 @@
       "original": "Original",
       "processed": "Processed",
       "notAvailable": "Not available"
+    }
+  },
+  "dropzone": {
+    "label": "Drag & drop files here, or click to browse",
+    "hint": "JPG, PNG, WEBP or PDF",
+    "browseBtn": "Browse files",
+    "cameraBtn": "Take photo",
+    "errorType": "Unsupported file type — allowed: {types}",
+    "errorSize": "File exceeds the {maxSizeMb}MB limit",
+    "errorUpload": "Upload failed (HTTP {status})",
+    "errorNetwork": "Network error — could not reach the server",
+    "duplicateInBatch": "Duplicate of another file",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "cancelBtn": "Cancel",
+    "retryBtn": "Retry",
+    "removeBtn": "Remove",
+    "status": {
+      "queued": "Queued",
+      "uploading": "Uploading",
+      "success": "Uploaded",
+      "duplicate": "Possible duplicate",
+      "error": "Failed",
+      "canceled": "Canceled"
     }
   }
 }

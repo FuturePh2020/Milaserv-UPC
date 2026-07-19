@@ -40,9 +40,20 @@ class PreprocessingConfigDto(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class CropBoxDto(BaseModel):
+    x: int
+    y: int
+    width: int
+    height: int
+
+
 class PreprocessRequest(BaseModel):
     image_url: str = Field(alias="imageUrl")
     config: PreprocessingConfigDto | None = None
+    # CR-001 Sprint OCR-02 Extension — a confirmed region/manual crop
+    # (design doc: "Prescription Region Detector") applied before the
+    # 18-step pipeline runs, so screenshot chrome never reaches OCR.
+    preset_crop_box: CropBoxDto | None = Field(alias="presetCropBox", default=None)
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -134,3 +145,51 @@ class DetectCandidatesResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     provider: str
+
+
+# ── CR-001 Sprint OCR-02 Extension — Universal Image Intake ───────────
+
+
+class RegionDetectionConfigDto(BaseModel):
+    enabled: bool = True
+    min_confidence: float = Field(alias="minConfidence", default=0.55)
+    min_region_area_ratio: float = Field(alias="minRegionAreaRatio", default=0.08)
+    max_candidates: int = Field(alias="maxCandidates", default=5)
+    screenshot_aspect_ratio_min: float = Field(alias="screenshotAspectRatioMin", default=1.6)
+    screenshot_aspect_ratio_max: float = Field(alias="screenshotAspectRatioMax", default=2.6)
+    whatsapp_hint_enabled: bool = Field(alias="whatsappHintEnabled", default=True)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DetectRegionRequest(BaseModel):
+    image_url: str = Field(alias="imageUrl")
+    config: RegionDetectionConfigDto | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class RegionCandidateDto(BaseModel):
+    region_index: int = Field(alias="regionIndex")
+    x: int
+    y: int
+    width: int
+    height: int
+    confidence: float
+    region_type: str = Field(alias="regionType")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DetectRegionResponse(BaseModel):
+    source_type_hint: str = Field(alias="sourceTypeHint")
+    screenshot_detected: bool = Field(alias="screenshotDetected")
+    screenshot_confidence: float = Field(alias="screenshotConfidence")
+    screenshot_application_hint: str | None = Field(alias="screenshotApplicationHint", default=None)
+    original_width: int = Field(alias="originalWidth")
+    original_height: int = Field(alias="originalHeight")
+    regions: list[RegionCandidateDto]
+    best_region_index: int | None = Field(alias="bestRegionIndex", default=None)
+    manual_crop_required: bool = Field(alias="manualCropRequired")
+
+    model_config = ConfigDict(populate_by_name=True)

@@ -24,7 +24,8 @@
     "integrations": "مراقبة التكاملات",
     "locator": "أقرب فرع",
     "dic": "مركز معلومات الدواء",
-    "ocr": "الوصفات (OCR)"
+    "ocr": "الوصفات (OCR)",
+    "prescriptionsIntake": "استلام الوصفات"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -599,9 +600,47 @@
       "CORRECTED": "مصحح",
       "REJECTED": "مرفوض"
     },
+    "intake": {
+      "title": "استلام الوصفات",
+      "newBtn": "وصفة جديدة",
+      "newTitle": "بدء وصفة جديدة",
+      "newHint": "أنشئ سجل الوصفة أولاً، ثم أرفق الصفحات بالسحب أو اللصق أو التقاط صورة في الشاشة التالية.",
+      "note": "ملاحظة",
+      "source": "المصدر",
+      "createBtn": "إنشاء",
+      "number": "الرقم",
+      "pages": "الصفحات",
+      "candidates": "المرشحون",
+      "statusHeader": "الحالة",
+      "createdAt": "تاريخ الإنشاء"
+    },
     "preprocessing": {
       "noPages": "لم يتم رفع أي صفحات بعد.",
       "page": "صفحة",
+      "addPagesTitle": "إضافة صفحات",
+      "duplicateHint": "احتمال تكرار مع وصفة أخرى",
+      "pendingCropWarning": "لا تزال {count} صفحة (صفحات) بحاجة لتأكيد القص قبل معالجتها.",
+      "submitForProcessingBtn": "إرسال للمعالجة",
+      "manualCropRequired": "مطلوب قص يدوي",
+      "sourceType": {
+        "CAMERA": "صورة بالكاميرا",
+        "SCANNER": "مستند ممسوح ضوئيًا",
+        "SCREENSHOT": "لقطة شاشة",
+        "WHATSAPP_SCREENSHOT": "لقطة شاشة واتساب",
+        "PDF": "PDF",
+        "UNKNOWN": "مصدر غير معروف"
+      },
+      "screenshotDetected": "تم اكتشاف لقطة شاشة",
+      "cropWorkspaceHint": "لم نتمكن من عزل الوصفة بثقة كافية. اختر إحدى المناطق المكتشفة أدناه، أو حدد أكثر من منطقة لتقسيمها إلى صفحات منفصلة، أو ارسم منطقة القص يدويًا على الصورة.",
+      "multipleRegionsHint": "تم اكتشاف {count} منطقة مرشحة.",
+      "zoomOut": "تصغير",
+      "zoomIn": "تكبير",
+      "rotateBtn": "تدوير",
+      "resetCropBtn": "إعادة تعيين القص",
+      "rotateDisablesDraw": "أعد زاوية الدوران إلى 0° لاختيار أو رسم منطقة القص.",
+      "regionLabel": "منطقة {index} · {confidence}%",
+      "confirmCropBtn": "تأكيد القص",
+      "autoCroppedHint": "تم القص تلقائيًا للمنطقة {index} من أصل {total} مرشحة (بثقة {confidence}%).",
       "status": {
         "QUEUED": "في الانتظار",
         "ANALYZING_QUALITY": "جارٍ فحص جودة الصورة",
@@ -638,6 +677,30 @@
       "original": "الأصلية",
       "processed": "المعالَجة",
       "notAvailable": "غير متاحة"
+    }
+  },
+  "dropzone": {
+    "label": "اسحب وأفلت الملفات هنا، أو اضغط للتصفح",
+    "hint": "JPG أو PNG أو WEBP أو PDF",
+    "browseBtn": "تصفح الملفات",
+    "cameraBtn": "التقاط صورة",
+    "errorType": "نوع ملف غير مدعوم — المسموح: {types}",
+    "errorSize": "حجم الملف يتجاوز الحد الأقصى {maxSizeMb} ميجابايت",
+    "errorUpload": "فشل الرفع (HTTP {status})",
+    "errorNetwork": "خطأ في الشبكة — تعذر الوصول إلى الخادم",
+    "duplicateInBatch": "مكرر لملف آخر",
+    "moveUp": "تحريك لأعلى",
+    "moveDown": "تحريك لأسفل",
+    "cancelBtn": "إلغاء",
+    "retryBtn": "إعادة المحاولة",
+    "removeBtn": "إزالة",
+    "status": {
+      "queued": "في الانتظار",
+      "uploading": "جارٍ الرفع",
+      "success": "تم الرفع",
+      "duplicate": "مكرر محتمل",
+      "error": "فشل",
+      "canceled": "أُلغي"
     }
   }
 }

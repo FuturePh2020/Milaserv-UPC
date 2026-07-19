@@ -682,6 +682,70 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     labelAr: 'إصدار خوارزمية تحسين الصورة',
     labelEn: 'Preprocessing pipeline/algorithm version tag',
   },
+  // CR-001 Sprint OCR-02 Extension — Universal Image Intake & Drag-and-
+  // Drop Upload. All thresholds configurable per ADR-008.
+  {
+    key: 'prescriptions.region_detection.enabled',
+    category: 'prescriptions',
+    valueType: 'BOOLEAN',
+    value: true,
+    labelAr: 'تفعيل كشف منطقة الوصفة داخل الصورة',
+    labelEn: 'Enable prescription-region detection at upload time',
+  },
+  {
+    key: 'prescriptions.region_detection.min_confidence',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 0.55,
+    labelAr: 'الحد الأدنى للثقة قبل قبول المنطقة تلقائيًا (٠-١)',
+    labelEn:
+      'Minimum region-detection confidence (0-1) before auto-accepting a region; below this, manual crop is required',
+  },
+  {
+    key: 'prescriptions.region_detection.min_region_area_ratio',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 0.08,
+    labelAr: 'الحد الأدنى لنسبة مساحة المنطقة المرشحة من الصورة',
+    labelEn: 'Minimum candidate-region area as a fraction of the full image',
+  },
+  {
+    key: 'prescriptions.region_detection.max_candidates',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 5,
+    labelAr: 'الحد الأقصى لعدد المناطق المرشحة المحفوظة لكل صفحة',
+    labelEn: 'Maximum candidate regions stored per page',
+  },
+  {
+    key: 'prescriptions.region_detection.screenshot_aspect_ratio_min',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    // 1.6, not 1.4: real phone screenshots run ~1.6-2.2 (iPhone ~2.17,
+    // common Android ~2.0-2.22), while A4/Letter scans sit at 1.29-1.41 —
+    // 1.4 collided with scanned documents and misclassified them as
+    // screenshots (see the region-detection engine's docs).
+    value: 1.6,
+    labelAr: 'الحد الأدنى لنسبة الطول للعرض المعتبرة لقطة شاشة هاتف',
+    labelEn: 'Minimum height/width ratio considered a plausible phone screenshot',
+  },
+  {
+    key: 'prescriptions.region_detection.screenshot_aspect_ratio_max',
+    category: 'prescriptions',
+    valueType: 'NUMBER',
+    value: 2.6,
+    labelAr: 'الحد الأقصى لنسبة الطول للعرض المعتبرة لقطة شاشة هاتف',
+    labelEn: 'Maximum height/width ratio considered a plausible phone screenshot',
+  },
+  {
+    key: 'prescriptions.region_detection.whatsapp_hint_enabled',
+    category: 'prescriptions',
+    valueType: 'BOOLEAN',
+    value: true,
+    labelAr: 'تفعيل الإشارة الثانوية لاكتشاف واتساب (مؤشر إضافي فقط)',
+    labelEn:
+      'Enable the secondary WhatsApp-specific detection hint (a secondary signal only, never the primary basis for cropping)',
+  },
 ];
 
 async function seedPermissions() {

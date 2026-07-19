@@ -335,11 +335,36 @@ def _score(metrics: dict, config: PreprocessingConfig, resolution_ok: bool) -> t
     return score_100, status
 
 
-def run_preprocessing(image_bytes: bytes, config: PreprocessingConfig) -> PreprocessingResult:
+def _apply_preset_crop(img: np.ndarray, crop_box: dict | None) -> np.ndarray:
+    """Applies a confirmed region/manual crop (CR-001 Sprint OCR-02
+    Extension — Prescription Region Detector) before any of the 18 steps
+    run, so screenshot chrome (status bars, chat bubbles, nav bars) never
+    reaches OCR. Coordinates are in the same post-EXIF-transpose space
+    the region detector itself analyzed, so no re-alignment is needed."""
+    if not crop_box:
+        return img
+    height, width = img.shape[:2]
+    x = max(0, min(int(crop_box["x"]), width - 1))
+    y = max(0, min(int(crop_box["y"]), height - 1))
+    x2 = max(x + 1, min(x + int(crop_box["width"]), width))
+    y2 = max(y + 1, min(y + int(crop_box["height"]), height))
+    return img[y:y2, x:x2]
+
+
+def run_preprocessing(
+    image_bytes: bytes, config: PreprocessingConfig, preset_crop_box: dict | None = None
+) -> PreprocessingResult:
     started = time.monotonic()
     raw_pages = _load_images_from_bytes(image_bytes)
     if len(raw_pages) > 1:
         logger.info("multi-page PDF: %d pages rasterized for quality analysis", len(raw_pages))
+    # A preset crop (from region detection or a manual correction) only
+    # ever applies to the first/primary page — multi-region PDFs aren't
+    # in scope for this extension.
+    raw_pages = [
+        (_apply_preset_crop(img, preset_crop_box) if i == 0 else img, exif_deg)
+        for i, (img, exif_deg) in enumerate(raw_pages)
+    ]
     pages = [_process_single_page(img, exif_deg, config) for img, exif_deg in raw_pages]
     duration_ms = int((time.monotonic() - started) * 1000)
     return PreprocessingResult(pages=pages, page_count=len(pages), processing_duration_ms=duration_ms)

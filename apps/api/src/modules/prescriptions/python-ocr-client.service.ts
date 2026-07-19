@@ -94,6 +94,46 @@ export interface DetectCandidatesResult {
   candidateLines: CandidateLineDto[];
 }
 
+export interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// ── CR-001 Sprint OCR-02 Extension — Universal Image Intake ───────────
+
+export interface RegionDetectionConfigDto {
+  enabled: boolean;
+  minConfidence: number;
+  minRegionAreaRatio: number;
+  maxCandidates: number;
+  screenshotAspectRatioMin: number;
+  screenshotAspectRatioMax: number;
+  whatsappHintEnabled: boolean;
+}
+
+export type PrescriptionSourceType =
+  'CAMERA' | 'SCANNER' | 'SCREENSHOT' | 'WHATSAPP_SCREENSHOT' | 'PDF' | 'UNKNOWN';
+
+export interface RegionCandidateDto extends CropBox {
+  regionIndex: number;
+  confidence: number;
+  regionType: string;
+}
+
+export interface DetectRegionResult {
+  sourceTypeHint: PrescriptionSourceType;
+  screenshotDetected: boolean;
+  screenshotConfidence: number;
+  screenshotApplicationHint: string | null;
+  originalWidth: number;
+  originalHeight: number;
+  regions: RegionCandidateDto[];
+  bestRegionIndex: number | null;
+  manualCropRequired: boolean;
+}
+
 /**
  * NestJS-side client for the internal contract in
  * docs/change-requests/CR-001-prescription-intelligence-engine.md §5.1.
@@ -135,8 +175,16 @@ export class PythonOcrClientService {
     return this.post('/v1/analyze-quality', { imageUrl });
   }
 
-  preprocess(imageUrl: string, config: PreprocessingConfigDto): Promise<PreprocessResult> {
-    return this.post('/v1/preprocess', { imageUrl, config });
+  preprocess(
+    imageUrl: string,
+    config: PreprocessingConfigDto,
+    presetCropBox?: CropBox | null,
+  ): Promise<PreprocessResult> {
+    return this.post('/v1/preprocess', {
+      imageUrl,
+      config,
+      presetCropBox: presetCropBox ?? undefined,
+    });
   }
 
   detectAndRecognize(imageUrl: string): Promise<DetectAndRecognizeResult> {
@@ -145,5 +193,13 @@ export class PythonOcrClientService {
 
   detectCandidates(blocks: OcrBlockDto[]): Promise<DetectCandidatesResult> {
     return this.post('/v1/detect-candidates', { blocks });
+  }
+
+  /** CR-001 Sprint OCR-02 Extension — finds the probable prescription
+   *  region inside a screenshot/photo (design doc: "Prescription Region
+   *  Detector"). Called synchronously at upload time, before the file's
+   *  page record is even created. */
+  detectRegion(imageUrl: string, config: RegionDetectionConfigDto): Promise<DetectRegionResult> {
+    return this.post('/v1/detect-region', { imageUrl, config });
   }
 }

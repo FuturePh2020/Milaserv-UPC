@@ -1351,6 +1351,19 @@ enum PrescriptionImageVersionType {
   OCR_READY
 }
 
+/// CR-001 Sprint OCR-02 Extension — Universal Image Intake. Best-effort
+/// classification from generic signals (aspect ratio, EXIF presence,
+/// screenshot heuristics) — never a hard guarantee, always overridable by
+/// a human via manual crop.
+enum PrescriptionSourceType {
+  CAMERA
+  SCANNER
+  SCREENSHOT
+  WHATSAPP_SCREENSHOT
+  PDF
+  UNKNOWN
+}
+
 enum PrescriptionCandidateStatus {
   AUTO_MATCHED
   NEEDS_PHARMACIST_REVIEW
@@ -1401,9 +1414,68 @@ model PrescriptionPage {
   preprocessingCompletedAt DateTime?
   imageVersions            PrescriptionPageImageVersion[]
 
+  /// CR-001 Sprint OCR-02 Extension — Universal Image Intake & Drag-and-
+  /// Drop Upload. All nullable/defaulted, additive; populated at upload
+  /// time by the region-detection step (design doc: "Backend Upload
+  /// Flow"), before preprocessing ever runs.
+  sourceType                 PrescriptionSourceType @default(UNKNOWN)
+  screenshotDetected         Boolean?
+  /// Best-effort, e.g. "whatsapp" — a secondary heuristic signal, never
+  /// the basis for hard-coded UI-coordinate cropping.
+  screenshotApplicationHint  String?
+  /// The best-scored candidate region at detection time — {x,y,width,
+  /// height,confidence} in the original image's coordinate space. See
+  /// `regions` for every candidate when more than one was found.
+  detectedDocumentRegionJson Json?
+  regionDetectionConfidence  Float?
+  /// True until a human confirms a region or supplies a manual crop —
+  /// gates this page out of submit()'s auto-enqueue (design doc:
+  /// "Low-confidence crops require manual confirmation").
+  manualCropRequired         Boolean                @default(false)
+  /// A human-supplied override — {x,y,width,height} — takes precedence
+  /// over detectedDocumentRegionJson once set.
+  manualCropJson             Json?
+  clipboardPasted            Boolean                @default(false)
+  originalWidth              Int?
+  originalHeight             Int?
+  /// Index into `regions` the reviewer picked as primary, when more than
+  /// one candidate existed.
+  selectedRegionIndex        Int?
+  regions                    PrescriptionRegion[]
+
   @@unique([prescriptionId, pageNumber])
   @@index([processingStatus])
   @@index([contentHash])
+}
+
+/// CR-001 Sprint OCR-02 Extension — one row per candidate document region
+/// a screenshot/photo might contain (design doc: "Multiple Region
+/// Handling" — uncertain regions are never silently discarded).
+model PrescriptionRegion {
+  id                 String           @id @default(cuid())
+  prescriptionPageId String
+  page               PrescriptionPage @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  regionIndex        Int
+  /// {x,y,width,height} in the original image's coordinate space.
+  boundingBoxJson    Json
+  confidence         Float
+  /// Free-form, e.g. "document" | "chat_bubble" | "ui_chrome" — no fixed
+  /// taxonomy imposed by this sprint.
+  regionType         String?
+  selected           Boolean          @default(false)
+  /// PENDING | SELECTED | SPAWNED_PAGE | DISCARDED — plain string, no
+  /// enum: this status is UI/reviewer-workflow bookkeeping, not a
+  /// pipeline stage like PrescriptionPageStatus.
+  processingStatus   String           @default("PENDING")
+  /// Set once a reviewer chooses to process this region as its own page
+  /// (design doc: "Allow processing of multiple regions as separate
+  /// pages") — traceability from region back to the page it produced.
+  spawnedPageId      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([prescriptionPageId, regionIndex])
+  @@index([prescriptionPageId])
 }
 
 /// CR-001 Sprint OCR-02 — one row per stored image version, never

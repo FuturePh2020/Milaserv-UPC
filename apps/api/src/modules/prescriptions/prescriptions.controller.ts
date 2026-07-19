@@ -21,7 +21,12 @@ import { Public } from '../../core/auth/public.decorator';
 import { RequirePermission } from '../permissions/require-permission.decorator';
 import { PermissionScope } from '../permissions/permission-scope.decorator';
 import type { RequestScope } from '../permissions/scope';
-import { CreatePrescriptionDto, ListPrescriptionsQueryDto } from './prescriptions.dto';
+import {
+  ConfirmCropDto,
+  CreatePrescriptionDto,
+  ListPrescriptionsQueryDto,
+  UploadPageDto,
+} from './prescriptions.dto';
 import { PrescriptionsService } from './prescriptions.service';
 import { detectMimeFromMagicBytes } from './file-validation';
 import { LocalDiskPrescriptionStorage } from './storage/prescription-storage';
@@ -62,10 +67,26 @@ export class PrescriptionsController {
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
     @UploadedFile() file: UploadedFileShape | undefined,
+    @Body() dto: UploadPageDto,
     @Req() req: Request,
   ) {
     if (!file) throw new BadRequestException('file is required (multipart field "file")');
-    return this.prescriptions.uploadPage(user, id, file, { ip: req.ip });
+    return this.prescriptions.uploadPage(user, id, file, dto, { ip: req.ip });
+  }
+
+  /** CR-001 Sprint OCR-02 Extension — confirms a page's crop, either by
+   *  picking one or more detected candidate regions or by a manual
+   *  override box (design doc: "Prescription Region Detector"). */
+  @RequirePermission('ocr.upload')
+  @Post(':id/pages/:pageId/crop')
+  confirmCrop(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('pageId') pageId: string,
+    @Body() dto: ConfirmCropDto,
+    @Req() req: Request,
+  ) {
+    return this.prescriptions.confirmCrop(user, id, pageId, dto, { ip: req.ip });
   }
 
   @RequirePermission('ocr.upload')
@@ -93,6 +114,14 @@ export class PrescriptionsController {
   @Get(':id/images')
   getImages(@Param('id') id: string) {
     return this.prescriptions.getImages(id);
+  }
+
+  /** CR-001 Sprint OCR-02 Extension — the raw original for a single page,
+   *  usable before preprocessing has run (the crop/preview workspace). */
+  @RequirePermission('ocr.view')
+  @Get(':id/pages/:pageId/original')
+  getPageOriginal(@Param('id') id: string, @Param('pageId') pageId: string) {
+    return this.prescriptions.getPageOriginal(id, pageId);
   }
 
   /** CR-001 Sprint OCR-02 — the 0-100 quality score and sub-metrics. */

@@ -77,6 +77,25 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
       string,
       { imageBase64: string; width: number; height: number; format: string }
     >;
+    /** CR-001 Sprint OCR-02 Extension — defaults keep every existing
+     *  Sprint OCR-01/02 test's pipeline auto-enqueueing exactly as
+     *  before (a confident, auto-accepted region). */
+    detectRegionManualCropRequired: boolean;
+    detectRegionScreenshotDetected: boolean;
+    detectRegionSourceType: 'CAMERA' | 'SCANNER' | 'SCREENSHOT' | 'WHATSAPP_SCREENSHOT' | 'UNKNOWN';
+    /** Overrides the single default full-frame region with an explicit
+     *  candidate list — used by the multi-region selection test. Null
+     *  keeps every other test's single-region default unchanged. */
+    detectRegionRegions:
+      | {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+          confidence: number;
+          regionType: string;
+        }[]
+      | null;
   }
   let script: Script;
 
@@ -107,6 +126,10 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     preprocessQualityScore: 82,
     preprocessQualityStatus: 'GOOD',
     preprocessVersions: {},
+    detectRegionManualCropRequired: false,
+    detectRegionScreenshotDetected: false,
+    detectRegionSourceType: 'CAMERA',
+    detectRegionRegions: null,
   });
 
   const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
@@ -192,6 +215,31 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
       .set(auth(token))
       .expect(200);
     return { id: rx.body.id as string, pageId: upload.body.id as string };
+  }
+
+  /** Like createSubmittedPrescription, but stops before submit() — used
+   *  by the Sprint OCR-02 Extension tests that need to inspect or act on
+   *  a page (crop confirmation) while the prescription is still
+   *  UPLOADED. */
+  async function createPrescriptionWithPage(
+    token: string,
+    dto: Record<string, string> = {},
+    fileBytes?: Buffer,
+  ) {
+    fileBytesCounter += 1;
+    fileBytes = fileBytes ?? jpegBytes(`fake-scan-${fileBytesCounter}`);
+    const rx = await request(http)
+      .post('/api/v1/prescriptions')
+      .set(auth(token))
+      .send({ note: `walkin ${TAG}` })
+      .expect(201);
+    let req = request(http)
+      .post(`/api/v1/prescriptions/${rx.body.id}/pages`)
+      .set(auth(token))
+      .attach('file', fileBytes, { filename: 'rx.jpg', contentType: 'image/jpeg' });
+    for (const [key, value] of Object.entries(dto)) req = req.field(key, value);
+    const upload = await req.expect(201);
+    return { id: rx.body.id as string, pageId: upload.body.id as string, upload: upload.body };
   }
 
   beforeAll(async () => {
@@ -292,6 +340,36 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
                   blockIndex: i,
                   extractedDrugText: blocks[i].normalizedText,
                 })),
+            }),
+          );
+        } else if (req.url === '/v1/detect-region') {
+          // CR-001 Sprint OCR-02 Extension contract — defaults to an
+          // auto-accepted full-frame region (manualCropRequired: false)
+          // so every existing Sprint OCR-01/02 test's pipeline keeps
+          // auto-enqueueing exactly as before; OCR-02-EXT-specific tests
+          // override via script.detectRegion*.
+          const regionsSource = script.detectRegionRegions ?? [
+            {
+              x: 0,
+              y: 0,
+              width: 900,
+              height: 1200,
+              confidence: script.detectRegionManualCropRequired ? 0.2 : 0.9,
+              regionType: 'document',
+            },
+          ];
+          const regions = regionsSource.map((r, i) => ({ regionIndex: i, ...r }));
+          res.end(
+            JSON.stringify({
+              sourceTypeHint: script.detectRegionSourceType,
+              screenshotDetected: script.detectRegionScreenshotDetected,
+              screenshotConfidence: script.detectRegionScreenshotDetected ? 0.8 : 0,
+              screenshotApplicationHint: script.detectRegionScreenshotDetected ? 'whatsapp' : null,
+              originalWidth: 900,
+              originalHeight: 1200,
+              regions,
+              bestRegionIndex: regions.length ? 0 : null,
+              manualCropRequired: script.detectRegionManualCropRequired,
             }),
           );
         } else {
@@ -670,5 +748,201 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     await request(http).get(`/api/v1/prescriptions/${id}/images`).expect(401);
     await request(http).get(`/api/v1/prescriptions/${id}/quality`).expect(401);
     await request(http).get(`/api/v1/prescriptions/${id}/preprocessing`).expect(401);
+  });
+
+  // ── CR-001 Sprint OCR-02 Extension — Universal Image Intake & Drag-
+  // and-Drop Upload ──────────────────────────────────────────────────
+
+  it('PX-15 upload records sourceType/screenshot detection and the clipboardPasted flag', async () => {
+    script = defaultScript();
+    script.detectRegionSourceType = 'WHATSAPP_SCREENSHOT';
+    script.detectRegionScreenshotDetected = true;
+    const { id, pageId, upload } = await createPrescriptionWithPage(agentToken, {
+      clipboardPasted: 'true',
+    });
+    expect(upload.sourceType).toBe('WHATSAPP_SCREENSHOT');
+    expect(upload.screenshotDetected).toBe(true);
+    expect(upload.screenshotApplicationHint).toBe('whatsapp');
+    expect(upload.manualCropRequired).toBe(false);
+
+    const page = await prisma.prescriptionPage.findUniqueOrThrow({ where: { id: pageId } });
+    expect(page.sourceType).toBe('WHATSAPP_SCREENSHOT');
+    expect(page.screenshotDetected).toBe(true);
+    expect(page.clipboardPasted).toBe(true);
+    expect(page.manualCropJson).not.toBeNull(); // auto-accepted crop box
+
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/submit`)
+      .set(auth(agentToken))
+      .expect(200);
+    script = defaultScript();
+  });
+
+  it('PX-16 a low-confidence region defers to manual crop: submit() skips it, the prescription still reaches REVIEW, and confirming the crop completes it', async () => {
+    script = defaultScript();
+    script.detectRegionManualCropRequired = true;
+    const { id, pageId, upload } = await createPrescriptionWithPage(agentToken);
+    expect(upload.manualCropRequired).toBe(true);
+
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/submit`)
+      .set(auth(agentToken))
+      .expect(200);
+    // Degenerate case: the only page needs manual crop, so no worker job
+    // ever runs — the prescription must still reach REVIEW promptly
+    // rather than being stuck in EXTRACTING forever.
+    const afterSubmit = await waitForPrescriptionStatus(id, ['REVIEW']);
+    expect(afterSubmit.status).toBe('REVIEW');
+    const pageAfterSubmit = await prisma.prescriptionPage.findUniqueOrThrow({
+      where: { id: pageId },
+    });
+    expect(pageAfterSubmit.processingStatus).toBe('QUEUED'); // never enqueued
+
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({ manualCropBox: { x: 10, y: 10, width: 200, height: 300 } })
+      .expect(201);
+
+    const pageAfterCrop = await prisma.prescriptionPage.findUniqueOrThrow({
+      where: { id: pageId },
+    });
+    expect(pageAfterCrop.manualCropRequired).toBe(false);
+    expect(pageAfterCrop.manualCropJson).toEqual({ x: 10, y: 10, width: 200, height: 300 });
+
+    // confirmCrop() enqueues immediately since the prescription is past
+    // UPLOADED already — poll until the (still-open) worker completes it.
+    const deadline = Date.now() + 10000;
+    let completed = false;
+    while (Date.now() < deadline) {
+      const p = await prisma.prescriptionPage.findUniqueOrThrow({ where: { id: pageId } });
+      if (p.processingStatus === 'COMPLETED') {
+        completed = true;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    expect(completed).toBe(true);
+
+    script = defaultScript();
+  });
+
+  it('PX-17 confirmCrop rejects anything but exactly one of selectedRegionIndices/manualCropBox, and rejects a page that is not awaiting crop', async () => {
+    script = defaultScript();
+    script.detectRegionManualCropRequired = true;
+    const { id, pageId } = await createPrescriptionWithPage(agentToken);
+
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({})
+      .expect(400);
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({ selectedRegionIndices: [0], manualCropBox: { x: 0, y: 0, width: 10, height: 10 } })
+      .expect(400);
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({ selectedRegionIndices: [99] }) // unknown region index
+      .expect(400);
+
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({ selectedRegionIndices: [0] })
+      .expect(201);
+
+    // Already confirmed — a second attempt is rejected.
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({ selectedRegionIndices: [0] })
+      .expect(422);
+
+    script = defaultScript();
+  });
+
+  it('PX-18 selecting more than one candidate region spawns a sibling page per extra region and both process independently', async () => {
+    script = defaultScript();
+    script.detectRegionManualCropRequired = true;
+    script.detectRegionRegions = [
+      { x: 0, y: 0, width: 400, height: 500, confidence: 0.6, regionType: 'document' },
+      { x: 450, y: 0, width: 400, height: 500, confidence: 0.55, regionType: 'document' },
+    ];
+    const { id, pageId } = await createPrescriptionWithPage(agentToken);
+
+    const confirm = await request(http)
+      .post(`/api/v1/prescriptions/${id}/pages/${pageId}/crop`)
+      .set(auth(agentToken))
+      .send({ selectedRegionIndices: [0, 1] })
+      .expect(201);
+    expect(confirm.body.spawnedPageIds).toHaveLength(1);
+    const spawnedPageId = confirm.body.spawnedPageIds[0] as string;
+
+    await request(http)
+      .post(`/api/v1/prescriptions/${id}/submit`)
+      .set(auth(agentToken))
+      .expect(200);
+    const rx = await waitForPrescriptionStatus(id, ['REVIEW']);
+    expect(rx.status).toBe('REVIEW');
+
+    const detail = await request(http)
+      .get(`/api/v1/prescriptions/${id}`)
+      .set(auth(agentToken))
+      .expect(200);
+    expect(detail.body.pages).toHaveLength(2);
+    const ids = detail.body.pages.map((p: { id: string }) => p.id);
+    expect(ids).toEqual(expect.arrayContaining([pageId, spawnedPageId]));
+    for (const page of detail.body.pages) {
+      expect(page.processingStatus).toBe('COMPLETED');
+    }
+
+    script = defaultScript();
+  });
+
+  it('PX-19 the raw original is fetchable before preprocessing runs and is gated by ocr.view', async () => {
+    script = defaultScript();
+    script.detectRegionManualCropRequired = true;
+    const { id, pageId } = await createPrescriptionWithPage(agentToken);
+
+    await request(http).get(`/api/v1/prescriptions/${id}/pages/${pageId}/original`).expect(401);
+
+    const original = await request(http)
+      .get(`/api/v1/prescriptions/${id}/pages/${pageId}/original`)
+      .set(auth(agentToken))
+      .expect(200);
+    expect(original.body.pageId).toBe(pageId);
+    expect(typeof original.body.url).toBe('string');
+
+    script = defaultScript();
+  });
+
+  it('PX-20 concurrent multi-file uploads to the same prescription never collide on pageNumber (DropZone fires one request per file in parallel)', async () => {
+    script = defaultScript();
+    const rx = await request(http)
+      .post('/api/v1/prescriptions')
+      .set(auth(agentToken))
+      .send({})
+      .expect(201);
+
+    const uploads = await Promise.all(
+      [1, 2, 3, 4, 5].map((i) =>
+        request(http)
+          .post(`/api/v1/prescriptions/${rx.body.id}/pages`)
+          .set(auth(agentToken))
+          .attach('file', jpegBytes(`concurrent-${i}`), {
+            filename: `rx-${i}.jpg`,
+            contentType: 'image/jpeg',
+          })
+          .expect(201),
+      ),
+    );
+    const pageNumbers = uploads.map((u) => u.body.pageNumber as number).sort((a, b) => a - b);
+    expect(pageNumbers).toEqual([1, 2, 3, 4, 5]);
+
+    const pages = await prisma.prescriptionPage.findMany({ where: { prescriptionId: rx.body.id } });
+    expect(pages).toHaveLength(5);
   });
 });

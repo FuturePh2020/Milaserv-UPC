@@ -29,6 +29,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/locator', labelKey: 'locator', icon: '📍', permission: 'branch.view' },
   { href: '/dic', labelKey: 'dic', icon: '💊', permission: 'dic.view' },
   { href: '/ocr', labelKey: 'ocr', icon: '🧾', permission: 'ocr.view' },
+  {
+    href: '/prescriptions',
+    labelKey: 'prescriptionsIntake',
+    icon: '📥',
+    permission: 'ocr.view',
+  },
   { href: '/notifications', labelKey: 'notifications', icon: '🔔', permission: null },
 ];
 

@@ -2,17 +2,25 @@
 
 import { use, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, ApiError } from '@/lib/api';
+import { getAccessToken } from '@/lib/tokens';
+import { useAuth } from '@/lib/auth';
 import type {
   ImageVersionEntry,
   PrescriptionImagesResponse,
   PrescriptionPreprocessingResponse,
   PrescriptionQualityPage,
   PrescriptionQualityResponse,
+  PrescriptionRegionEntry,
+  PrescriptionSourceType,
   PrescriptionSummary,
+  PrescriptionUploadConfig,
+  UploadPageResponse,
 } from '@/lib/prescription-types';
-import { Badge, EmptyState, ErrorState, Select, Spinner } from '@/components/ui';
+import { Badge, Button, EmptyState, ErrorState, Select, Spinner } from '@/components/ui';
+import { DropZone } from '@/components/DropZone';
+import { PageCropWorkspace } from './crop-workspace';
 
 const QUALITY_TONES: Record<string, 'green' | 'blue' | 'amber' | 'red' | 'gray'> = {
   EXCELLENT: 'green',
@@ -43,12 +51,22 @@ const IN_PROGRESS = new Set([
   'DETECTING_CANDIDATES',
 ]);
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+
 /** CR-001 Sprint OCR-02 — Image Processing & Quality Engine inspection
  * page (design spec: "an image inspection page ... side-by-side
- * comparison"). Distinct from the Phase 10 /ocr review screen. */
+ * comparison"). Extended in Sprint OCR-02 Extension with the
+ * drag-and-drop upload section and the preview/crop workspace — this is
+ * the "existing prescriptions area" the Extension's DropZone wires into,
+ * not a standalone upload page. Distinct from the Phase 10 /ocr review
+ * screen. */
 export default function PrescriptionImagesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const t = useTranslations();
+  const qc = useQueryClient();
+  const { hasPermission } = useAuth();
+  const canUpload = hasPermission('ocr.upload');
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const { data: rx, isLoading: rxLoading } = useQuery({
     queryKey: ['prescription-summary', id],
@@ -73,8 +91,25 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
     queryFn: () => api<PrescriptionPreprocessingResponse>(`/prescriptions/${id}/preprocessing`),
     enabled: !!rx,
   });
+  const { data: uploadConfig } = useQuery({
+    queryKey: ['prescriptions-upload-config'],
+    queryFn: () => api<PrescriptionUploadConfig>('/prescriptions/config'),
+    staleTime: 300_000,
+    enabled: !!rx && rx.status === 'UPLOADED' && canUpload,
+  });
+
+  const submit = useMutation({
+    mutationFn: () => api(`/prescriptions/${id}/submit`, { method: 'POST' }),
+    onSuccess: () => {
+      setSubmitError(null);
+      void qc.invalidateQueries({ queryKey: ['prescription-summary', id] });
+    },
+    onError: (err) => setSubmitError(err instanceof ApiError ? err.message : t('common.error')),
+  });
 
   if (rxLoading || !rx) return <Spinner />;
+
+  const pendingCropCount = rx.pages.filter((p) => p.manualCropRequired).length;
 
   return (
     <div className="space-y-4">
@@ -83,13 +118,75 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
           <h1 className="text-2xl font-bold text-gray-900" dir="ltr">
             {rx.number}
           </h1>
-          <Badge tone="gray">{rx.status}</Badge>
+          <Badge tone="gray">{t(`ocr.status.${rx.status}`)}</Badge>
         </div>
       </div>
+
+      {rx.status === 'UPLOADED' && canUpload && (
+        <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-gray-900">
+            {t('ocr.preprocessing.addPagesTitle')}
+          </h2>
+          {uploadConfig && (
+            <DropZone
+              accept={uploadConfig.allowedMime}
+              maxSizeMb={uploadConfig.maxSizeMb}
+              uploadUrl={`${API_BASE}/api/v1/prescriptions/${id}/pages`}
+              headers={() => {
+                const token = getAccessToken();
+                const headers: Record<string, string> = {};
+                if (token) headers.Authorization = `Bearer ${token}`;
+                return headers;
+              }}
+              buildExtraFields={(_file, source) => ({
+                clipboardPasted: source === 'paste' ? 'true' : 'false',
+              })}
+              extractDuplicateLabel={(json) =>
+                (json as UploadPageResponse | null)?.possibleDuplicateOfPrescriptionId
+                  ? t('ocr.preprocessing.duplicateHint')
+                  : undefined
+              }
+              onFileSettled={() => {
+                void qc.invalidateQueries({ queryKey: ['prescription-summary', id] });
+              }}
+            />
+          )}
+          {submitError && <ErrorState message={submitError} />}
+          <div className="flex items-center justify-between gap-3">
+            {pendingCropCount > 0 ? (
+              <p className="text-xs text-amber-700">
+                {t('ocr.preprocessing.pendingCropWarning', { count: pendingCropCount })}
+              </p>
+            ) : (
+              <span />
+            )}
+            <Button
+              onClick={() => submit.mutate()}
+              disabled={rx.pages.length === 0 || submit.isPending}
+            >
+              {t('ocr.preprocessing.submitForProcessingBtn')}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {rx.pages.length === 0 && <EmptyState message={t('ocr.preprocessing.noPages')} />}
 
       {rx.pages.map((page) => {
+        if (page.manualCropRequired) {
+          return (
+            <PageCropWorkspace
+              key={page.id}
+              prescriptionId={id}
+              pageId={page.id}
+              pageNumber={page.pageNumber}
+              regions={page.regions}
+              sourceType={page.sourceType}
+              screenshotDetected={page.screenshotDetected}
+              screenshotApplicationHint={page.screenshotApplicationHint}
+            />
+          );
+        }
         const q: PrescriptionQualityPage | undefined = quality?.pages.find(
           (p) => p.pageId === page.id,
         );
@@ -106,6 +203,11 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
             preprocessingDuration={pre?.preprocessingDuration ?? null}
             processorFailures={pre?.processorFailures ?? []}
             versions={imgs?.versions ?? []}
+            sourceType={page.sourceType}
+            screenshotDetected={page.screenshotDetected}
+            screenshotApplicationHint={page.screenshotApplicationHint}
+            regions={page.regions}
+            selectedRegionIndex={page.selectedRegionIndex}
           />
         );
       })}
@@ -139,6 +241,11 @@ function PageInspector({
   preprocessingDuration,
   processorFailures,
   versions,
+  sourceType,
+  screenshotDetected,
+  screenshotApplicationHint,
+  regions,
+  selectedRegionIndex,
 }: {
   pageNumber: number;
   processingStatus: string;
@@ -148,6 +255,11 @@ function PageInspector({
   preprocessingDuration: number | null;
   processorFailures: string[];
   versions: ImageVersionEntry[];
+  sourceType: PrescriptionSourceType;
+  screenshotDetected: boolean | null;
+  screenshotApplicationHint: string | null;
+  regions: PrescriptionRegionEntry[];
+  selectedRegionIndex: number | null;
 }) {
   const t = useTranslations();
   const original = versions.find((v) => v.versionType === 'ORIGINAL');
@@ -156,6 +268,7 @@ function PageInspector({
   const processed =
     processedOptions.find((v) => v.versionType === processedType) ??
     processedOptions[processedOptions.length - 1];
+  const selectedRegion = regions.find((r) => r.regionIndex === selectedRegionIndex);
 
   return (
     <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-5">
@@ -164,6 +277,13 @@ function PageInspector({
           {t('ocr.preprocessing.page')} #{pageNumber}
         </h2>
         <div className="flex flex-wrap items-center gap-1.5">
+          <Badge tone="gray">{t(`ocr.preprocessing.sourceType.${sourceType}`)}</Badge>
+          {screenshotDetected && (
+            <Badge tone="blue">
+              {t('ocr.preprocessing.screenshotDetected')}
+              {screenshotApplicationHint ? ` — ${screenshotApplicationHint}` : ''}
+            </Badge>
+          )}
           <Badge tone={PROCESSING_TONES[processingStatus] ?? 'gray'}>
             {t(`ocr.preprocessing.status.${processingStatus}`)}
           </Badge>
@@ -175,6 +295,16 @@ function PageInspector({
           )}
         </div>
       </div>
+
+      {selectedRegion && regions.length > 1 && (
+        <p className="text-xs text-gray-500">
+          {t('ocr.preprocessing.autoCroppedHint', {
+            index: selectedRegion.regionIndex + 1,
+            total: regions.length,
+            confidence: Math.round(selectedRegion.confidence * 100),
+          })}
+        </p>
+      )}
 
       {processingError && <ErrorState message={processingError} />}
       {processorFailures.length > 0 && (

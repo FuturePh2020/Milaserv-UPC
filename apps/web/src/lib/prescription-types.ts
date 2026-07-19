@@ -16,6 +16,31 @@ export type PrescriptionPageStatus =
 export type PreprocessingQualityStatus =
   'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | 'REUPLOAD_REQUIRED';
 
+/** CR-001 Sprint OCR-02 Extension — Universal Image Intake. Best-effort
+ * classification, always overridable by a human via manual crop. */
+export type PrescriptionSourceType =
+  'CAMERA' | 'SCANNER' | 'SCREENSHOT' | 'WHATSAPP_SCREENSHOT' | 'PDF' | 'UNKNOWN';
+
+export interface CropBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One candidate document region a screenshot/photo might contain — see
+ * PrescriptionRegion in schema.prisma. Never silently discarded, even
+ * when its confidence is too low to auto-accept. */
+export interface PrescriptionRegionEntry {
+  id: string;
+  regionIndex: number;
+  boundingBoxJson: CropBox;
+  confidence: number;
+  regionType: string | null;
+  selected: boolean;
+  processingStatus: string;
+}
+
 export interface PrescriptionPageDetail {
   id: string;
   pageNumber: number;
@@ -31,13 +56,66 @@ export interface PrescriptionPageDetail {
   rotationAngle: number | null;
   cropConfidence: number | null;
   orientation: number | null;
+  sourceType: PrescriptionSourceType;
+  screenshotDetected: boolean | null;
+  screenshotApplicationHint: string | null;
+  manualCropRequired: boolean;
+  manualCropJson: CropBox | null;
+  clipboardPasted: boolean;
+  originalWidth: number | null;
+  originalHeight: number | null;
+  selectedRegionIndex: number | null;
+  regions: PrescriptionRegionEntry[];
 }
 
 export interface PrescriptionSummary {
   id: string;
   number: string;
   status: string;
+  note: string | null;
+  createdAt: string;
   pages: PrescriptionPageDetail[];
+}
+
+export interface PrescriptionListItem {
+  id: string;
+  number: string;
+  status: string;
+  note: string | null;
+  source: string | null;
+  createdAt: string;
+  _count: { pages: number; drugCandidates: number };
+}
+
+export interface UploadPageResponse {
+  id: string;
+  pageNumber: number;
+  possibleDuplicateOfPrescriptionId: string | null;
+  sourceType: PrescriptionSourceType;
+  screenshotDetected: boolean;
+  screenshotApplicationHint: string | null;
+  manualCropRequired: boolean;
+  regionCount: number;
+}
+
+export interface ConfirmCropResponse {
+  pageId: string;
+  manualCropRequired: false;
+  cropBox: CropBox;
+  spawnedPageIds: string[];
+  prescriptionStatus: string;
+}
+
+export interface PageOriginalResponse {
+  pageId: string;
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface PrescriptionUploadConfig {
+  maxSizeMb: number;
+  allowedMime: string[];
 }
 
 export interface ImageVersionEntry {

@@ -91,6 +91,13 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
     ) {
       return;
     }
+    // Defensive: a page still awaiting manual crop confirmation should
+    // never have been enqueued (submit()/confirmCrop() gate this) — if
+    // it was anyway, don't run the pipeline against un-cropped chrome.
+    if (page.manualCropRequired) {
+      this.logger.warn(`page ${pageId} was queued while still awaiting manual crop — skipping`);
+      return;
+    }
 
     const originalUrl = await this.storage.getSignedUrl(
       page.originalStorageKey,
@@ -153,7 +160,16 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
       data: { processingStatus: 'PREPROCESSING', preprocessingStartedAt },
     });
     const config = await this.preprocessingConfig.resolve();
-    const pre = await this.pythonOcr.preprocess(originalUrl, config);
+    // CR-001 Sprint OCR-02 Extension — a confirmed region/manual crop
+    // (design doc: "Prescription Region Detector") is applied before the
+    // 18-step pipeline runs, so screenshot chrome never reaches OCR.
+    const cropBox = page.manualCropJson as {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null;
+    const pre = await this.pythonOcr.preprocess(originalUrl, config, cropBox);
     await this.storeImageVersions(pageId, pre);
 
     const preprocessingCompletedAt = new Date();
@@ -353,17 +369,25 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
   }
 
   /** Rolls the prescription from EXTRACTING to REVIEW once every page has
-   *  reached a terminal state — atomic via the WHERE guard, so a race
-   *  between sibling pages' jobs finalizes exactly once (design spec §3,
-   *  §8.2: any outcome — success, reupload, or failure — always surfaces
-   *  to a human, never silently vanishes). */
-  private async finalizePrescriptionIfDone(prescriptionId: string) {
+   *  either reached a terminal state OR is still waiting on a human to
+   *  confirm its crop — atomic via the WHERE guard, so a race between
+   *  sibling pages' jobs finalizes exactly once (design spec §3, §8.2:
+   *  any outcome — success, reupload, or failure — always surfaces to a
+   *  human, never silently vanishes). A page awaiting manual crop counts
+   *  as "resolved for now": REVIEW is exactly where a reviewer would go
+   *  to confirm that crop anyway, and once confirmed+enqueued its own
+   *  completion re-runs this check (public — also called directly from
+   *  PrescriptionsService.submit()/confirmCrop() for the edge case where
+   *  every page needs manual crop and no worker job ever runs). */
+  async finalizePrescriptionIfDone(prescriptionId: string) {
     const pages = await this.prisma.prescriptionPage.findMany({
       where: { prescriptionId },
-      select: { processingStatus: true },
+      select: { processingStatus: true, manualCropRequired: true },
     });
     const terminal = new Set(['COMPLETED', 'IMAGE_REUPLOAD_REQUIRED', 'FAILED']);
-    if (pages.length === 0 || !pages.every((p) => terminal.has(p.processingStatus))) return;
+    const resolved = (p: (typeof pages)[number]) =>
+      terminal.has(p.processingStatus) || p.manualCropRequired;
+    if (pages.length === 0 || !pages.every(resolved)) return;
 
     const result = await this.prisma.prescription.updateMany({
       where: { id: prescriptionId, status: 'EXTRACTING' },
