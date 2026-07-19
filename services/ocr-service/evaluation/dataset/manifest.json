@@ -1,0 +1,79 @@
+[
+  {
+    "id": "en-01",
+    "image": "en-01.png",
+    "groundTruthText": "Panadol Extra Tab",
+    "language": "en",
+    "category": "printed"
+  },
+  {
+    "id": "en-02",
+    "image": "en-02.png",
+    "groundTruthText": "Augmentin 1 gm twice daily",
+    "language": "en",
+    "category": "printed"
+  },
+  {
+    "id": "en-03",
+    "image": "en-03.png",
+    "groundTruthText": "Amoxicillin 500mg",
+    "language": "en",
+    "category": "printed"
+  },
+  {
+    "id": "en-04",
+    "image": "en-04.png",
+    "groundTruthText": "Take two tablets after meals",
+    "language": "en",
+    "category": "printed"
+  },
+  {
+    "id": "en-05",
+    "image": "en-05.png",
+    "groundTruthText": "Paracetamol 500 mg",
+    "language": "en",
+    "category": "printed_small"
+  },
+  {
+    "id": "ar-01",
+    "image": "ar-01.png",
+    "groundTruthText": "باندول اكسترا",
+    "language": "ar",
+    "category": "printed"
+  },
+  {
+    "id": "ar-02",
+    "image": "ar-02.png",
+    "groundTruthText": "أموكسيسيلين 500 ملغ",
+    "language": "ar",
+    "category": "printed"
+  },
+  {
+    "id": "ar-03",
+    "image": "ar-03.png",
+    "groundTruthText": "قرص واحد كل ثمان ساعات",
+    "language": "ar",
+    "category": "printed"
+  },
+  {
+    "id": "ar-04",
+    "image": "ar-04.png",
+    "groundTruthText": "دواء السعال",
+    "language": "ar",
+    "category": "printed"
+  },
+  {
+    "id": "ar-05",
+    "image": "ar-05.png",
+    "groundTruthText": "مرتين يوميا بعد الأكل",
+    "language": "ar",
+    "category": "printed_small"
+  },
+  {
+    "id": "blank-01",
+    "image": "blank-01.png",
+    "groundTruthText": "",
+    "language": "en",
+    "category": "blank"
+  }
+]

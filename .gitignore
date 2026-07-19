@@ -39,3 +39,7 @@ apps/api/storage/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# CR-001 Sprint OCR-03 — evaluation run outputs (transient; the fixture
+# dataset itself under evaluation/dataset/ is tracked).
+services/ocr-service/evaluation/results/*.json
