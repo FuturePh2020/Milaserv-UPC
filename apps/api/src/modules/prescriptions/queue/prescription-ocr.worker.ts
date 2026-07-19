@@ -10,21 +10,32 @@ import { SettingsService } from '../../settings/settings.service';
 import { TimelineService } from '../../timeline/timeline.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { PythonOcrClientService } from '../python-ocr-client.service';
+import type { PagePreprocessResult } from '../python-ocr-client.service';
+import { PreprocessingConfigService } from '../preprocessing-config.service';
 import { PRESCRIPTION_STORAGE } from '../storage/prescription-storage';
 import type { PrescriptionStorageDriver } from '../storage/prescription-storage';
+import { newPrescriptionStorageKey } from '../storage/prescription-storage';
 import { PRESCRIPTION_QUEUE_REDIS } from './queue-redis.provider';
 import { PRESCRIPTION_OCR_QUEUE_NAME } from './prescription-ocr.queue';
 import type { PrescriptionOcrJobData } from './prescription-ocr.queue';
 
 const SIGNED_URL_TTL_SECONDS = 300;
 
+/** PrescriptionPageImageVersion.versionType values this worker writes,
+ * in storage order — ORIGINAL is registered once up front, the rest come
+ * back (optionally) from the Sprint OCR-02 preprocessing engine. */
+const VERSION_KEYS = ['ROTATED', 'CROPPED', 'ENHANCED', 'OCR_READY'] as const;
+
 /**
- * The BullMQ consumer for `prescription-ocr` (design spec §3 stages 3–15,
- * Sprint OCR-01 scope). Runs the deterministic mock pipeline end-to-end:
- * quality gate → (mock) preprocess → detect-and-recognize → persist
- * OCRTextBlock rows → detect-candidates → persist PrescriptionDrugCandidate
- * rows, every one defaulting to NEEDS_PHARMACIST_REVIEW since no real
- * matching engine exists yet (that's Sprint OCR-05/06).
+ * The BullMQ consumer for `prescription-ocr` (design spec §3 stages 3–15).
+ * quality gate (Sprint OCR-01, unchanged) → preprocess (Sprint OCR-02's
+ * real 18-step image-processing & quality engine — versions + metrics
+ * persisted, IMAGE_REUPLOAD_REQUIRED if the score is below threshold) →
+ * detect-and-recognize (still Sprint OCR-01's mock — no real OCR text
+ * recognition ships until Sprint OCR-03) → persist OCRTextBlock rows →
+ * detect-candidates → persist PrescriptionDrugCandidate rows, every one
+ * defaulting to NEEDS_PHARMACIST_REVIEW since no real matching engine
+ * exists yet (that's Sprint OCR-05/06).
  */
 @Injectable()
 export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -40,6 +51,7 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
     private readonly timeline: TimelineService,
     private readonly notifications: NotificationsService,
     private readonly pythonOcr: PythonOcrClientService,
+    private readonly preprocessingConfig: PreprocessingConfigService,
   ) {}
 
   onModuleInit() {
@@ -85,6 +97,24 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
       SIGNED_URL_TTL_SECONDS,
     );
 
+    // Sprint OCR-02: register the original as version 0 — never
+    // overwritten by anything the preprocessing engine produces below.
+    await this.prisma.prescriptionPageImageVersion.upsert({
+      where: {
+        prescriptionPageId_versionType_sourcePageIndex: {
+          prescriptionPageId: pageId,
+          versionType: 'ORIGINAL',
+          sourcePageIndex: 0,
+        },
+      },
+      update: {},
+      create: {
+        prescriptionPageId: pageId,
+        versionType: 'ORIGINAL',
+        storageKey: page.originalStorageKey,
+      },
+    });
+
     // ── Stage: quality gate ───────────────────────────────────────────
     await this.prisma.prescriptionPage.update({
       where: { id: pageId },
@@ -114,15 +144,76 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
       data: { imageQualityScore: quality.qualityScore },
     });
 
-    // ── Stage: preprocess ──────────────────────────────────────────────
+    // ── Stage: preprocess (CR-001 Sprint OCR-02 — 18-step image-
+    // processing & quality engine). No OCR text recognition happens
+    // here; that stays in the (still-mocked) stage below, unchanged. ──
+    const preprocessingStartedAt = new Date();
     await this.prisma.prescriptionPage.update({
       where: { id: pageId },
-      data: { processingStatus: 'PREPROCESSING' },
+      data: { processingStatus: 'PREPROCESSING', preprocessingStartedAt },
     });
-    const pre = await this.pythonOcr.preprocess(originalUrl);
+    const config = await this.preprocessingConfig.resolve();
+    const pre = await this.pythonOcr.preprocess(originalUrl, config);
+    await this.storeImageVersions(pageId, pre);
+
+    const preprocessingCompletedAt = new Date();
     await this.prisma.prescriptionPage.update({
       where: { id: pageId },
-      data: { orientation: pre.orientation },
+      data: {
+        orientation: Math.round(pre.metrics.rotationAngle),
+        rotationAngle: pre.metrics.rotationAngle,
+        blurScore: pre.metrics.blurScore,
+        brightnessScore: pre.metrics.brightnessScore,
+        contrastScore: pre.metrics.contrastScore,
+        noiseScore: pre.metrics.noiseScore,
+        cropConfidence: pre.metrics.cropConfidence,
+        finalQualityScore: pre.qualityScore,
+        qualityStatus: pre.qualityStatus,
+        preprocessingVersion: config.version,
+        preprocessingDuration: pre.processingDurationMs,
+        preprocessingCompletedAt,
+      },
+    });
+    this.logger.log(
+      `page ${pageId} preprocessed in ${pre.processingDurationMs}ms — ` +
+        `quality ${pre.qualityScore}/100 (${pre.qualityStatus}), ` +
+        `stages=[${pre.stagesApplied.join(',')}]` +
+        (pre.processorFailures.length ? `, failures=[${pre.processorFailures.join(';')}]` : ''),
+    );
+    if (pre.processorFailures.length) {
+      await this.timeline.record({
+        entityType: 'prescription_page',
+        entityId: pageId,
+        eventType: 'preprocessing_processor_failures',
+        payload: { failures: pre.processorFailures },
+      });
+    }
+
+    if (pre.qualityStatus === 'REUPLOAD_REQUIRED') {
+      await this.prisma.prescriptionPage.update({
+        where: { id: pageId },
+        data: { processingStatus: 'IMAGE_REUPLOAD_REQUIRED' },
+      });
+      await this.timeline.record({
+        entityType: 'prescription_page',
+        entityId: pageId,
+        eventType: 'image_reupload_required',
+        payload: {
+          qualityScore: pre.qualityScore,
+          qualityStatus: pre.qualityStatus,
+          source: 'preprocessing_engine',
+        },
+      });
+      await this.finalizePrescriptionIfDone(page.prescriptionId);
+      return;
+    }
+
+    // Transient — the design spec's "READY FOR OCR" workflow state,
+    // between PREPROCESSING and Sprint OCR-01's (still-mocked) text
+    // extraction stage.
+    await this.prisma.prescriptionPage.update({
+      where: { id: pageId },
+      data: { processingStatus: 'READY_FOR_OCR' },
     });
 
     // ── Stage: detect + recognize ───────────────────────────────────────
@@ -208,6 +299,43 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
       payload: { blocks: blocks.length, provider: recognized.providerUsed },
     });
     await this.finalizePrescriptionIfDone(page.prescriptionId);
+  }
+
+  /** Sprint OCR-02 — writes each version the preprocessing engine
+   *  returned to storage and records it, never touching the ORIGINAL row
+   *  registered before the pipeline ran. Idempotent under BullMQ retries
+   *  via the (pageId, versionType, sourcePageIndex) unique constraint. */
+  private async storeImageVersions(pageId: string, pre: PagePreprocessResult): Promise<void> {
+    for (const key of VERSION_KEYS) {
+      const version = pre.versions[key];
+      if (!version) continue;
+      const buffer = Buffer.from(version.imageBase64, 'base64');
+      const storageKey = newPrescriptionStorageKey(`${pageId}-${key.toLowerCase()}.png`);
+      await this.storage.put(storageKey, buffer, 'image/png');
+      await this.prisma.prescriptionPageImageVersion.upsert({
+        where: {
+          prescriptionPageId_versionType_sourcePageIndex: {
+            prescriptionPageId: pageId,
+            versionType: key,
+            sourcePageIndex: 0,
+          },
+        },
+        update: { storageKey, width: version.width, height: version.height },
+        create: {
+          prescriptionPageId: pageId,
+          versionType: key,
+          storageKey,
+          width: version.width,
+          height: version.height,
+        },
+      });
+      if (key === 'ENHANCED') {
+        await this.prisma.prescriptionPage.update({
+          where: { id: pageId },
+          data: { enhancedStorageKey: storageKey },
+        });
+      }
+    }
   }
 
   private async markPageFailed(pageId: string, error: string) {

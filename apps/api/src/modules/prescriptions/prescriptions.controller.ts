@@ -87,6 +87,29 @@ export class PrescriptionsController {
     return this.prescriptions.get(id);
   }
 
+  /** CR-001 Sprint OCR-02 — image inspection: every stored version
+   *  (Original/Rotated/Cropped/Enhanced/OCR-ready) as signed URLs. */
+  @RequirePermission('ocr.view')
+  @Get(':id/images')
+  getImages(@Param('id') id: string) {
+    return this.prescriptions.getImages(id);
+  }
+
+  /** CR-001 Sprint OCR-02 — the 0-100 quality score and sub-metrics. */
+  @RequirePermission('ocr.view')
+  @Get(':id/quality')
+  getQuality(@Param('id') id: string) {
+    return this.prescriptions.getQuality(id);
+  }
+
+  /** CR-001 Sprint OCR-02 — pipeline run metadata (version, duration,
+   *  timestamps, processor failures). */
+  @RequirePermission('ocr.view')
+  @Get(':id/preprocessing')
+  getPreprocessing(@Param('id') id: string) {
+    return this.prescriptions.getPreprocessing(id);
+  }
+
   /**
    * The local-disk driver's "signed URL" — see
    * LocalDiskPrescriptionStorage's doc comment for why this is @Public():
@@ -109,6 +132,12 @@ export class PrescriptionsController {
     }
     const data = await this.prescriptions.readFile(key);
     res.setHeader('Content-Type', detectMimeFromMagicBytes(data) ?? 'application/octet-stream');
+    // Helmet's default Cross-Origin-Resource-Policy: same-origin blocks the
+    // frontend (a different origin/port in dev) from embedding this in an
+    // <img> tag. Safe to loosen only here: this route's own HMAC-signed,
+    // short-TTL token is the real access control, exactly like a real S3
+    // presigned URL, which carries no CORP restriction by default either.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.send(data);
   }
 }

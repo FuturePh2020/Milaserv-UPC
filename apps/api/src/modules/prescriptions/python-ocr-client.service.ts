@@ -17,10 +17,63 @@ export interface AnalyzeQualityResult {
   issues: string[];
 }
 
-export interface PreprocessResult {
-  enhancedImageUrl: string;
-  orientation: number;
+export interface PreprocessingConfigDto {
+  enabled: Record<string, boolean>;
+  minImageWidth: number;
+  minImageHeight: number;
+  minQualityScore: number;
+  maxRotationDegrees: number;
+  minContrast: number;
+  maxNoise: number;
+  version: string;
+}
+
+export interface ImageVersionDto {
+  imageBase64: string;
+  width: number;
+  height: number;
+  format: string;
+}
+
+export interface PreprocessingMetrics {
+  resolutionOk: boolean;
+  width: number;
+  height: number;
+  rotationAngle: number;
+  blurScore: number;
+  blurVariance: number;
+  brightnessScore: number;
+  brightnessMean: number;
+  contrastScore: number;
+  contrastStdDev: number;
+  noiseScore: number;
+  noiseLevel: number;
+  cropConfidence: number;
+  readableArea: number;
+}
+
+export type PreprocessingQualityStatus =
+  'EXCELLENT' | 'GOOD' | 'FAIR' | 'POOR' | 'REUPLOAD_REQUIRED';
+
+export interface PagePreprocessResult {
+  qualityScore: number;
+  qualityStatus: PreprocessingQualityStatus;
+  metrics: PreprocessingMetrics;
+  versions: Record<string, ImageVersionDto>;
   stagesApplied: string[];
+  processorTimingsMs: Record<string, number>;
+  processorFailures: string[];
+}
+
+export interface PreprocessResult extends PagePreprocessResult {
+  processingDurationMs: number;
+  pageCount: number;
+  /** Populated only for multi-page PDFs (pageCount > 1) — Sprint OCR-01's
+   *  data model is one PrescriptionPage per uploaded file, so only page 1
+   *  (the top-level fields above) is persisted; later pages are reported
+   *  here for visibility but not stored (design decision, CR-001 Sprint
+   *  OCR-02 acceptance record). */
+  pages: PagePreprocessResult[] | null;
 }
 
 export interface DetectAndRecognizeResult {
@@ -82,8 +135,8 @@ export class PythonOcrClientService {
     return this.post('/v1/analyze-quality', { imageUrl });
   }
 
-  preprocess(imageUrl: string): Promise<PreprocessResult> {
-    return this.post('/v1/preprocess', { imageUrl });
+  preprocess(imageUrl: string, config: PreprocessingConfigDto): Promise<PreprocessResult> {
+    return this.post('/v1/preprocess', { imageUrl, config });
   }
 
   detectAndRecognize(imageUrl: string): Promise<DetectAndRecognizeResult> {

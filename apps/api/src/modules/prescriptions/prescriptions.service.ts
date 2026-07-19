@@ -275,4 +275,92 @@ export class PrescriptionsService {
   async readFile(storageKey: string): Promise<Buffer> {
     return this.storage.get(storageKey);
   }
+
+  private async requirePages(id: string) {
+    const rx = await this.prisma.prescription.findUnique({
+      where: { id },
+      include: { pages: { orderBy: { pageNumber: 'asc' }, include: { imageVersions: true } } },
+    });
+    if (!rx) throw new NotFoundException('Prescription not found');
+    return rx;
+  }
+
+  /** CR-001 Sprint OCR-02 — every stored image version per page, as
+   *  short-TTL signed URLs (design spec §9: never a permanent/public
+   *  link). Original is always present and is never overwritten. */
+  async getImages(id: string) {
+    const rx = await this.requirePages(id);
+    const pages = await Promise.all(
+      rx.pages.map(async (page) => ({
+        pageId: page.id,
+        pageNumber: page.pageNumber,
+        versions: await Promise.all(
+          page.imageVersions.map(async (v) => ({
+            versionType: v.versionType,
+            url: await this.storage.getSignedUrl(v.storageKey, 300),
+            width: v.width,
+            height: v.height,
+          })),
+        ),
+      })),
+    );
+    return { prescriptionId: id, pages };
+  }
+
+  /** CR-001 Sprint OCR-02 — the 0-100 aggregate quality score and its
+   *  sub-metric breakdown per page, plus Sprint OCR-01's coarse
+   *  pre-preprocessing gate score for continuity. */
+  async getQuality(id: string) {
+    const rx = await this.requirePages(id);
+    return {
+      prescriptionId: id,
+      pages: rx.pages.map((page) => ({
+        pageId: page.id,
+        pageNumber: page.pageNumber,
+        imageQualityScore: page.imageQualityScore,
+        finalQualityScore: page.finalQualityScore,
+        qualityStatus: page.qualityStatus,
+        blurScore: page.blurScore,
+        brightnessScore: page.brightnessScore,
+        contrastScore: page.contrastScore,
+        noiseScore: page.noiseScore,
+        rotationAngle: page.rotationAngle,
+        cropConfidence: page.cropConfidence,
+        processingStatus: page.processingStatus,
+      })),
+    };
+  }
+
+  /** CR-001 Sprint OCR-02 — pipeline run metadata: version, duration,
+   *  timestamps, and any processor failures logged during the run
+   *  (design spec: "Log: Processing duration, Processor execution time,
+   *  Quality score, Processor failures"). */
+  async getPreprocessing(id: string) {
+    const rx = await this.requirePages(id);
+    const pages = await Promise.all(
+      rx.pages.map(async (page) => {
+        const failureEvent = await this.prisma.timelineEvent.findFirst({
+          where: {
+            entityType: 'prescription_page',
+            entityId: page.id,
+            eventType: 'preprocessing_processor_failures',
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        return {
+          pageId: page.id,
+          pageNumber: page.pageNumber,
+          preprocessingVersion: page.preprocessingVersion,
+          preprocessingDuration: page.preprocessingDuration,
+          preprocessingStartedAt: page.preprocessingStartedAt,
+          preprocessingCompletedAt: page.preprocessingCompletedAt,
+          processingStatus: page.processingStatus,
+          processingError: page.processingError,
+          processorFailures:
+            (failureEvent?.payload as { failures?: string[] } | null)?.failures ?? [],
+        };
+      }),
+    );
+    return { prescriptionId: id, pages };
+  }
 }
