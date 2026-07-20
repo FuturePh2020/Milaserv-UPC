@@ -3,6 +3,7 @@ import { PrismaService } from '../../core/prisma/prisma.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
+import { PLAN_WITH_DETAIL_INCLUDE } from './fulfillment-plan-include';
 
 const RESERVABLE_STATUSES = ['AVAILABLE', 'PARTIAL'] as const;
 
@@ -27,7 +28,7 @@ export class FulfillmentPlanSelectionService {
   async selectPlan(actor: AuthUser, fulfillmentRequestId: string, planId: string, meta: { ip?: string }) {
     const plan = await this.prisma.fulfillmentPlan.findUnique({
       where: { id: planId },
-      include: { branches: { include: { items: true } } },
+      include: PLAN_WITH_DETAIL_INCLUDE,
     });
     if (!plan || plan.fulfillmentRequestId !== fulfillmentRequestId) {
       throw new NotFoundException('Fulfillment plan not found for this request');
@@ -40,7 +41,7 @@ export class FulfillmentPlanSelectionService {
       // no-op, not an error.
       return this.prisma.fulfillmentPlan.findUniqueOrThrow({
         where: { id: planId },
-        include: { branches: { include: { items: true } } },
+        include: PLAN_WITH_DETAIL_INCLUDE,
       });
     }
     const existingSelection = await this.prisma.fulfillmentPlan.findFirst({
@@ -104,7 +105,7 @@ export class FulfillmentPlanSelectionService {
 
     return this.prisma.fulfillmentPlan.findUniqueOrThrow({
       where: { id: planId },
-      include: { branches: { include: { items: true } }, reservations: true },
+      include: { ...PLAN_WITH_DETAIL_INCLUDE, reservations: true },
     });
   }
 }

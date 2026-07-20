@@ -23,6 +23,8 @@
     "online": "Online Operation",
     "integrations": "Integration Monitor",
     "locator": "Branch Locator",
+    "fulfillment": "Fulfillment",
+    "locationsAdmin": "Locations",
     "dic": "Drug Information Center",
     "ocr": "Prescriptions (OCR)",
     "prescriptionsIntake": "Prescription Intake"
@@ -54,6 +56,7 @@
     "active": "Active",
     "inactive": "Inactive",
     "loading": "Loading…",
+    "select": "Select…",
     "empty": "Nothing here yet",
     "error": "Something went wrong",
     "confirmArchive": "Are you sure you want to archive this record?",
@@ -485,6 +488,81 @@
       "maps": "Driving distances (Maps)",
       "straight_line": "Straight-line distances"
     }
+  },
+  "fulfillment": {
+    "title": "Branch Fulfillment",
+    "noPermission": "You do not have permission to search fulfillment options.",
+    "prescriptionId": "Prescription ID",
+    "loadBtn": "Load",
+    "noConfirmedLines": "No pharmacist-confirmed medications on this prescription yet.",
+    "locationTitle": "Customer location",
+    "city": "City",
+    "district": "District",
+    "addressText": "Address (optional)",
+    "searchBtn": "Search & generate plans",
+    "searching": "Searching…",
+    "plansTitle": "Fulfillment plans",
+    "noPlans": "No plans were generated.",
+    "completeCoverage": "Complete coverage",
+    "selected": "Selected",
+    "selectPlanBtn": "Select this plan",
+    "excludedBranchCount": "{count} branches were excluded",
+    "requestStatus": {
+      "DRAFT": "Draft",
+      "LOCATION_REQUIRED": "Location required",
+      "SEARCH_QUEUED": "Search queued",
+      "SEARCHING": "Searching",
+      "OPTIONS_FOUND": "Options found",
+      "PARTIAL_OPTIONS_FOUND": "Partial options found",
+      "NO_OPTIONS_FOUND": "No options found",
+      "REVIEW_REQUIRED": "Review required",
+      "PLAN_SELECTED": "Plan selected",
+      "EXPIRED": "Expired",
+      "FAILED": "Failed"
+    },
+    "planType": {
+      "SINGLE_BRANCH": "Single branch",
+      "SPLIT_BRANCH": "Split across branches",
+      "PICKUP": "Pickup",
+      "DELIVERY": "Delivery",
+      "MIXED_MODE": "Mixed mode",
+      "NO_SAFE_PLAN": "No safe plan"
+    },
+    "availability": {
+      "AVAILABLE": "Available",
+      "PARTIAL": "Partial",
+      "UNAVAILABLE": "Unavailable",
+      "UNKNOWN": "Unknown"
+    }
+  },
+  "locationsAdmin": {
+    "title": "Location Hierarchy",
+    "noPermission": "You do not have permission to view the location hierarchy.",
+    "tabs": {
+      "regions": "Regions",
+      "cities": "Cities",
+      "districts": "Districts",
+      "aliases": "Aliases",
+      "quality": "Data Quality"
+    },
+    "newRegion": "New region",
+    "newCity": "New city",
+    "newDistrict": "New district",
+    "newAlias": "New alias",
+    "code": "Code",
+    "nameEn": "English name",
+    "nameAr": "Arabic name",
+    "status": "Status",
+    "region": "Region",
+    "city": "City",
+    "entityType": "Entity type",
+    "entity": "Entity",
+    "aliasText": "Alias",
+    "backfillBtn": "Run branch backfill",
+    "backfillRunning": "Running…",
+    "totalBranches": "Total branches",
+    "missingCoordinates": "Missing coordinates",
+    "byMatchStatus": "By match status"
   },
   "dic": {
     "title": "Drug Information Center",

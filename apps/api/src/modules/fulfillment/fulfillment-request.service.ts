@@ -3,6 +3,7 @@ import type { FulfillmentMode, SearchLocationSourceType } from '@prisma/client';
 import { PrismaService } from '../../core/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TimelineService } from '../timeline/timeline.service';
+import { PLAN_WITH_DETAIL_INCLUDE } from './fulfillment-plan-include';
 
 const CONFIRMED_MATCHING_STATUSES = ['CONFIRMED', 'MANUALLY_SELECTED'] as const;
 
@@ -129,11 +130,11 @@ export class FulfillmentRequestService {
     const request = await this.prisma.fulfillmentRequest.findUnique({
       where: { id },
       include: {
-        items: true,
+        items: { include: { drug: { select: { id: true, materialNo: true, nameEn: true, nameAr: true } } } },
         searchLocation: true,
         plans: {
           orderBy: { rank: 'asc' },
-          include: { branches: { include: { items: true } } },
+          include: PLAN_WITH_DETAIL_INCLUDE,
         },
       },
     });
@@ -147,7 +148,7 @@ export class FulfillmentRequestService {
     return this.prisma.fulfillmentPlan.findMany({
       where: { fulfillmentRequestId },
       orderBy: { rank: 'asc' },
-      include: { branches: { include: { items: true } }, reservations: true },
+      include: { ...PLAN_WITH_DETAIL_INCLUDE, reservations: true },
     });
   }
 }

@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/crm', labelKey: 'crm', icon: '📞', permission: 'crm.view' },
   { href: '/online', labelKey: 'online', icon: '🛒', permission: 'online.view' },
   { href: '/locator', labelKey: 'locator', icon: '📍', permission: 'branch.view' },
+  { href: '/fulfillment', labelKey: 'fulfillment', icon: '🚚', permission: 'fulfillment.view' },
   { href: '/dic', labelKey: 'dic', icon: '💊', permission: 'dic.view' },
   { href: '/ocr', labelKey: 'ocr', icon: '🧾', permission: 'ocr.view' },
   {
@@ -48,6 +49,7 @@ const ADMIN_ITEMS: NavItem[] = [
   },
   { href: '/admin/teams', labelKey: 'teams', icon: '👥', permission: 'team.view' },
   { href: '/admin/branches', labelKey: 'branches', icon: '🏪', permission: 'branch.view' },
+  { href: '/admin/locations', labelKey: 'locationsAdmin', icon: '🗺', permission: 'location.view' },
   { href: '/admin/kb', labelKey: 'kbAdmin', icon: '🗂', permission: 'kb.manage' },
   { href: '/admin/roles', labelKey: 'roles', icon: '🛡', permission: 'role.view' },
   { href: '/admin/settings', labelKey: 'settings', icon: '⚙', permission: 'setting.view' },

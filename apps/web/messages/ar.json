@@ -23,6 +23,8 @@
     "online": "العمليات الإلكترونية",
     "integrations": "مراقبة التكاملات",
     "locator": "أقرب فرع",
+    "fulfillment": "تلبية الطلبات",
+    "locationsAdmin": "المواقع",
     "dic": "مركز معلومات الدواء",
     "ocr": "الوصفات (OCR)",
     "prescriptionsIntake": "استلام الوصفات"
@@ -54,6 +56,7 @@
     "active": "نشط",
     "inactive": "غير نشط",
     "loading": "جارٍ التحميل…",
+    "select": "اختر…",
     "empty": "لا توجد سجلات بعد",
     "error": "حدث خطأ ما",
     "confirmArchive": "هل أنت متأكد من أرشفة هذا السجل؟",
@@ -485,6 +488,81 @@
       "maps": "مسافات القيادة (الخرائط)",
       "straight_line": "مسافات الخط المستقيم"
     }
+  },
+  "fulfillment": {
+    "title": "تلبية طلبات الفروع",
+    "noPermission": "ليس لديك صلاحية البحث عن خيارات التلبية.",
+    "prescriptionId": "معرّف الوصفة",
+    "loadBtn": "تحميل",
+    "noConfirmedLines": "لا توجد أدوية معتمدة من الصيدلي في هذه الوصفة بعد.",
+    "locationTitle": "موقع العميل",
+    "city": "المدينة",
+    "district": "الحي",
+    "addressText": "العنوان (اختياري)",
+    "searchBtn": "بحث وإنشاء الخطط",
+    "searching": "جارٍ البحث…",
+    "plansTitle": "خطط التلبية",
+    "noPlans": "لم يتم إنشاء أي خطط.",
+    "completeCoverage": "تغطية كاملة",
+    "selected": "مُعتمدة",
+    "selectPlanBtn": "اعتماد هذه الخطة",
+    "excludedBranchCount": "تم استبعاد {count} فرع",
+    "requestStatus": {
+      "DRAFT": "مسودة",
+      "LOCATION_REQUIRED": "الموقع مطلوب",
+      "SEARCH_QUEUED": "البحث قيد الانتظار",
+      "SEARCHING": "جارٍ البحث",
+      "OPTIONS_FOUND": "تم إيجاد خيارات",
+      "PARTIAL_OPTIONS_FOUND": "تم إيجاد خيارات جزئية",
+      "NO_OPTIONS_FOUND": "لا توجد خيارات",
+      "REVIEW_REQUIRED": "مراجعة مطلوبة",
+      "PLAN_SELECTED": "تم اعتماد الخطة",
+      "EXPIRED": "منتهية الصلاحية",
+      "FAILED": "فشلت"
+    },
+    "planType": {
+      "SINGLE_BRANCH": "فرع واحد",
+      "SPLIT_BRANCH": "موزعة على عدة فروع",
+      "PICKUP": "استلام من الفرع",
+      "DELIVERY": "توصيل",
+      "MIXED_MODE": "وضع مختلط",
+      "NO_SAFE_PLAN": "لا توجد خطة آمنة"
+    },
+    "availability": {
+      "AVAILABLE": "متوفر",
+      "PARTIAL": "متوفر جزئياً",
+      "UNAVAILABLE": "غير متوفر",
+      "UNKNOWN": "غير معروف"
+    }
+  },
+  "locationsAdmin": {
+    "title": "التسلسل الجغرافي",
+    "noPermission": "ليس لديك صلاحية عرض التسلسل الجغرافي.",
+    "tabs": {
+      "regions": "المناطق",
+      "cities": "المدن",
+      "districts": "الأحياء",
+      "aliases": "الأسماء البديلة",
+      "quality": "جودة البيانات"
+    },
+    "newRegion": "منطقة جديدة",
+    "newCity": "مدينة جديدة",
+    "newDistrict": "حي جديد",
+    "newAlias": "اسم بديل جديد",
+    "code": "الرمز",
+    "nameEn": "الاسم بالإنجليزية",
+    "nameAr": "الاسم بالعربية",
+    "status": "الحالة",
+    "region": "المنطقة",
+    "city": "المدينة",
+    "entityType": "نوع الكيان",
+    "entity": "الكيان",
+    "aliasText": "الاسم البديل",
+    "backfillBtn": "تشغيل مطابقة الفروع",
+    "backfillRunning": "جارٍ التشغيل…",
+    "totalBranches": "إجمالي الفروع",
+    "missingCoordinates": "بلا إحداثيات",
+    "byMatchStatus": "حسب حالة المطابقة"
   },
   "dic": {
     "title": "مركز معلومات الدواء",

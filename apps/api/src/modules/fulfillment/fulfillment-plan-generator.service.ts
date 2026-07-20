@@ -7,6 +7,7 @@ import { SettingsService } from '../settings/settings.service';
 import { BranchCandidateGeneratorService } from './branch-candidate-generator.service';
 import { computeBranchCoverage } from './branch-inventory-coverage';
 import { FulfillmentConfigService } from './fulfillment-config.service';
+import { PLAN_WITH_DETAIL_INCLUDE } from './fulfillment-plan-include';
 import { scoreBranch, scorePlan } from './branch-ranking-scorer';
 import { selectSplitPlan } from './split-plan-selector';
 import type { SplitCandidateBranch } from './split-plan-selector';
@@ -131,7 +132,7 @@ export class FulfillmentPlanGeneratorService {
           });
         }
         await tx.fulfillmentRequest.update({ where: { id: request.id }, data: { status: 'OPTIONS_FOUND' } });
-        return tx.fulfillmentPlan.findMany({ where: { fulfillmentRequestId }, include: { branches: { include: { items: true } } }, orderBy: { rank: 'asc' } });
+        return tx.fulfillmentPlan.findMany({ where: { fulfillmentRequestId }, include: PLAN_WITH_DETAIL_INCLUDE, orderBy: { rank: 'asc' } });
       }
 
       const splitCandidates: SplitCandidateBranch[] = scored.map((s) => ({
@@ -177,7 +178,7 @@ export class FulfillmentPlanGeneratorService {
         await tx.fulfillmentRequest.update({ where: { id: request.id }, data: { status: 'NO_OPTIONS_FOUND' } });
       }
 
-      return tx.fulfillmentPlan.findMany({ where: { fulfillmentRequestId }, include: { branches: { include: { items: true } } }, orderBy: { rank: 'asc' } });
+      return tx.fulfillmentPlan.findMany({ where: { fulfillmentRequestId }, include: PLAN_WITH_DETAIL_INCLUDE, orderBy: { rank: 'asc' } });
     });
   }
 

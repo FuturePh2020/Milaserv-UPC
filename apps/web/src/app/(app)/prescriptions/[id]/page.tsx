@@ -233,7 +233,14 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
       })}
 
       {rx.status !== 'UPLOADED' && rx.pages.length > 0 && (
-        <DrugMatchReviewPanel prescriptionId={id} />
+        <>
+          <DrugMatchReviewPanel prescriptionId={id} />
+          <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+            <a href="/fulfillment" className="text-[#0b2545] underline-offset-2 hover:underline">
+              {t('fulfillment.title')} →
+            </a>
+          </div>
+        </>
       )}
     </div>
   );
