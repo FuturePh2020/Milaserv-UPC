@@ -77,19 +77,15 @@ Item Catalog (lookups, partner-specific pricing/availability, Excel
 import/export, price history), granular `orders.*`/`retention.*`/
 `products.*` permissions layered on top of Phase 1's role-based guard, and
 an append-only `TimelineEvent` feed wired into Orders/Products/Retention/
-Call Outcomes.
+Call Outcomes, and a WebSocket realtime channel (Nest gateway at
+`/api/socket.io`, JWT-cookie authenticated, channel/room based) that pushes
+instant refreshes to `useAutoRefresh` and `TimelineFeed`, falling back to
+polling only while the socket is disconnected.
 
 A few items were explicitly scoped down this pass. None require schema
 changes — the tables/fields already exist — so they remain additive
 follow-up work:
 
-- **Realtime channel**: the spec asks for WebSocket/SSE "with polling as
-  fallback." This pass ships the polling side only (`useAutoRefresh`,
-  configurable interval, pause-while-editing, filters/pagination/search
-  preserved across refetch) on every page listed in spec §19. A true
-  push channel (a Nest gateway + client subscription model) is real new
-  infrastructure and is left as follow-up; the functional requirement
-  ("stay current without manual reload") is met by polling today.
 - **Product test matrix (spec §39)**: the spec lists 20 specific test
   cases. `products-availability.e2e-spec.ts` covers a representative
   subset (~8) of the correctness-critical paths — duplicate item

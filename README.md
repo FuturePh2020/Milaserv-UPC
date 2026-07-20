@@ -17,6 +17,7 @@ Prerequisites: Node 20+, pnpm, a running PostgreSQL and Redis.
 pnpm install
 
 cp apps/api/.env.example apps/api/.env   # edit DATABASE_URL / REDIS_URL / secrets
+cp apps/web/.env.example apps/web/.env.local   # NEXT_PUBLIC_API_ORIGIN so the realtime socket can reach the API directly
 pnpm --filter @lcrm/shared build
 pnpm --filter @lcrm/ui build
 pnpm --filter @lcrm/api prisma:generate

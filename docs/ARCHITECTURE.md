@@ -106,6 +106,46 @@ and returns success rather than reprocessing).
   untouched) and `inactivity-sweep` (moves idle `AVAILABLE` agents to
   Standby/Break per `InactivitySettings`).
 
+## Realtime channel (Phase 2 spec section 19)
+
+`RealtimeGateway` (`@nestjs/websockets` + socket.io) at `/api/socket.io`,
+authenticated by parsing the same `access_token` cookie the REST API uses
+and verifying it with the same `JWT_ACCESS_SECRET` — no separate login flow.
+Sockets that fail verification are disconnected immediately.
+
+Clients `subscribe`/`unsubscribe` to named channels (rooms); the gateway
+exposes a single `emitRefresh(channel)` method other services call. Rather
+than scatter gateway calls across every Orders/Retention/Products/Call
+Outcomes mutation, `TimelineService.record()` is the one choke point: since
+virtually every meaningful mutation already writes a `TimelineEvent`, that
+write also emits to the entity-scoped room (`timeline:<entityType>:<id>`,
+for an open detail view's `TimelineFeed`) and to whichever list-page
+channels `TIMELINE_ENTITY_CHANNELS` maps that entity type to (e.g.
+`Order` → `my-orders` + `team-orders`). This guarantees no mutation site is
+missed rather than relying on remembering to wire each one individually.
+
+On the frontend, `useRealtimeChannel` (one shared socket per tab) drives
+`useAutoRefresh`: while the socket is connected, pushes trigger an
+immediate refetch and the polling `setInterval` doesn't run at all; if the
+socket disconnects, polling resumes as the fallback — satisfying the
+spec's "WebSocket/SSE preferred, polling fallback" requirement literally,
+not just functionally.
+
+CORS for the socket adapter is read from `ConfigService` inside a custom
+`ConfigurableSocketIoAdapter.createIOServer()` at `app.listen()` time,
+rather than in the `@WebSocketGateway()` decorator's static options —
+decorator arguments evaluate at module-import time, before dotenv has
+necessarily populated `process.env`, so reading `CORS_ORIGIN` there would
+be import-order-dependent.
+
+In production behind Nginx, the browser connects same-origin and Nginx's
+existing `/api/` location (now with `Upgrade`/`Connection` headers added)
+proxies the handshake straight to the API container — no new port to
+expose. Local dev without Nginx needs `NEXT_PUBLIC_API_ORIGIN` set to the
+API's own origin (see `apps/web/.env.example`), since a browser WebSocket
+handshake can't ride through Next's HTTP-only `rewrites()` the way a plain
+`fetch()` call can.
+
 ## What's deliberately out of scope for this pass
 
 See `ROADMAP.md`.
