@@ -79,6 +79,55 @@ export class ProductImportService {
       if (!mapped.arabicName && !mapped.englishName) reasons.push("Arabic or English Item Name must be provided");
       if (mapped.defaultPrice && Number.isNaN(Number(mapped.defaultPrice))) reasons.push("Default Price must be numeric");
 
+      // These columns are offered in the mapping UI (IMPORT_FIELDS) as
+      // human-readable names, not IDs — resolve each against its lookup
+      // table by name (case-insensitive) rather than silently dropping the
+      // classification data on the floor.
+      let categoryId: string | undefined;
+      if (mapped.category) {
+        const category = await this.prisma.productCategory.findFirst({
+          where: { name: { equals: mapped.category, mode: "insensitive" } },
+        });
+        if (!category) reasons.push(`Unknown Category: "${mapped.category}"`);
+        categoryId = category?.id;
+      }
+
+      let subcategoryId: string | undefined;
+      if (mapped.subcategory) {
+        const subcategory = await this.prisma.productSubcategory.findFirst({
+          where: { name: { equals: mapped.subcategory, mode: "insensitive" }, categoryId: categoryId ?? undefined },
+        });
+        if (!subcategory) reasons.push(`Unknown Subcategory: "${mapped.subcategory}"`);
+        subcategoryId = subcategory?.id;
+      }
+
+      let dosageFormId: string | undefined;
+      if (mapped.dosageForm) {
+        const dosageForm = await this.prisma.dosageForm.findFirst({
+          where: { name: { equals: mapped.dosageForm, mode: "insensitive" } },
+        });
+        if (!dosageForm) reasons.push(`Unknown Dosage Form: "${mapped.dosageForm}"`);
+        dosageFormId = dosageForm?.id;
+      }
+
+      let unitId: string | undefined;
+      if (mapped.unit) {
+        const unit = await this.prisma.productUnit.findFirst({
+          where: { name: { equals: mapped.unit, mode: "insensitive" } },
+        });
+        if (!unit) reasons.push(`Unknown Unit: "${mapped.unit}"`);
+        unitId = unit?.id;
+      }
+
+      let manufacturerId: string | undefined;
+      if (mapped.manufacturer) {
+        const manufacturer = await this.prisma.manufacturer.findFirst({
+          where: { name: { equals: mapped.manufacturer, mode: "insensitive" } },
+        });
+        if (!manufacturer) reasons.push(`Unknown Manufacturer: "${mapped.manufacturer}"`);
+        manufacturerId = manufacturer?.id;
+      }
+
       if (reasons.length > 0) {
         rejected.push({ rowNumber, rawData: rawRow, reasons });
         continue;
@@ -91,6 +140,11 @@ export class ProductImportService {
         englishName: mapped.englishName || undefined,
         scientificName: mapped.scientificName || undefined,
         activeIngredient: mapped.activeIngredient || undefined,
+        categoryId,
+        subcategoryId,
+        dosageFormId,
+        unitId,
+        manufacturerId,
         strength: mapped.strength || undefined,
         packSize: mapped.packSize || undefined,
         defaultPrice: mapped.defaultPrice ? Number(mapped.defaultPrice) : undefined,

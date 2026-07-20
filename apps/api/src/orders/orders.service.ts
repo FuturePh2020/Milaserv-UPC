@@ -243,6 +243,7 @@ export class OrdersService {
     if (!order) throw new NotFoundException("Order not found");
 
     let product = null as Awaited<ReturnType<typeof this.prisma.product.findUnique>> | null;
+    let partnerMapping = null as Awaited<ReturnType<typeof this.prisma.productPartner.findUnique>> | null;
     if (dto.productId) {
       product = await this.prisma.product.findUnique({ where: { id: dto.productId } });
       if (!product) throw new NotFoundException("Product not found");
@@ -256,16 +257,17 @@ export class OrdersService {
         throw new BadRequestException("This item is not available for Insurance Orders.");
       }
       if (order.partnerId) {
-        const mapping = await this.prisma.productPartner.findUnique({
+        partnerMapping = await this.prisma.productPartner.findUnique({
           where: { productId_partnerId: { productId: product.id, partnerId: order.partnerId } },
         });
-        if (mapping && !mapping.active) {
+        if (partnerMapping && !partnerMapping.active) {
           throw new BadRequestException("This item is not available for the selected Partner.");
         }
       }
     }
 
-    const unitPrice = dto.unitPrice ?? (await this.resolvePrice(dto.productId, order.partnerId)) ?? undefined;
+    const resolvedPrice = partnerMapping?.partnerPrice ?? product?.defaultPrice ?? null;
+    const unitPrice = dto.unitPrice ?? resolvedPrice ?? undefined;
     const lineValue =
       unitPrice !== undefined ? Math.max(0, unitPrice * dto.quantity - (dto.discount ?? 0)) : undefined;
 
@@ -294,18 +296,6 @@ export class OrdersService {
     });
 
     return this.findOne(orderId);
-  }
-
-  private async resolvePrice(productId: string | undefined, partnerId: string | null): Promise<number | null> {
-    if (!productId) return null;
-    if (partnerId) {
-      const mapping = await this.prisma.productPartner.findUnique({
-        where: { productId_partnerId: { productId, partnerId } },
-      });
-      if (mapping?.partnerPrice != null) return mapping.partnerPrice;
-    }
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
-    return product?.defaultPrice ?? null;
   }
 
   async removeItem(orderId: string, itemId: string, actorId: string) {

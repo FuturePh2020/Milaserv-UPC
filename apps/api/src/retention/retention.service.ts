@@ -3,6 +3,7 @@ import { EventSource } from "@lcrm/shared";
 import { PrismaService } from "../prisma/prisma.service";
 import { TimelineService } from "../timeline/timeline.service";
 import { AuditService } from "../audit/audit.service";
+import { CustomersService } from "../customers/customers.service";
 
 type OrderWithItems = {
   id: string;
@@ -24,6 +25,7 @@ export class RetentionService {
     private readonly prisma: PrismaService,
     private readonly timeline: TimelineService,
     private readonly audit: AuditService,
+    private readonly customers: CustomersService,
   ) {}
 
   /** Called when an Order is completed (spec section 16). */
@@ -80,8 +82,14 @@ export class RetentionService {
     lastDispensingDate: Date;
     expectedNextRefillDate?: Date;
   }) {
-    const existing = await this.prisma.retentionCustomer.findFirst({ where: { phone: params.customerPhone } });
+    // Resolve/create the same Customer entity upsertFromOrder keys off of,
+    // rather than matching on a raw (unnormalized) phone string — otherwise
+    // the same physical customer gets two RetentionCustomer rows depending
+    // on which flow (a completed order vs. this outcome) touched them first.
+    const customer = await this.customers.findOrCreate({ name: params.customerName, phone: params.customerPhone });
+    const existing = await this.prisma.retentionCustomer.findUnique({ where: { customerId: customer.id } });
     const data = {
+      customerId: customer.id,
       name: params.customerName,
       phone: params.customerPhone,
       partnerId: params.partnerId,
@@ -176,7 +184,12 @@ export class RetentionService {
         break;
       }
       case "WITHIN_7_DAYS":
-        where.nextRefillDate = { gte: startOfToday, lte: new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000) };
+        // End-of-day on day+7, not midnight of day+7 — otherwise a refill
+        // due later in the day exactly 7 days out (nextRefillDate is
+        // frequently set via NUMBER_OF_DAYS refill mode, which preserves
+        // the current time-of-day rather than normalizing to midnight)
+        // falls just past the cutoff and is missed for a day.
+        where.nextRefillDate = { gte: startOfToday, lte: new Date(startOfToday.getTime() + 8 * 24 * 60 * 60 * 1000 - 1) };
         break;
       case "CUSTOM":
         where.nextRefillDate = { gte: params.dateFrom, lte: params.dateTo };
