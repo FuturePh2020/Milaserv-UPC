@@ -1,11 +1,12 @@
-import { Body, Controller, Delete, Get, Param, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Post, Put, Query, Res, UseGuards } from "@nestjs/common";
 import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
 import { Response } from "express";
-import { UserRole, Permission } from "@lcrm/shared";
+import { UserRole, Permission, OrderStatus } from "@lcrm/shared";
 import { Roles } from "../common/decorators/roles.decorator";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { RequirePermission } from "../permissions/require-permission.decorator";
 import { PermissionsGuard } from "../permissions/permissions.guard";
+import { PermissionsService } from "../permissions/permissions.service";
 import { CurrentUser, AuthenticatedUser } from "../common/decorators/current-user.decorator";
 import { RequestMeta, RequestMeta as RequestMetaType } from "../common/decorators/request-meta.decorator";
 import { OrdersService } from "./orders.service";
@@ -24,6 +25,7 @@ export class OrdersController {
     private readonly performance: OrdersPerformanceService,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly permissions: PermissionsService,
   ) {}
 
   @Post()
@@ -83,16 +85,19 @@ export class OrdersController {
   }
 
   @Get(":id")
+  @RequirePermission(Permission.ORDERS_VIEW_OWN)
   findOne(@Param("id") id: string) {
     return this.ordersService.findOne(id);
   }
 
   @Post(":id/items")
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
   addItem(@Param("id") id: string, @Body() body: any, @CurrentUser() actor: AuthenticatedUser) {
     return this.ordersService.addItem(id, body, actor.userId);
   }
 
   @Put(":id/items/:itemId")
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
   updateItem(
     @Param("id") id: string,
     @Param("itemId") itemId: string,
@@ -103,21 +108,39 @@ export class OrdersController {
   }
 
   @Delete(":id/items/:itemId")
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
   removeItem(@Param("id") id: string, @Param("itemId") itemId: string, @CurrentUser() actor: AuthenticatedUser) {
     return this.ordersService.removeItem(id, itemId, actor.userId);
   }
 
   @Put(":id/status")
-  updateStatus(
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
+  async updateStatus(
     @Param("id") id: string,
     @Body() body: any,
     @CurrentUser() actor: AuthenticatedUser,
     @RequestMeta() meta: RequestMetaType,
   ) {
+    // COMPLETED/CLOSED are elevated transitions (spec: ORDERS_COMPLETE/ORDERS_CLOSE are not
+    // in DEFAULT_AGENT_PERMISSIONS) — checked at runtime since the target status is only
+    // known from the request body, not from the static @RequirePermission on the route.
+    const elevatedPermission =
+      body?.status === OrderStatus.COMPLETED
+        ? Permission.ORDERS_COMPLETE
+        : body?.status === OrderStatus.CLOSED
+          ? Permission.ORDERS_CLOSE
+          : null;
+    if (elevatedPermission) {
+      const allowed = await this.permissions.can({ userId: actor.userId, role: actor.role }, elevatedPermission);
+      if (!allowed) {
+        throw new ForbiddenException(`Missing permission: ${elevatedPermission}`);
+      }
+    }
     return this.ordersService.updateStatus(id, body, actor.userId, meta);
   }
 
   @Put(":id/expected-value")
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
   setExpectedValue(
     @Param("id") id: string,
     @Body("expectedValue") expectedValue: number,
@@ -127,6 +150,7 @@ export class OrdersController {
   }
 
   @Post(":id/notes")
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
   addNote(
     @Param("id") id: string,
     @Body("text") text: string,
@@ -137,6 +161,7 @@ export class OrdersController {
   }
 
   @Put(":id/next-refill")
+  @RequirePermission(Permission.ORDERS_UPDATE_OWN)
   updateNextRefill(@Param("id") id: string, @Body() body: any, @CurrentUser() actor: AuthenticatedUser) {
     return this.ordersService.updateNextRefill(id, body, actor.userId);
   }
