@@ -110,3 +110,60 @@ follow-up work:
   socket drops.
 - Remaining product tests: follow the pattern in
   `apps/api/test/products-availability.e2e-spec.ts`.
+
+---
+
+## Full code review pass (findings and fixes)
+
+A deep, high-effort review of the entire codebase (four parallel review
+passes across backend Phase 1, backend Phase 2, frontend, and the Prisma
+schema, each independently verified) found and fixed roughly twenty real
+bugs — see the git log on this branch for the individual commits and the
+concrete failure scenario each one fixes. Highlights: a genuine
+authorization gap where 8 Orders endpoints had no permission/role guard at
+all, three separate check-then-act concurrency races (breaks, order
+targets, agent sessions, plus the reservation-timeout sweep and Order
+status transitions) that only ever get exercised in production traffic,
+not the sequential-call test patterns that had been hiding them, a
+falsy-zero KPI bug, silently-dropped Product import classification data,
+and several frontend stale-state/silent-failure bugs.
+
+A handful of lower-severity findings were deliberately left for follow-up
+rather than rushed into this pass:
+
+- **Realtime channel authorization**: `RealtimeGateway.handleSubscribe()`
+  authenticates the socket but doesn't check whether the connected user is
+  actually allowed to see a given channel/entity before letting them join
+  it. Low real-world impact today since the channels only carry "something
+  changed, go refetch" events and the actual data fetch goes through the
+  now-properly-permission-gated REST endpoints, but a real fix (scoping
+  subscriptions to the user's role/team, or the specific entity's
+  permissions) would close it structurally rather than incidentally.
+- **`sessions.service.ts` `setManualStatus()`**: lets an agent set
+  `currentAgentStatus` to AVAILABLE/OFFLINE even while a break or call is
+  active, producing an inconsistent state where e.g. the break monitor
+  still shows them on break while the session view shows Available. Needs
+  a product decision on the right behavior (block the change? auto-end the
+  break?) before fixing.
+- **Missing FK relations**: `CallRecord.partnerId` and
+  `LeadImportBatch.categoryId` are bare string columns with no `@relation`
+  (unlike their sibling FK fields), so there's no DB-level integrity check
+  and no `include: { category: true }` style query on them.
+- **`order-detail.tsx` item quantity editing**: fires a request on every
+  keystroke with no debounce and no error handling on
+  `updateQuantity`/`removeItem`/`addNote`, so a fast edit or a failed
+  request can leave the UI showing a stale value with no visible error.
+- **`use-realtime-channel.ts`**: the shared socket's subscribe/unsubscribe
+  isn't reference-counted per channel — if two mounted components ever
+  subscribed to the exact same channel string, unmounting one would kill
+  the subscription for the other. No current call site actually does this,
+  but it's a latent trap for future pages.
+- **Dead `packages/shared/src/schemas.ts`**: the zod validation schemas
+  defined there aren't imported anywhere in `apps/api` or `apps/web` —
+  every controller validates with ad-hoc manual checks in its service
+  instead. Either wire them into the global `ValidationPipe` as real DTOs,
+  or remove them.
+- A couple of admin settings pages (`voip.tsx`, the permissions-save paths
+  in `users.tsx`) still have the same "no try/catch around `api.put`"
+  pattern that was fixed in `settings.tsx` — same fix, just not yet
+  applied everywhere it appears.
