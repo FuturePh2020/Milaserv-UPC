@@ -334,3 +334,75 @@ export const DEFAULT_AGENT_PERMISSIONS: Permission[] = [
   Permission.RETENTION_VIEW,
   Permission.PRODUCTS_VIEW,
 ];
+
+export const PermissionLabels: Record<Permission, string> = {
+  "orders.create": "Create Orders",
+  "orders.viewOwn": "View Own Orders",
+  "orders.viewTeam": "View Team Orders",
+  "orders.viewAll": "View All Orders",
+  "orders.updateOwn": "Update Own Orders",
+  "orders.updateTeam": "Update Team Orders",
+  "orders.updateAll": "Update All Orders",
+  "orders.complete": "Mark Orders Completed",
+  "orders.close": "Close/Cancel Orders",
+  "orders.reassign": "Reassign Orders",
+  "orders.export": "Export Orders",
+  "retention.view": "View Retention Customers",
+  "retention.update": "Update Retention Customers",
+  "retention.export": "Export Retention Customers",
+  "targets.manage": "Manage Sales Targets",
+  "products.view": "View Products",
+  "products.create": "Create Products",
+  "products.update": "Update Products",
+  "products.activate": "Activate/Deactivate Products",
+  "products.deactivate": "Activate/Deactivate Products",
+  "products.archive": "Archive Products",
+  "products.restore": "Restore Archived Products",
+  "products.import": "Import Products",
+  "products.export": "Export Products",
+  "products.managePartnerAvailability": "Manage Partner-Specific Availability",
+  "products.managePrices": "Manage Product Pricing",
+};
+
+/** Groups Permission keys for display in the per-user permissions management screen. */
+export const PermissionGroups: { group: string; permissions: Permission[] }[] = [
+  {
+    group: "Orders",
+    permissions: [
+      Permission.ORDERS_CREATE,
+      Permission.ORDERS_VIEW_OWN,
+      Permission.ORDERS_VIEW_TEAM,
+      Permission.ORDERS_VIEW_ALL,
+      Permission.ORDERS_UPDATE_OWN,
+      Permission.ORDERS_UPDATE_TEAM,
+      Permission.ORDERS_UPDATE_ALL,
+      Permission.ORDERS_COMPLETE,
+      Permission.ORDERS_CLOSE,
+      Permission.ORDERS_REASSIGN,
+      Permission.ORDERS_EXPORT,
+    ],
+  },
+  {
+    group: "Retention",
+    permissions: [Permission.RETENTION_VIEW, Permission.RETENTION_UPDATE, Permission.RETENTION_EXPORT],
+  },
+  {
+    group: "Targets",
+    permissions: [Permission.TARGETS_MANAGE],
+  },
+  {
+    group: "Products & Items",
+    permissions: [
+      Permission.PRODUCTS_VIEW,
+      Permission.PRODUCTS_CREATE,
+      Permission.PRODUCTS_UPDATE,
+      Permission.PRODUCTS_ACTIVATE,
+      Permission.PRODUCTS_ARCHIVE,
+      Permission.PRODUCTS_RESTORE,
+      Permission.PRODUCTS_IMPORT,
+      Permission.PRODUCTS_EXPORT,
+      Permission.PRODUCTS_MANAGE_PARTNER_AVAILABILITY,
+      Permission.PRODUCTS_MANAGE_PRICES,
+    ],
+  },
+];

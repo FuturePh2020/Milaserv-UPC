@@ -90,12 +90,6 @@ follow-up work:
   push channel (a Nest gateway + client subscription model) is real new
   infrastructure and is left as follow-up; the functional requirement
   ("stay current without manual reload") is met by polling today.
-- **Per-user permission management UI**: `UserPermission` rows,
-  `PermissionsService.can()`, and `PermissionsGuard`/`@RequirePermission`
-  are all live and enforced on the new controllers, and `PUT
-  /users/:id/permissions` lets an admin toggle a user's overrides today.
-  There is no dedicated admin screen for browsing/editing those overrides
-  yet — it's an API-only capability this pass.
 - **Product test matrix (spec §39)**: the spec lists 20 specific test
   cases. `products-availability.e2e-spec.ts` covers a representative
   subset (~8) of the correctness-critical paths — duplicate item
@@ -118,8 +112,5 @@ follow-up work:
   `@WebSocketGateway` that emits the same shape of event the polling
   refetch currently pulls, with the hook falling back to polling if the
   socket drops.
-- Permissions UI: `PermissionsController`/`PermissionsService` and `PUT
-  /users/:id/permissions` already define the full contract — it's a
-  settings-style admin page away.
 - Remaining product tests: follow the pattern in
   `apps/api/test/products-availability.e2e-spec.ts`.

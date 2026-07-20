@@ -18,6 +18,7 @@ import {
   TableCell,
 } from "@lcrm/ui";
 import { api, ApiError } from "@/lib/api-client";
+import { DEFAULT_AGENT_PERMISSIONS, PermissionGroups, PermissionLabels, type Permission } from "@lcrm/shared";
 
 interface UserRow {
   id: string;
@@ -40,6 +41,9 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [permittedTaskIds, setPermittedTaskIds] = useState<string[]>([]);
+  const [permissionsUser, setPermissionsUser] = useState<UserRow | null>(null);
+  const [grantedPermissions, setGrantedPermissions] = useState<Permission[]>([]);
+  const [savingPermissions, setSavingPermissions] = useState(false);
 
   async function load() {
     const [u, t] = await Promise.all([api.get<UserRow[]>("/users"), api.get<TaskItem[]>("/tasks")]);
@@ -79,6 +83,23 @@ export default function UsersPage() {
     const detail = await api.get<any>(`/users/${u.id}`);
     setSelectedUser(u.id);
     setPermittedTaskIds(detail.agentTaskPermissions.map((p: any) => p.task.id));
+  }
+
+  async function openSystemPermissions(u: UserRow) {
+    const overrides = await api.get<{ permission: Permission }[]>(`/users/${u.id}/permissions`);
+    setPermissionsUser(u);
+    setGrantedPermissions(overrides.map((o) => o.permission));
+  }
+
+  async function saveSystemPermissions() {
+    if (!permissionsUser) return;
+    setSavingPermissions(true);
+    try {
+      await api.put(`/users/${permissionsUser.id}/permissions`, { permissions: grantedPermissions });
+      setPermissionsUser(null);
+    } finally {
+      setSavingPermissions(false);
+    }
   }
 
   async function savePermissions() {
@@ -165,6 +186,11 @@ export default function UsersPage() {
                       Task permissions
                     </Button>
                   )}
+                  {u.role === "AGENT" && (
+                    <Button size="sm" variant="outline" onClick={() => openSystemPermissions(u)}>
+                      System permissions
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -198,6 +224,62 @@ export default function UsersPage() {
                   Cancel
                 </Button>
                 <Button onClick={savePermissions}>Save</Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {permissionsUser && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/40 p-4">
+          <Card className="w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+            <CardContent className="p-4">
+              <h2 className="text-base font-semibold text-slate-900">
+                System Permissions — {permissionsUser.fullName}
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Every Agent gets the default permissions below regardless of these overrides. Check additional
+                permissions to grant this Agent access beyond the defaults.
+              </p>
+              <div className="mt-4 flex flex-col gap-5">
+                {PermissionGroups.map((group) => (
+                  <div key={group.group}>
+                    <h3 className="text-sm font-semibold text-slate-700">{group.group}</h3>
+                    <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      {group.permissions.map((permission) => {
+                        const isDefault = DEFAULT_AGENT_PERMISSIONS.includes(permission);
+                        const checked = isDefault || grantedPermissions.includes(permission);
+                        return (
+                          <label
+                            key={permission}
+                            className={`flex items-center gap-2 text-sm ${isDefault ? "text-slate-400" : "text-slate-700"}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={isDefault}
+                              onChange={(e) =>
+                                setGrantedPermissions((prev) =>
+                                  e.target.checked ? [...prev, permission] : prev.filter((p) => p !== permission),
+                                )
+                              }
+                            />
+                            {PermissionLabels[permission]}
+                            {isDefault && <span className="text-xs text-slate-400">(default)</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setPermissionsUser(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={saveSystemPermissions} disabled={savingPermissions}>
+                  {savingPermissions ? "Saving..." : "Save"}
+                </Button>
               </div>
             </CardContent>
           </Card>
