@@ -71,9 +71,17 @@ export class DrugMatchingEngine {
     private readonly timeline: TimelineService,
   ) {}
 
+  /** `options.pageIds` scopes the run to specific pages (design summary
+   *  §24 "manual OCR correction/re-matching ... re-run scoped to the
+   *  line") — used after a single block correction, so re-matching
+   *  doesn't redo every other unaffected page. Still creates one brand-
+   *  new DrugMatchRun, same as a full run; only which pages get
+   *  segmented/matched is narrowed. Omit for the normal, whole-
+   *  prescription automatic pipeline. */
   async run(
     prescriptionId: string,
     initiatedById: string | null = null,
+    options?: { pageIds?: string[] },
   ): Promise<DrugMatchRun | null> {
     // Idempotency/defensive guard, mirroring processPage()'s `if (!page)
     // return` — a prescription can be deleted between enqueue and a
@@ -88,7 +96,10 @@ export class DrugMatchingEngine {
     }
 
     const pages = await this.prisma.prescriptionPage.findMany({
-      where: { prescriptionId },
+      where: {
+        prescriptionId,
+        ...(options?.pageIds ? { id: { in: options.pageIds } } : {}),
+      },
       select: { id: true, currentOcrRunId: true },
     });
     const config = await this.matchConfig.resolve();

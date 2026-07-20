@@ -19,6 +19,7 @@ import { DrugCandidateGenerator } from './matching/candidates/drug-candidate-gen
 import { DrugMatchingEngine } from './matching/drug-matching.engine';
 import { PrescriptionDrugMatchingQueueService } from './matching/queue/prescription-drug-matching.queue';
 import { DrugMatchingWorkerService } from './matching/queue/drug-matching.worker';
+import { DrugMatchReviewService } from './matching/drug-match-review.service';
 
 /**
  * CR-001 Prescription Intelligence Engine — Sprint OCR-01
@@ -44,6 +45,7 @@ import { DrugMatchingWorkerService } from './matching/queue/drug-matching.worker
     DrugMatchingEngine,
     PrescriptionDrugMatchingQueueService,
     DrugMatchingWorkerService,
+    DrugMatchReviewService,
   ],
   exports: [
     PrescriptionsService,

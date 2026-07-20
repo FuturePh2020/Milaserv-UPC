@@ -31,6 +31,12 @@ import {
 import { PrescriptionsService } from './prescriptions.service';
 import { detectMimeFromMagicBytes } from './file-validation';
 import { LocalDiskPrescriptionStorage } from './storage/prescription-storage';
+import { DrugMatchReviewService } from './matching/drug-match-review.service';
+import {
+  MarkNotMedicationDto,
+  RejectCandidateDto,
+  SelectDrugManuallyDto,
+} from './matching/drug-match-review.dto';
 
 interface UploadedFileShape {
   originalname: string;
@@ -47,6 +53,7 @@ export class PrescriptionsController {
   constructor(
     private readonly prescriptions: PrescriptionsService,
     private readonly localStorage: LocalDiskPrescriptionStorage,
+    private readonly drugMatchReview: DrugMatchReviewService,
   ) {}
 
   @RequirePermission('ocr.view')
@@ -177,6 +184,101 @@ export class PrescriptionsController {
     @Req() req: Request,
   ) {
     return this.prescriptions.rerunOcr(user, id, pageId, { ip: req.ip });
+  }
+
+  // ── CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine ─────────
+
+  /** The latest DrugMatchRun (or a specific historical one via
+   *  `?runId=`) and its medication lines/ranked candidates, with every
+   *  score/evidence/conflict field the engine produced — never hidden
+   *  behind backend-only logs (design summary §23). */
+  @RequirePermission('ocr.view')
+  @Get(':id/drug-matches')
+  getDrugMatches(@Param('id') id: string, @Query('runId') runId?: string) {
+    return this.drugMatchReview.getDrugMatches(id, runId);
+  }
+
+  /** Every DrugMatchRun ever created for this prescription, newest
+   *  first — none are ever deleted (design summary §20). */
+  @RequirePermission('ocr.view')
+  @Get(':id/drug-matches/runs')
+  listDrugMatchRuns(@Param('id') id: string) {
+    return this.drugMatchReview.listRuns(id);
+  }
+
+  /** Manually triggers a full reprocess — a fresh DrugMatchRun across
+   *  every page, alongside every prior run. */
+  @RequirePermission('ocr.review')
+  @Post(':id/drug-matches/reprocess')
+  @HttpCode(200)
+  reprocessDrugMatches(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Req() req: Request,
+  ) {
+    return this.drugMatchReview.reprocess(user, id, { ip: req.ip });
+  }
+
+  /** A pharmacist confirms one of the engine's ranked candidates as the
+   *  correct drug for this medication line. */
+  @RequirePermission('ocr.review')
+  @Post(':id/medication-lines/:lineId/candidates/:candidateId/confirm')
+  @HttpCode(200)
+  confirmCandidate(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Param('candidateId') candidateId: string,
+    @Req() req: Request,
+  ) {
+    return this.drugMatchReview.confirmCandidate(user, id, lineId, candidateId, { ip: req.ip });
+  }
+
+  /** A pharmacist rejects one specific candidate — the line's overall
+   *  status is unaffected; another candidate or a manual selection is
+   *  still needed. */
+  @RequirePermission('ocr.review')
+  @Post(':id/medication-lines/:lineId/candidates/:candidateId/reject')
+  @HttpCode(200)
+  rejectCandidate(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Param('candidateId') candidateId: string,
+    @Body() dto: RejectCandidateDto,
+    @Req() req: Request,
+  ) {
+    return this.drugMatchReview.rejectCandidate(user, id, lineId, candidateId, dto, { ip: req.ip });
+  }
+
+  /** For when none of the engine's candidates are right — a pharmacist
+   *  picks a real DIC drug directly. */
+  @RequirePermission('ocr.review')
+  @Post(':id/medication-lines/:lineId/select-drug')
+  @HttpCode(200)
+  selectDrugManually(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() dto: SelectDrugManuallyDto,
+    @Req() req: Request,
+  ) {
+    return this.drugMatchReview.selectDrugManually(user, id, lineId, dto, { ip: req.ip });
+  }
+
+  /** A pharmacist flags a segmented line as not actually a medication
+   *  (a segmenter false positive). */
+  @RequirePermission('ocr.review')
+  @Post(':id/medication-lines/:lineId/mark-not-medication')
+  @HttpCode(200)
+  markNotMedication(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('lineId') lineId: string,
+    @Body() dto: MarkNotMedicationDto,
+    @Req() req: Request,
+  ) {
+    return this.drugMatchReview.markNotMedication(user, id, lineId, dto, { ip: req.ip });
   }
 
   /**

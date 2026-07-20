@@ -214,7 +214,10 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
         where: { prescriptionId },
         orderBy: { createdAt: 'asc' },
       });
-      if (line) return line;
+      // The engine creates the row (default CANDIDATES_FOUND) before it
+      // finishes scoring and updates the final status — wait for that
+      // update, not just the row's existence.
+      if (line && line.matchingStatus !== 'CANDIDATES_FOUND') return line;
       if (Date.now() > deadline) {
         throw new Error(
           `Timed out waiting for a medication line on prescription ${prescriptionId}`,

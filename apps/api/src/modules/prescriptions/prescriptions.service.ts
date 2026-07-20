@@ -17,6 +17,7 @@ import type { AuthUser } from '../auth/current-user.decorator';
 import type { RequestScope } from '../permissions/scope';
 import { PrescriptionOcrQueueService } from './queue/prescription-ocr.queue';
 import { PrescriptionOcrWorkerService } from './queue/prescription-ocr.worker';
+import { DrugMatchingEngine } from './matching/drug-matching.engine';
 import { PythonOcrClientService } from './python-ocr-client.service';
 import type { DetectRegionResult, PrescriptionSourceType } from './python-ocr-client.service';
 import { RegionDetectionConfigService } from './region-detection-config.service';
@@ -60,6 +61,7 @@ export class PrescriptionsService {
     private readonly settings: SettingsService,
     private readonly queue: PrescriptionOcrQueueService,
     private readonly worker: PrescriptionOcrWorkerService,
+    private readonly drugMatchingEngine: DrugMatchingEngine,
     private readonly pythonOcr: PythonOcrClientService,
     private readonly regionDetectionConfig: RegionDetectionConfigService,
     @Inject(PRESCRIPTION_STORAGE) private readonly storage: PrescriptionStorageDriver,
@@ -727,7 +729,15 @@ export class PrescriptionsService {
    *  does not touch DrugAlias/matching or the block's own text — this is
    *  the review record only; the block's rawText/normalizedText stay
    *  exactly what OCR produced (design doc: "corrected text stored
-   *  separately"). */
+   *  separately").
+   *
+   *  CR-001 Phase 5 — a correction can change what the matching engine
+   *  would segment/extract from this page, so it triggers a scoped
+   *  re-match limited to this one page (design summary §24: "re-run
+   *  scoped to the line") once the correction itself is recorded. Runs
+   *  synchronously, same rationale as rerunOcr() below — a single
+   *  reviewer action, not the automatic pipeline — and never touches any
+   *  other page's already-matched lines. */
   async correctBlock(
     actor: AuthUser,
     prescriptionId: string,
@@ -774,6 +784,7 @@ export class PrescriptionsService {
       after: { markedAs: dto.markedAs ?? null, correctedText: dto.correctedText ?? null },
       ...meta,
     });
+    await this.drugMatchingEngine.run(prescriptionId, actor.userId, { pageIds: [pageId] });
     return correction;
   }
 
