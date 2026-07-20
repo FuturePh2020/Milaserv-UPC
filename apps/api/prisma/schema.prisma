@@ -358,6 +358,7 @@ model Branch {
   specialHours          BranchSpecialHours[]
   serviceAreas          BranchServiceArea[]
   capabilityAssignments BranchCapabilityAssignment[]
+  branchInventories     BranchInventory[]
 
   @@index([region, city])
   @@index([branchTypeKey])
@@ -596,6 +597,71 @@ model BranchCapabilityAssignment {
   @@unique([branchId, capabilityId])
   @@index([branchId])
   @@index([capabilityId])
+}
+
+// ── Phase 6 §11/§12 — Branch-level inventory snapshot. Additive; the
+// legacy Drug.availability {city: qty} Json field is untouched and not
+// consumed here — this table is the sole source of truth for the
+// fulfillment engine's stock checks. ──
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+  BLOCKED
+  UNKNOWN
+  STALE
+  IN_TRANSIT
+  DISCONTINUED
+}
+
+/// One row per (branch, drug). `availableQuantity` — never
+/// `onHandQuantity` alone — is what fulfillment decisions read;
+/// blocked/damaged/reserved stock is never counted as available
+/// (Phase 6 §11).
+model BranchInventory {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  drugId   String
+  drug     Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+
+  /// Denormalized copy of Drug.materialNo — sync writes/reads by SAP
+  /// material number without a join back to Drug.
+  sapMaterialNumber String
+
+  onHandQuantity          Float?
+  availableQuantity       Float?
+  reservedQuantity        Float?
+  blockedQuantity         Float?
+  damagedQuantity         Float?
+  inTransitQuantity       Float?
+  safetyStockQuantity     Float?
+  expectedRestockQuantity Float?
+  expectedRestockAt       DateTime?
+  batchCount              Int?
+  earliestExpiryDate      DateTime?
+
+  inventoryStatus InventoryStatus @default(UNKNOWN)
+  /// Free text identifying which InventoryProvider produced this row
+  /// (e.g. "mock", "sap") — mirrors Drug.sourceSystem's convention.
+  sourceSystem    String?
+  /// When the source system says this snapshot was true — freshness
+  /// classification (LIVE/FRESH/ACCEPTABLE/STALE) is computed from this
+  /// at query time, never persisted (a stored freshness label would
+  /// itself go stale the instant it's written).
+  sourceTimestamp DateTime?
+  receivedAt      DateTime        @default(now())
+  active          Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, drugId])
+  @@index([branchId])
+  @@index([drugId])
+  @@index([sapMaterialNumber])
+  @@index([inventoryStatus])
 }
 
 // ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
@@ -1499,6 +1565,9 @@ model Drug {
   alternativeLinksFrom DrugAlternativeLink[]   @relation("alternativeLinkSource")
   alternativeLinksTo   DrugAlternativeLink[]   @relation("alternativeLinkTarget")
   importRows           DrugImportRow[]
+
+  /// Phase 6 §11 — per-branch stock snapshot rows.
+  branchInventory BranchInventory[]
 
   @@index([nameEn])
   @@index([nameAr])

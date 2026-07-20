@@ -28,6 +28,7 @@ import { OcrModule } from './modules/ocr/ocr.module';
 import { AiModule } from './modules/ai/ai.module';
 import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
 import { LocationsModule } from './modules/locations/locations.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { LocationsModule } from './modules/locations/locations.module';
     AiModule,
     PrescriptionsModule,
     LocationsModule,
+    InventoryModule,
   ],
   controllers: [HealthController],
 })

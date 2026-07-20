@@ -72,6 +72,15 @@ export const envSchema = z.object({
     .transform((v) => v === 'true'),
   PRESCRIPTION_MATCHING_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
   PRESCRIPTION_MATCHING_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5000),
+
+  /// Phase 6 — Location-Aware Branch Inventory & Fulfillment. Same
+  /// shape as the drug-matching queue's own toggle/retry vars above.
+  INVENTORY_SYNC_WORKER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  INVENTORY_SYNC_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  INVENTORY_SYNC_JOB_BACKOFF_MS: z.coerce.number().int().positive().default(5000),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -305,6 +305,18 @@ export const PERMISSIONS = [
       ar: 'إدارة المناطق والمدن والأحياء والأسماء البديلة',
     },
   },
+
+  // inventory (Phase 6 — Location-Aware Branch Inventory & Fulfillment)
+  {
+    key: 'inventory.view',
+    module: 'inventory',
+    label: { en: 'View branch inventory', ar: 'عرض مخزون الفروع' },
+  },
+  {
+    key: 'inventory.sync',
+    module: 'inventory',
+    label: { en: 'Trigger inventory synchronization', ar: 'تشغيل مزامنة المخزون' },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

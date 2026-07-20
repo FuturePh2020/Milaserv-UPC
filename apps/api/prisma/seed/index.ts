@@ -76,6 +76,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.export', DataScope.DEPARTMENT],
     ['branch.view', DataScope.DEPARTMENT],
     ['location.view', DataScope.DEPARTMENT],
+    ['inventory.view', DataScope.DEPARTMENT],
     ['kb.view', DataScope.DEPARTMENT],
     ['kb.assign', DataScope.DEPARTMENT],
     ['break.track', DataScope.MY_RECORDS],
@@ -110,6 +111,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
     ['location.view', DataScope.MY_TEAM],
+    ['inventory.view', DataScope.MY_TEAM],
     ['kb.view', DataScope.MY_TEAM],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
@@ -131,6 +133,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
     ['location.view', DataScope.MY_TEAM],
+    ['inventory.view', DataScope.MY_TEAM],
     ['kb.view', DataScope.MY_TEAM],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
@@ -149,6 +152,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.update_add', DataScope.MY_RECORDS],
     ['branch.view', DataScope.MY_RECORDS],
     ['location.view', DataScope.MY_RECORDS],
+    ['inventory.view', DataScope.MY_RECORDS],
     ['kb.view', DataScope.MY_RECORDS],
     ['break.track', DataScope.MY_RECORDS],
     ['performance.view', DataScope.MY_RECORDS],
@@ -179,6 +183,9 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     // Phase 4 — DIC Drug Master & Normalization Foundation
     ['dic.import_staged', DataScope.ALL_DATA],
     ['ocr.view', DataScope.ALL_DATA],
+    // Phase 6 — Location-Aware Branch Inventory & Fulfillment
+    ['inventory.view', DataScope.ALL_DATA],
+    ['inventory.sync', DataScope.ALL_DATA],
   ],
 };
 
@@ -433,6 +440,31 @@ const DEFAULT_SETTINGS: DefaultSetting[] = [
     value: 15,
     labelAr: 'أقصى مسافة توصيل (كم)',
     labelEn: 'Maximum delivery distance (km)',
+  },
+  // Phase 6 — Location-Aware Branch Inventory & Fulfillment
+  {
+    key: 'inventory.cache.ttl_seconds',
+    category: 'inventory',
+    valueType: 'NUMBER',
+    value: 120,
+    labelAr: 'مدة صلاحية ذاكرة التخزين المؤقت للمخزون (ثوانٍ)',
+    labelEn: 'Inventory cache TTL (seconds)',
+  },
+  {
+    key: 'inventory.freshness.fresh_minutes',
+    category: 'inventory',
+    valueType: 'NUMBER',
+    value: 15,
+    labelAr: 'الحد الأقصى (دقائق) لاعتبار المخزون "حديثًا"',
+    labelEn: 'Maximum age (minutes) for inventory to count as FRESH',
+  },
+  {
+    key: 'inventory.freshness.acceptable_minutes',
+    category: 'inventory',
+    valueType: 'NUMBER',
+    value: 120,
+    labelAr: 'الحد الأقصى (دقائق) لاعتبار المخزون "مقبولاً"',
+    labelEn: 'Maximum age (minutes) for inventory to count as ACCEPTABLE (older is STALE)',
   },
   // DIC (blueprint §15, spec H2)
   {
