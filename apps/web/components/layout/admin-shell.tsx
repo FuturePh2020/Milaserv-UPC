@@ -16,8 +16,13 @@ import {
   ShieldCheck,
   LogOut,
   Phone,
+  ShoppingCart,
+  PackagePlus,
+  Repeat,
+  Boxes,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { BrandLogo, BrandLoadingScreen } from "@/components/brand-logo";
 
 const NAV = [
   { href: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -25,6 +30,10 @@ const NAV = [
   { href: "/admin/tasks", label: "Tasks", icon: ListChecks },
   { href: "/admin/lead-imports", label: "Lead Imports", icon: Upload },
   { href: "/admin/leads", label: "Leads", icon: FileBarChart },
+  { href: "/admin/orders/create", label: "Create Order", icon: PackagePlus },
+  { href: "/admin/team-orders", label: "Team Orders", icon: ShoppingCart },
+  { href: "/admin/retention", label: "Retention", icon: Repeat },
+  { href: "/admin/products", label: "Products & Items", icon: Boxes },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/sessions", label: "Sessions", icon: Clock },
   { href: "/admin/breaks", label: "Live Break Monitor", icon: Coffee },
@@ -46,15 +55,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   }, [user, loading, router]);
 
   if (loading || !user) {
-    return <div className="flex h-screen items-center justify-center text-slate-500">Loading...</div>;
+    return <BrandLoadingScreen />;
   }
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-slate-200 bg-white">
-        <div className="border-b border-slate-200 px-4 py-4">
-          <p className="text-sm font-semibold text-slate-900">Leads Distributor CRM</p>
-          <p className="text-xs text-slate-500">Admin Console</p>
+      <aside className="flex w-64 shrink-0 flex-col bg-brand-navy-dark">
+        <div className="border-b border-white/10 px-4 py-4">
+          <BrandLogo size={32} showWordmark />
+          <p className="mt-1 text-xs text-white/50">Admin Console</p>
         </div>
         <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
           {NAV.map((item) => {
@@ -65,7 +74,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  active ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+                  active ? "bg-brand-teal text-white" : "text-white/70 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Icon size={16} />
@@ -74,17 +83,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="border-t border-slate-200 p-3">
-          <p className="truncate text-xs text-slate-500">{user.fullName}</p>
+        <div className="border-t border-white/10 p-3">
+          <p className="truncate text-xs text-white/50">{user.fullName}</p>
           <button
             onClick={logout}
-            className="mt-2 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            className="mt-2 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-white/70 hover:bg-white/10 hover:text-white"
           >
             <LogOut size={16} /> Sign out
           </button>
         </div>
       </aside>
-      <main className="flex-1 overflow-y-auto bg-slate-50 p-6">{children}</main>
+      <main className="flex-1 overflow-y-auto bg-brand-surface p-6">{children}</main>
     </div>
   );
 }

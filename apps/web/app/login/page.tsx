@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Input, Label, Card, CardContent, CardHeader, CardTitle } from "@lcrm/ui";
 import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api-client";
+import { BrandLogo } from "@/components/brand-logo";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -29,11 +30,12 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-brand-navy px-4">
       <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-xl font-semibold text-slate-900">Leads Distributor &amp; CRM</CardTitle>
-          <p className="text-sm text-slate-500">Sign in to continue</p>
+        <CardHeader className="items-center text-center">
+          <BrandLogo size={56} />
+          <CardTitle className="mt-2 text-xl font-semibold text-brand-text-dark">Milaserv 360</CardTitle>
+          <p className="text-sm text-brand-text-gray">Sign in to continue</p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
