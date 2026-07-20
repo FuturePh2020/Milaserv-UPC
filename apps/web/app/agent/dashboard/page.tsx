@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { Phone, PlayCircle, StopCircle, Coffee, Sparkles } from "lucide-react";
 import { AgentShell } from "@/components/layout/agent-shell";
 import { KpiCard } from "@/components/kpi-card";
-import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Select, Textarea, Label } from "@lcrm/ui";
+import { CallOutcomeForm } from "@/components/call-outcome-form";
+import { Button, Card, CardHeader, CardTitle, CardContent, Badge, Select } from "@lcrm/ui";
 import { api, ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface AgentSummary {
   currentStatus: string;
@@ -47,19 +50,6 @@ interface BreakType {
   color: string;
 }
 
-const WORKFLOW_OPTIONS = [
-  "CONTACTED",
-  "CALLBACK_REQUIRED",
-  "INVALID_NUMBER",
-  "NOT_INTERESTED",
-  "INTERESTED",
-  "CONVERTED",
-  "COMPLETED",
-  "ESCALATED",
-  "UNREACHABLE",
-  "RETURNED_TO_POOL",
-];
-
 export default function AgentDashboardPage() {
   const { user, refresh } = useAuth();
   const [summary, setSummary] = useState<AgentSummary | null>(null);
@@ -67,7 +57,8 @@ export default function AgentDashboardPage() {
   const [breakTypes, setBreakTypes] = useState<BreakType[]>([]);
   const [selectedBreakType, setSelectedBreakType] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [outcome, setOutcome] = useState({ workflowStatus: "CONTACTED", notes: "" });
+  const [callStarted, setCallStarted] = useState(false);
+  const [lastOrderId, setLastOrderId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -83,9 +74,9 @@ export default function AgentDashboardPage() {
 
   useEffect(() => {
     load().catch(() => undefined);
-    const interval = setInterval(() => load().catch(() => undefined), 15000);
-    return () => clearInterval(interval);
   }, [load]);
+
+  useAutoRefresh("agent-dashboard", load);
 
   async function startSession() {
     setMessage(null);
@@ -144,20 +135,18 @@ export default function AgentDashboardPage() {
   async function callLead(phone: string, leadId: string, taskId?: string) {
     try {
       await api.post("/voip/calls/initiate", { customerPhone: phone, leadId, taskId });
-      setMessage("Call initiated");
+      setCallStarted(true);
+      setMessage("Call initiated. Log the call result once the call is completed.");
     } catch (err) {
       setMessage(err instanceof ApiError ? err.message : "Failed to initiate call");
     }
   }
 
-  async function submitOutcome(leadId: string) {
-    try {
-      await api.put(`/leads/${leadId}/outcome`, outcome);
-      setOutcome({ workflowStatus: "CONTACTED", notes: "" });
-      await load();
-    } catch (err) {
-      setMessage(err instanceof ApiError ? err.message : "Failed to update outcome");
-    }
+  async function handleOutcomeSubmitted(result: { orderId?: string }) {
+    setCallStarted(false);
+    setLastOrderId(result.orderId ?? null);
+    setMessage(result.orderId ? "Call outcome saved. Order created — add items in My Orders." : "Call outcome saved.");
+    await load();
   }
 
   const currentLead = activeLeads[0];
@@ -266,37 +255,26 @@ export default function AgentDashboardPage() {
                 </div>
               </div>
 
-              <Button
-                className="w-fit"
-                onClick={() => callLead(currentLead.lead.primaryPhone, currentLead.lead.id, currentLead.lead.task?.name ? undefined : undefined)}
-              >
-                <Phone size={16} /> Call {currentLead.lead.primaryPhone}
+              <Button className="w-fit" onClick={() => callLead(currentLead.lead.primaryPhone, currentLead.lead.id)}>
+                <Phone size={16} /> Call Customer
               </Button>
 
-              <div className="border-t border-slate-100 pt-4">
-                <Label>Outcome</Label>
-                <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-end">
-                  <Select
-                    value={outcome.workflowStatus}
-                    onChange={(e) => setOutcome({ ...outcome, workflowStatus: e.target.value })}
-                    className="md:w-56"
-                  >
-                    {WORKFLOW_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </Select>
-                  <Textarea
-                    aria-label="Notes"
-                    placeholder="Notes"
-                    value={outcome.notes}
-                    onChange={(e) => setOutcome({ ...outcome, notes: e.target.value })}
-                    className="md:flex-1"
-                  />
-                  <Button onClick={() => submitOutcome(currentLead.lead.id)}>Submit</Button>
+              {lastOrderId && (
+                <p className="text-sm text-brand-teal">
+                  Order created —{" "}
+                  <Link href="/agent/my-orders" className="underline">
+                    open My Orders to add items
+                  </Link>
+                  .
+                </p>
+              )}
+
+              {callStarted && (
+                <div className="border-t border-slate-100 pt-4">
+                  <p className="mb-2 text-sm font-medium text-slate-700">Call Result</p>
+                  <CallOutcomeForm leadId={currentLead.lead.id} onSubmitted={handleOutcomeSubmitted} />
                 </div>
-              </div>
+              )}
             </div>
           )}
         </CardContent>
