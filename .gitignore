@@ -16,3 +16,4 @@ playwright-report/
 .pnpm-store/
 apps/web/e2e/.fixture.json
 *.tsbuildinfo
+.claude/
