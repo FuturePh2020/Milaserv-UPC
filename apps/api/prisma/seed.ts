@@ -173,7 +173,11 @@ async function main() {
   // ── Phase 2: CRM workflow, products, orders, retention ──────────────────
 
   await prisma.crmWorkflowSettings.upsert({ where: { id: "default" }, update: {}, create: { id: "default" } });
-  await prisma.autoRefreshSettings.upsert({ where: { id: "default" }, update: {}, create: { id: "default" } });
+  await prisma.autoRefreshSettings.upsert({
+    where: { id: "default" },
+    update: {},
+    create: { id: "default", realtimeEnabled: true },
+  });
 
   const reasons: { category: string; code: string; label: string }[] = [
     { category: "NOT_INTERESTED", code: "PRICE", label: "Price too high" },

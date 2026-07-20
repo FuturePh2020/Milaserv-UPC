@@ -6,6 +6,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
 import { AppModule } from "./app.module";
+import { ConfigurableSocketIoAdapter } from "./realtime/socket-io.adapter";
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: false });
@@ -15,11 +16,13 @@ async function bootstrap() {
   app.use(cookieParser());
   app.setGlobalPrefix("api");
 
+  const corsOrigin = config.get<string>("CORS_ORIGIN") || "http://localhost:3000";
   app.enableCors({
-    origin: config.get<string>("CORS_ORIGIN") || "http://localhost:3000",
+    origin: corsOrigin,
     credentials: true,
     allowedHeaders: ["Content-Type", "Authorization", "x-csrf-token"],
   });
+  app.useWebSocketAdapter(new ConfigurableSocketIoAdapter(app, corsOrigin));
 
   app.useGlobalPipes(
     new ValidationPipe({

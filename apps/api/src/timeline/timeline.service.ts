@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
-import { EventSource } from "@lcrm/shared";
+import { EventSource, TIMELINE_ENTITY_CHANNELS, timelineChannel } from "@lcrm/shared";
 import { PrismaService } from "../prisma/prisma.service";
+import { RealtimeGateway } from "../realtime/realtime.gateway";
 
 export interface RecordTimelineEventInput {
   entityType: string;
@@ -24,10 +25,13 @@ export interface RecordTimelineEventInput {
  */
 @Injectable()
 export class TimelineService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
   async record(input: RecordTimelineEventInput) {
-    return this.prisma.timelineEvent.create({
+    const event = await this.prisma.timelineEvent.create({
       data: {
         entityType: input.entityType,
         entityId: input.entityId,
@@ -42,6 +46,13 @@ export class TimelineService {
         metadata: (input.metadata ?? {}) as any,
       },
     });
+
+    this.realtime.emitRefresh(timelineChannel(input.entityType, input.entityId), { eventType: input.eventType });
+    for (const channel of TIMELINE_ENTITY_CHANNELS[input.entityType] ?? []) {
+      this.realtime.emitRefresh(channel, { eventType: input.eventType });
+    }
+
+    return event;
   }
 
   async forEntity(entityType: string, entityId: string) {

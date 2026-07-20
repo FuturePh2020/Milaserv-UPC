@@ -364,6 +364,29 @@ export const PermissionLabels: Record<Permission, string> = {
   "products.managePrices": "Manage Product Pricing",
 };
 
+/** Realtime WebSocket channel names, shared by the Nest gateway (emitter) and the useAutoRefresh hook (subscriber). */
+export const RealtimeChannel = {
+  RETENTION: "retention",
+  TEAM_ORDERS: "team-orders",
+  MY_ORDERS: "my-orders",
+  AGENT_DASHBOARD: "agent-dashboard",
+  PRODUCTS: "products",
+} as const;
+export type RealtimeChannel = (typeof RealtimeChannel)[keyof typeof RealtimeChannel];
+
+/** Per-entity room name for a TimelineFeed to subscribe to (e.g. an open Order detail view). */
+export function timelineChannel(entityType: string, entityId: string): string {
+  return `timeline:${entityType}:${entityId}`;
+}
+
+/** Which list-page channels should refresh when a TimelineEvent is recorded for a given entity type. */
+export const TIMELINE_ENTITY_CHANNELS: Record<string, RealtimeChannel[]> = {
+  Order: [RealtimeChannel.MY_ORDERS, RealtimeChannel.TEAM_ORDERS],
+  RetentionCustomer: [RealtimeChannel.RETENTION],
+  Product: [RealtimeChannel.PRODUCTS],
+  Lead: [RealtimeChannel.AGENT_DASHBOARD],
+};
+
 /** Groups Permission keys for display in the per-user permissions management screen. */
 export const PermissionGroups: { group: string; permissions: Permission[] }[] = [
   {

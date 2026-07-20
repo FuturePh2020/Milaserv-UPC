@@ -1376,7 +1376,7 @@ model AutoRefreshSettings {
   minIntervalSeconds     Int      @default(10)
   maxIntervalSeconds     Int      @default(300)
   pauseWhileEditing      Boolean  @default(true)
-  realtimeEnabled        Boolean  @default(false)
+  realtimeEnabled        Boolean  @default(true)
   fallbackPollingEnabled Boolean  @default(true)
   pageIntervals          Json     @default("{}")
   updatedAt              DateTime @updatedAt

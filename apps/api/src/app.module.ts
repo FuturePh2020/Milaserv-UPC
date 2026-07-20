@@ -33,6 +33,7 @@ import { OrdersModule } from "./orders/orders.module";
 import { RetentionModule } from "./retention/retention.module";
 import { ProductsModule } from "./products/products.module";
 import { TeamsModule } from "./teams/teams.module";
+import { RealtimeModule } from "./realtime/realtime.module";
 
 import { AllExceptionsFilter } from "./common/filters/http-exception.filter";
 import { CsrfGuard } from "./common/guards/csrf.guard";
@@ -60,6 +61,7 @@ import { CsrfGuard } from "./common/guards/csrf.guard";
     VoipModule,
     ReportsModule,
     DashboardModule,
+    RealtimeModule,
     TimelineModule,
     PermissionsModule,
     CustomersModule,
