@@ -317,6 +317,29 @@ export const PERMISSIONS = [
     module: 'inventory',
     label: { en: 'Trigger inventory synchronization', ar: 'تشغيل مزامنة المخزون' },
   },
+
+  // fulfillment (Phase 6 — Location-Aware Branch Inventory & Fulfillment)
+  {
+    key: 'fulfillment.view',
+    module: 'fulfillment',
+    label: { en: 'View fulfillment requests & plans', ar: 'عرض طلبات وخطط التلبية' },
+  },
+  {
+    key: 'fulfillment.request',
+    module: 'fulfillment',
+    label: {
+      en: 'Search branches & generate fulfillment plans',
+      ar: 'البحث عن الفروع وإنشاء خطط التلبية',
+    },
+  },
+  {
+    key: 'fulfillment.select_plan',
+    module: 'fulfillment',
+    label: {
+      en: 'Confirm a fulfillment plan & reserve stock',
+      ar: 'اعتماد خطة التلبية وحجز المخزون',
+    },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

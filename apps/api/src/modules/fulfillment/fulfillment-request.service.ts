@@ -124,4 +124,30 @@ export class FulfillmentRequestService {
 
     return request;
   }
+
+  async getRequest(id: string) {
+    const request = await this.prisma.fulfillmentRequest.findUnique({
+      where: { id },
+      include: {
+        items: true,
+        searchLocation: true,
+        plans: {
+          orderBy: { rank: 'asc' },
+          include: { branches: { include: { items: true } } },
+        },
+      },
+    });
+    if (!request) throw new NotFoundException('Fulfillment request not found');
+    return request;
+  }
+
+  async listPlans(fulfillmentRequestId: string) {
+    const request = await this.prisma.fulfillmentRequest.findUnique({ where: { id: fulfillmentRequestId } });
+    if (!request) throw new NotFoundException('Fulfillment request not found');
+    return this.prisma.fulfillmentPlan.findMany({
+      where: { fulfillmentRequestId },
+      orderBy: { rank: 'asc' },
+      include: { branches: { include: { items: true } }, reservations: true },
+    });
+  }
 }

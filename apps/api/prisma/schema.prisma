@@ -360,6 +360,7 @@ model Branch {
   capabilityAssignments   BranchCapabilityAssignment[]
   branchInventories       BranchInventory[]
   fulfillmentPlanBranches FulfillmentPlanBranch[]
+  inventoryReservations   InventoryReservation[]
 
   @@index([region, city])
   @@index([branchTypeKey])
@@ -815,9 +816,12 @@ model FulfillmentPlan {
   explanationJson             Json?
   conflictsJson               Json?
   selected                    Boolean             @default(false)
+  selectedById                String?
+  selectedAt                  DateTime?
   createdAt                   DateTime            @default(now())
 
-  branches FulfillmentPlanBranch[]
+  branches     FulfillmentPlanBranch[]
+  reservations InventoryReservation[]
 
   @@index([fulfillmentRequestId])
   @@index([rank])
@@ -872,6 +876,54 @@ model FulfillmentPlanItem {
   @@index([fulfillmentPlanBranchId])
   @@index([fulfillmentRequestItemId])
   @@index([drugId])
+
+  reservations InventoryReservation[]
+}
+
+enum InventoryReservationStatus {
+  PENDING
+  CONFIRMED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  EXPIRED
+  CANCELLED
+  RELEASED
+  FAILED
+}
+
+/// Phase 6 §26 — data foundation only. A row here records that stock was
+/// set aside for a confirmed plan; it is never created automatically
+/// while a user is merely viewing branch options (Phase 6 brief §2/§26:
+/// "never silently confirm"), and it never writes to a real external
+/// system (no SAP order/reservation contract exists yet, same scope
+/// boundary as InventoryProvider). Created only by
+/// FulfillmentPlanSelectionService.selectPlan(), one row per plan item.
+model InventoryReservation {
+  id                    String               @id @default(cuid())
+  fulfillmentPlanId     String
+  fulfillmentPlan       FulfillmentPlan      @relation(fields: [fulfillmentPlanId], references: [id], onDelete: Cascade)
+  fulfillmentPlanItemId String
+  fulfillmentPlanItem   FulfillmentPlanItem  @relation(fields: [fulfillmentPlanItemId], references: [id], onDelete: Cascade)
+  branchId              String
+  branch                Branch               @relation(fields: [branchId], references: [id])
+  drugId                String
+  drug                  Drug                 @relation(fields: [drugId], references: [id])
+
+  quantity     Float
+  status       InventoryReservationStatus @default(PENDING)
+  reservedById String?
+  reservedAt   DateTime                    @default(now())
+  expiresAt    DateTime?
+  releasedById String?
+  releasedAt   DateTime?
+  cancelReason String?
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+
+  @@index([fulfillmentPlanId])
+  @@index([branchId])
+  @@index([drugId])
+  @@index([status])
 }
 
 // ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
@@ -1781,6 +1833,8 @@ model Drug {
   /// Phase 6 §17/§20 — fulfillment request/plan line items.
   fulfillmentRequestItems FulfillmentRequestItem[]
   fulfillmentPlanItems    FulfillmentPlanItem[]
+  /// Phase 6 §26 — reservation foundation rows (data model only).
+  inventoryReservations   InventoryReservation[]
 
   @@index([nameEn])
   @@index([nameAr])
