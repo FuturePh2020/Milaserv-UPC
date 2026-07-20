@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent, Badge } from "@lcrm/ui";
 import { api } from "@/lib/api-client";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
+import { timelineChannel } from "@lcrm/shared";
 
 interface TimelineEventRow {
   id: string;
@@ -26,13 +28,19 @@ function formatEventType(eventType: string) {
 export function TimelineFeed({ entityType, entityId }: { entityType: string; entityId: string }) {
   const [events, setEvents] = useState<TimelineEventRow[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!entityId) return;
     api
       .get<TimelineEventRow[]>(`/timeline?entityType=${entityType}&entityId=${entityId}`)
       .then(setEvents)
       .catch(() => undefined);
   }, [entityType, entityId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useAutoRefresh(`timeline-${entityType}`, load, false, entityId ? timelineChannel(entityType, entityId) : null);
 
   if (events.length === 0) {
     return (

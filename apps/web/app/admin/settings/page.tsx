@@ -31,12 +31,22 @@ interface InactivitySettings {
 interface BreakThresholdSettings {
   warningMinutes: number;
 }
+interface AutoRefreshSettings {
+  enabled: boolean;
+  defaultIntervalSeconds: number;
+  minIntervalSeconds: number;
+  maxIntervalSeconds: number;
+  pauseWhileEditing: boolean;
+  realtimeEnabled: boolean;
+  fallbackPollingEnabled: boolean;
+}
 
 export default function SettingsPage() {
   const [dist, setDist] = useState<DistributionSettings | null>(null);
   const [security, setSecurity] = useState<SecuritySettings | null>(null);
   const [inactivity, setInactivity] = useState<InactivitySettings | null>(null);
   const [breakThreshold, setBreakThreshold] = useState<BreakThresholdSettings | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState<AutoRefreshSettings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,6 +54,7 @@ export default function SettingsPage() {
     api.get<SecuritySettings>("/settings/security").then(setSecurity);
     api.get<InactivitySettings>("/settings/inactivity").then(setInactivity);
     api.get<BreakThresholdSettings>("/settings/break-thresholds").then(setBreakThreshold);
+    api.get<AutoRefreshSettings>("/settings/auto-refresh").then(setAutoRefresh);
   }, []);
 
   async function saveDist() {
@@ -65,6 +76,11 @@ export default function SettingsPage() {
     if (!breakThreshold) return;
     await api.put("/settings/break-thresholds", breakThreshold);
     setSaved("Break threshold settings saved");
+  }
+  async function saveAutoRefresh() {
+    if (!autoRefresh) return;
+    await api.put("/settings/auto-refresh", autoRefresh);
+    setSaved("Auto refresh settings saved");
   }
 
   return (
@@ -272,6 +288,75 @@ export default function SettingsPage() {
                 />
               </div>
               <Button onClick={saveBreakThreshold} className="w-fit">
+                Save
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {autoRefresh && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Auto Refresh &amp; Realtime</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh.enabled}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, enabled: e.target.checked })}
+                />
+                Enabled
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh.realtimeEnabled}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, realtimeEnabled: e.target.checked })}
+                />
+                Use realtime WebSocket push (instant updates instead of waiting for the next poll)
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh.fallbackPollingEnabled}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, fallbackPollingEnabled: e.target.checked })}
+                />
+                Fall back to polling when the realtime connection is unavailable
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoRefresh.pauseWhileEditing}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, pauseWhileEditing: e.target.checked })}
+                />
+                Pause refreshing while a form or modal is open
+              </label>
+              <div>
+                <Label>Default polling interval (seconds)</Label>
+                <Input
+                  type="number"
+                  value={autoRefresh.defaultIntervalSeconds}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, defaultIntervalSeconds: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <Label>Minimum interval (seconds)</Label>
+                <Input
+                  type="number"
+                  value={autoRefresh.minIntervalSeconds}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, minIntervalSeconds: Number(e.target.value) })}
+                />
+              </div>
+              <div>
+                <Label>Maximum interval (seconds)</Label>
+                <Input
+                  type="number"
+                  value={autoRefresh.maxIntervalSeconds}
+                  onChange={(e) => setAutoRefresh({ ...autoRefresh, maxIntervalSeconds: Number(e.target.value) })}
+                />
+              </div>
+              <Button onClick={saveAutoRefresh} className="w-fit">
                 Save
               </Button>
             </CardContent>
