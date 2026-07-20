@@ -852,6 +852,55 @@
         "unreadable": "Unreadable",
         "irrelevant_ui": "Irrelevant"
       }
+    },
+    "drugMatches": {
+      "title": "Drug Matches",
+      "noRunYet": "Matching has not run yet for this prescription.",
+      "noLines": "No medication lines were found.",
+      "noCandidates": "No matching drugs were found in the DIC.",
+      "reprocessBtn": "Reprocess matching",
+      "reprocessing": "Reprocessing…",
+      "linesLabel": "line(s)",
+      "ocrConfidence": "OCR confidence",
+      "reviewRequired": "Needs review",
+      "selectedLabel": "Selected",
+      "unknownDrug": "Unknown drug",
+      "confirmed": "Confirmed",
+      "rejected": "Rejected",
+      "showDetails": "Show details",
+      "hideDetails": "Hide details",
+      "confirmBtn": "Confirm",
+      "rejectBtn": "Reject",
+      "selectManuallyBtn": "Select drug manually",
+      "selectManuallyTitle": "Select a drug",
+      "markNotMedicationBtn": "Not a medication",
+      "runStatus": {
+        "MATCHING_QUEUED": "Queued",
+        "MATCHING_PROCESSING": "Processing",
+        "MATCHING_COMPLETED": "Completed",
+        "MATCHING_REVIEW_REQUIRED": "Review required",
+        "MATCHING_PARTIALLY_RESOLVED": "Partially resolved",
+        "MATCHING_RESOLVED": "Resolved",
+        "MATCHING_FAILED": "Failed"
+      },
+      "lineStatus": {
+        "CANDIDATES_FOUND": "Candidates found",
+        "HIGH_CONFIDENCE": "High confidence",
+        "AMBIGUOUS": "Ambiguous",
+        "LOW_CONFIDENCE": "Low confidence",
+        "UNRESOLVED": "Unresolved",
+        "CONFIRMED": "Confirmed",
+        "REJECTED": "Rejected",
+        "MANUALLY_SELECTED": "Manually selected",
+        "NOT_A_MEDICATION": "Not a medication"
+      },
+      "confidenceLevel": {
+        "VERY_HIGH": "Very high",
+        "HIGH": "High",
+        "MEDIUM": "Medium",
+        "LOW": "Low",
+        "UNRESOLVED": "Unresolved"
+      }
     }
   },
   "dropzone": {

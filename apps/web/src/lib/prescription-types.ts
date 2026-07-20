@@ -247,3 +247,136 @@ export interface PrescriptionPreprocessingResponse {
   prescriptionId: string;
   pages: PrescriptionPreprocessingPage[];
 }
+
+// ── CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine ──────────
+// Distinct from the Sprint OCR-01 mock candidate shape above
+// (PrescriptionDrugCandidate.extractedDrugText etc. still exists on old
+// rows) — every field below is populated by the real matching engine.
+
+export type MatchConfidenceLevel = 'VERY_HIGH' | 'HIGH' | 'MEDIUM' | 'LOW' | 'UNRESOLVED';
+
+export type MedicationLineMatchingStatus =
+  | 'CANDIDATES_FOUND'
+  | 'HIGH_CONFIDENCE'
+  | 'AMBIGUOUS'
+  | 'LOW_CONFIDENCE'
+  | 'UNRESOLVED'
+  | 'CONFIRMED'
+  | 'REJECTED'
+  | 'MANUALLY_SELECTED'
+  | 'NOT_A_MEDICATION';
+
+export type DrugMatchRunStatus =
+  | 'MATCHING_QUEUED'
+  | 'MATCHING_PROCESSING'
+  | 'MATCHING_COMPLETED'
+  | 'MATCHING_REVIEW_REQUIRED'
+  | 'MATCHING_PARTIALLY_RESOLVED'
+  | 'MATCHING_RESOLVED'
+  | 'MATCHING_FAILED';
+
+export type MatchDecisionType =
+  | 'CANDIDATE_CONFIRMED'
+  | 'CANDIDATE_REJECTED'
+  | 'MANUAL_DRUG_SELECTED'
+  | 'NO_DRUG_FOUND'
+  | 'NON_MEDICATION_LINE'
+  | 'REQUIRES_CLARIFICATION';
+
+/** The exact subset DrugMatchReviewService's DRUG_SUMMARY_SELECT
+ *  returns for matchedDrug/selectedDrug — leaner than dic-types.ts's
+ *  full DrugSummary, so kept separate rather than reused. */
+export interface MatchedDrugSummary {
+  id: string;
+  materialNo: string;
+  nameEn: string;
+  nameAr: string | null;
+  priceWithTax: string | null;
+}
+
+export interface DrugMatchEvidenceEntry {
+  type: 'NAME' | 'INGREDIENT' | 'STRENGTH' | 'DOSAGE_FORM' | 'CONTEXT' | 'DATA_QUALITY';
+  sourceText: string | null;
+  matchedDICValue: string | null;
+  rawScore: number;
+  weightedScore: number;
+  explanation: string;
+}
+
+export interface DrugMatchConflictEntry {
+  code: string;
+  severity: 'INFO' | 'WARNING' | 'BLOCKING';
+  message: string;
+  penaltyApplied: number;
+}
+
+export interface PrescriptionDrugCandidateEntry {
+  id: string;
+  rank: number | null;
+  matchedDrugId: string | null;
+  matchedDrug: MatchedDrugSummary | null;
+  matchConfidence: number | null;
+  confidenceLevel: MatchConfidenceLevel | null;
+  candidateMargin: number | null;
+  nameScore: number | null;
+  ingredientScore: number | null;
+  strengthScore: number | null;
+  dosageFormScore: number | null;
+  contextScore: number | null;
+  dataQualityScore: number | null;
+  ocrReliabilityAdjustment: number | null;
+  conflictPenalty: number | null;
+  evidenceJson: DrugMatchEvidenceEntry[] | null;
+  conflictsJson: DrugMatchConflictEntry[] | null;
+  explanationText: string | null;
+  selected: boolean;
+  rejected: boolean;
+}
+
+export interface DrugMatchDecisionEntry {
+  id: string;
+  decisionType: MatchDecisionType;
+  decidedById: string;
+  decidedAt: string;
+  notes: string | null;
+  previousDrugId: string | null;
+}
+
+export interface PrescriptionMedicationLineEntry {
+  id: string;
+  lineIndex: number;
+  rawText: string;
+  normalizedText: string | null;
+  probableLineType: string;
+  detectedLanguage: string | null;
+  ocrConfidence: number | null;
+  extractionConfidence: number | null;
+  matchingStatus: MedicationLineMatchingStatus;
+  selectedDrugId: string | null;
+  selectedDrug: MatchedDrugSummary | null;
+  selectedCandidateId: string | null;
+  reviewRequired: boolean;
+  candidates: PrescriptionDrugCandidateEntry[];
+  decisions: DrugMatchDecisionEntry[];
+}
+
+export interface DrugMatchRunEntry {
+  id: string;
+  prescriptionId: string;
+  matchingEngineVersion: string;
+  status: DrugMatchRunStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+  lineCount: number;
+  matchedLineCount: number;
+  unresolvedLineCount: number;
+  failureCode: string | null;
+  failureReason: string | null;
+  createdAt: string;
+}
+
+export interface DrugMatchesResponse {
+  run: DrugMatchRunEntry;
+  lines: PrescriptionMedicationLineEntry[];
+}

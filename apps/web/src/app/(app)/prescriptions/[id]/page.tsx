@@ -22,6 +22,7 @@ import { Badge, Button, EmptyState, ErrorState, Select, Spinner } from '@/compon
 import { DropZone } from '@/components/DropZone';
 import { PageCropWorkspace } from './crop-workspace';
 import { OcrResultsPanel } from './ocr-results';
+import { DrugMatchReviewPanel } from './drug-match-review';
 
 /** CR-001 Sprint OCR-03 — mirrors the worker's own OCR-image fallback
  *  chain (prescription-ocr.worker.ts's OCR_IMAGE_PRIORITY) so the
@@ -230,6 +231,10 @@ export default function PrescriptionImagesPage({ params }: { params: Promise<{ i
           />
         );
       })}
+
+      {rx.status !== 'UPLOADED' && rx.pages.length > 0 && (
+        <DrugMatchReviewPanel prescriptionId={id} />
+      )}
     </div>
   );
 }

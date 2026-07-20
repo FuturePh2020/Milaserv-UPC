@@ -852,6 +852,55 @@
         "unreadable": "غير مقروء",
         "irrelevant_ui": "غير ذي صلة"
       }
+    },
+    "drugMatches": {
+      "title": "مطابقة الأدوية",
+      "noRunYet": "لم تتم مطابقة الأدوية لهذه الوصفة بعد.",
+      "noLines": "لم يتم العثور على أسطر دواء.",
+      "noCandidates": "لم يتم العثور على أدوية مطابقة في قاعدة بيانات الأدوية.",
+      "reprocessBtn": "إعادة المطابقة",
+      "reprocessing": "جارٍ إعادة المطابقة…",
+      "linesLabel": "سطر",
+      "ocrConfidence": "ثقة التعرف الضوئي",
+      "reviewRequired": "بحاجة لمراجعة",
+      "selectedLabel": "المختار",
+      "unknownDrug": "دواء غير معروف",
+      "confirmed": "مؤكد",
+      "rejected": "مرفوض",
+      "showDetails": "عرض التفاصيل",
+      "hideDetails": "إخفاء التفاصيل",
+      "confirmBtn": "تأكيد",
+      "rejectBtn": "رفض",
+      "selectManuallyBtn": "اختيار الدواء يدويًا",
+      "selectManuallyTitle": "اختيار دواء",
+      "markNotMedicationBtn": "ليس دواءً",
+      "runStatus": {
+        "MATCHING_QUEUED": "في الانتظار",
+        "MATCHING_PROCESSING": "جارٍ المطابقة",
+        "MATCHING_COMPLETED": "مكتملة",
+        "MATCHING_REVIEW_REQUIRED": "بحاجة لمراجعة",
+        "MATCHING_PARTIALLY_RESOLVED": "محلولة جزئيًا",
+        "MATCHING_RESOLVED": "محلولة",
+        "MATCHING_FAILED": "فشلت"
+      },
+      "lineStatus": {
+        "CANDIDATES_FOUND": "تم إيجاد مرشحين",
+        "HIGH_CONFIDENCE": "ثقة عالية",
+        "AMBIGUOUS": "غامض",
+        "LOW_CONFIDENCE": "ثقة منخفضة",
+        "UNRESOLVED": "غير محلول",
+        "CONFIRMED": "مؤكد",
+        "REJECTED": "مرفوض",
+        "MANUALLY_SELECTED": "اختيار يدوي",
+        "NOT_A_MEDICATION": "ليس دواءً"
+      },
+      "confidenceLevel": {
+        "VERY_HIGH": "عالية جدًا",
+        "HIGH": "عالية",
+        "MEDIUM": "متوسطة",
+        "LOW": "منخفضة",
+        "UNRESOLVED": "غير محلولة"
+      }
     }
   },
   "dropzone": {
