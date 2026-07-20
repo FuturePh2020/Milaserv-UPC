@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Put, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Put, Query, UseGuards } from "@nestjs/common";
 import { ApiTags, ApiBearerAuth } from "@nestjs/swagger";
 import { UserRole } from "@lcrm/shared";
 import { Roles } from "../common/decorators/roles.decorator";
@@ -63,6 +63,42 @@ export class SettingsController {
   async updateBreakThresholds(@Body() body: any, @CurrentUser() user: AuthenticatedUser) {
     const result = await this.settings.updateBreakThresholdSettings(body);
     await this.audit.log({ action: "DISTRIBUTION_RULE_UPDATE", userId: user.userId, entityType: "BreakThresholdSettings", metadata: body });
+    return result;
+  }
+
+  @Get("crm-workflow")
+  getCrmWorkflow() {
+    return this.settings.getCrmWorkflowSettings();
+  }
+
+  @Put("crm-workflow")
+  async updateCrmWorkflow(@Body() body: any, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.settings.updateCrmWorkflowSettings(body);
+    await this.audit.log({ action: "DISTRIBUTION_RULE_UPDATE", userId: user.userId, entityType: "CrmWorkflowSettings", metadata: body });
+    return result;
+  }
+
+  @Get("auto-refresh")
+  getAutoRefresh() {
+    return this.settings.getAutoRefreshSettings();
+  }
+
+  @Put("auto-refresh")
+  async updateAutoRefresh(@Body() body: any, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.settings.updateAutoRefreshSettings(body);
+    await this.audit.log({ action: "DISTRIBUTION_RULE_UPDATE", userId: user.userId, entityType: "AutoRefreshSettings", metadata: body });
+    return result;
+  }
+
+  @Get("reasons")
+  listReasons(@Query("category") category?: string) {
+    return this.settings.listConfigurableReasons(category);
+  }
+
+  @Put("reasons")
+  async upsertReason(@Body() body: any, @CurrentUser() user: AuthenticatedUser) {
+    const result = await this.settings.upsertConfigurableReason(body);
+    await this.audit.log({ action: "DISTRIBUTION_RULE_UPDATE", userId: user.userId, entityType: "ConfigurableReason", metadata: body });
     return result;
   }
 }

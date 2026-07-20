@@ -25,6 +25,15 @@ import { SettingsModule } from "./settings/settings.module";
 import { ReportsModule } from "./reports/reports.module";
 import { DashboardModule } from "./dashboard/dashboard.module";
 
+import { TimelineModule } from "./timeline/timeline.module";
+import { PermissionsModule } from "./permissions/permissions.module";
+import { CustomersModule } from "./customers/customers.module";
+import { CallOutcomesModule } from "./call-outcomes/call-outcomes.module";
+import { OrdersModule } from "./orders/orders.module";
+import { RetentionModule } from "./retention/retention.module";
+import { ProductsModule } from "./products/products.module";
+import { TeamsModule } from "./teams/teams.module";
+
 import { AllExceptionsFilter } from "./common/filters/http-exception.filter";
 import { CsrfGuard } from "./common/guards/csrf.guard";
 
@@ -51,6 +60,14 @@ import { CsrfGuard } from "./common/guards/csrf.guard";
     VoipModule,
     ReportsModule,
     DashboardModule,
+    TimelineModule,
+    PermissionsModule,
+    CustomersModule,
+    RetentionModule,
+    OrdersModule,
+    ProductsModule,
+    CallOutcomesModule,
+    TeamsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

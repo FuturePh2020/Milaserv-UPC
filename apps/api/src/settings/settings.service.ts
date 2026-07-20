@@ -87,4 +87,69 @@ export class SettingsService {
       create: { id: DEFAULT_ID, ...(data as any) },
     });
   }
+
+  async getCrmWorkflowSettings() {
+    return this.prisma.crmWorkflowSettings.upsert({
+      where: { id: DEFAULT_ID },
+      update: {},
+      create: { id: DEFAULT_ID },
+    });
+  }
+
+  async updateCrmWorkflowSettings(data: Partial<{
+    orderNumberFormat: string;
+    mandatoryNotesOutcomes: string[];
+    rescheduleMorningStart: string;
+    rescheduleMorningEnd: string;
+    rescheduleEveningStart: string;
+    rescheduleEveningEnd: string;
+  }>) {
+    const { mandatoryNotesOutcomes, ...rest } = data;
+    return this.prisma.crmWorkflowSettings.upsert({
+      where: { id: DEFAULT_ID },
+      update: { ...rest, mandatoryNotesOutcomes: mandatoryNotesOutcomes as any },
+      create: { id: DEFAULT_ID, ...rest, mandatoryNotesOutcomes: (mandatoryNotesOutcomes ?? []) as any },
+    });
+  }
+
+  async getAutoRefreshSettings() {
+    return this.prisma.autoRefreshSettings.upsert({
+      where: { id: DEFAULT_ID },
+      update: {},
+      create: { id: DEFAULT_ID },
+    });
+  }
+
+  async updateAutoRefreshSettings(data: Partial<{
+    enabled: boolean;
+    defaultIntervalSeconds: number;
+    minIntervalSeconds: number;
+    maxIntervalSeconds: number;
+    pauseWhileEditing: boolean;
+    realtimeEnabled: boolean;
+    fallbackPollingEnabled: boolean;
+    pageIntervals: Record<string, number>;
+  }>) {
+    const { pageIntervals, ...rest } = data;
+    return this.prisma.autoRefreshSettings.upsert({
+      where: { id: DEFAULT_ID },
+      update: { ...rest, pageIntervals: pageIntervals as any },
+      create: { id: DEFAULT_ID, ...rest, pageIntervals: (pageIntervals ?? {}) as any },
+    });
+  }
+
+  async listConfigurableReasons(category?: string) {
+    return this.prisma.configurableReason.findMany({
+      where: { category },
+      orderBy: [{ category: "asc" }, { displayOrder: "asc" }],
+    });
+  }
+
+  async upsertConfigurableReason(data: { category: string; code: string; label: string; isActive?: boolean; displayOrder?: number }) {
+    return this.prisma.configurableReason.upsert({
+      where: { category_code: { category: data.category, code: data.code } },
+      update: { label: data.label, isActive: data.isActive, displayOrder: data.displayOrder },
+      create: data,
+    });
+  }
 }
