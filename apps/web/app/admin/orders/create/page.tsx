@@ -154,7 +154,22 @@ export default function CreateOrderPage() {
             </div>
             <div>
               <Label>Order Source</Label>
-              <Select value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}>
+              <Select
+                value={form.source}
+                onChange={(e) =>
+                  // Changing source must drop leadId/retentionCustomerId/partnerId
+                  // from whichever source was previously picked — otherwise a
+                  // stale link from an earlier selection is still submitted
+                  // alongside the new source.
+                  setForm({
+                    ...form,
+                    source: e.target.value,
+                    leadId: "",
+                    retentionCustomerId: "",
+                    partnerId: "",
+                  })
+                }
+              >
                 {SOURCES.map((s) => (
                   <option key={s} value={s}>
                     {OrderSourceLabels[s as keyof typeof OrderSourceLabels]}

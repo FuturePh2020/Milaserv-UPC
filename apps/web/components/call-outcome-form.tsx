@@ -36,6 +36,21 @@ export function CallOutcomeForm({ leadId, onSubmitted }: Props) {
     setForm((f) => ({ ...f, [field]: value }));
   }
 
+  // Switching either dropdown must drop fields the abandoned branch left
+  // behind — otherwise e.g. picking WRONG_TIME, filling preferredCallbackDate,
+  // then switching to ORDER_CREATED still submits that stale date alongside
+  // the new outcome, since every field in `form` is sent unconditionally.
+  function changeCallResult(value: "" | "NO_ANSWER" | "ANSWERED") {
+    setCallResult(value);
+    setAnsweredOutcome("");
+    setForm({});
+  }
+
+  function changeAnsweredOutcome(value: string) {
+    setAnsweredOutcome(value);
+    setForm({});
+  }
+
   async function submit() {
     setError(null);
     if (!callResult) {
@@ -86,7 +101,7 @@ export function CallOutcomeForm({ leadId, onSubmitted }: Props) {
     <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4">
       <div>
         <Label>Call Result</Label>
-        <Select aria-label="Call Result" value={callResult} onChange={(e) => setCallResult(e.target.value as any)}>
+        <Select aria-label="Call Result" value={callResult} onChange={(e) => changeCallResult(e.target.value as any)}>
           <option value="">Select call result</option>
           <option value="NO_ANSWER">No Answer</option>
           <option value="ANSWERED">Answered</option>
@@ -105,7 +120,7 @@ export function CallOutcomeForm({ leadId, onSubmitted }: Props) {
       {callResult === "ANSWERED" && (
         <div>
           <Label>Outcome</Label>
-          <Select aria-label="Outcome" value={answeredOutcome} onChange={(e) => setAnsweredOutcome(e.target.value)}>
+          <Select aria-label="Outcome" value={answeredOutcome} onChange={(e) => changeAnsweredOutcome(e.target.value)}>
             <option value="">Select outcome</option>
             {ANSWERED_OUTCOMES.map((o) => (
               <option key={o.value} value={o.value}>

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { AdminShell } from "@/components/layout/admin-shell";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardHeader, CardTitle, CardContent } from "@lcrm/ui";
 import { api } from "@/lib/api-client";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface AdminSummary {
   totalLeads: number;
@@ -33,7 +34,7 @@ export default function AdminDashboardPage() {
   const [byPartner, setByPartner] = useState<{ partner: string; count: number }[]>([]);
   const [byStatus, setByStatus] = useState<{ status: string; count: number }[]>([]);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     api.get<AdminSummary>("/dashboard/admin/summary").then(setSummary).catch(() => undefined);
     api
       .get<{ partner: string; count: number }[]>("/dashboard/admin/charts/leads-by-partner")
@@ -44,6 +45,16 @@ export default function AdminDashboardPage() {
       .then(setByStatus)
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // No dedicated realtime channel maps to this page's aggregate stats yet
+  // (see TIMELINE_ENTITY_CHANNELS in @lcrm/shared) — this falls back to
+  // plain polling, which is still strictly better than the "Live overview"
+  // subtitle promising updates that never came.
+  useAutoRefresh("admin-dashboard", load);
 
   return (
     <AdminShell>

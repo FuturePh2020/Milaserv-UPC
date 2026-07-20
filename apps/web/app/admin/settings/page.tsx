@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { AdminShell } from "@/components/layout/admin-shell";
 import { Card, CardHeader, CardTitle, CardContent, Label, Input, Select, Button } from "@lcrm/ui";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 
 interface DistributionSettings {
   strategy: string;
@@ -48,6 +48,18 @@ export default function SettingsPage() {
   const [breakThreshold, setBreakThreshold] = useState<BreakThresholdSettings | null>(null);
   const [autoRefresh, setAutoRefresh] = useState<AutoRefreshSettings | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function saveSetting(action: () => Promise<unknown>, successMessage: string) {
+    setSaveError(null);
+    try {
+      await action();
+      setSaved(successMessage);
+    } catch (err) {
+      setSaved(null);
+      setSaveError(err instanceof ApiError ? err.message : "Failed to save — please try again.");
+    }
+  }
 
   useEffect(() => {
     api.get<DistributionSettings>("/settings/distribution").then(setDist);
@@ -59,34 +71,30 @@ export default function SettingsPage() {
 
   async function saveDist() {
     if (!dist) return;
-    await api.put("/settings/distribution", dist);
-    setSaved("Distribution settings saved");
+    await saveSetting(() => api.put("/settings/distribution", dist), "Distribution settings saved");
   }
   async function saveSecurity() {
     if (!security) return;
-    await api.put("/settings/security", security);
-    setSaved("Security settings saved");
+    await saveSetting(() => api.put("/settings/security", security), "Security settings saved");
   }
   async function saveInactivity() {
     if (!inactivity) return;
-    await api.put("/settings/inactivity", inactivity);
-    setSaved("Inactivity settings saved");
+    await saveSetting(() => api.put("/settings/inactivity", inactivity), "Inactivity settings saved");
   }
   async function saveBreakThreshold() {
     if (!breakThreshold) return;
-    await api.put("/settings/break-thresholds", breakThreshold);
-    setSaved("Break threshold settings saved");
+    await saveSetting(() => api.put("/settings/break-thresholds", breakThreshold), "Break threshold settings saved");
   }
   async function saveAutoRefresh() {
     if (!autoRefresh) return;
-    await api.put("/settings/auto-refresh", autoRefresh);
-    setSaved("Auto refresh settings saved");
+    await saveSetting(() => api.put("/settings/auto-refresh", autoRefresh), "Auto refresh settings saved");
   }
 
   return (
     <AdminShell>
       <h1 className="text-xl font-semibold text-slate-900">Settings</h1>
       {saved && <p className="mt-2 text-sm text-emerald-600">{saved}</p>}
+      {saveError && <p className="mt-2 text-sm text-red-600">{saveError}</p>}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
         {dist && (

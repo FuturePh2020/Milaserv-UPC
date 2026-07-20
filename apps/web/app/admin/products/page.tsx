@@ -18,6 +18,7 @@ import {
   TableCell,
 } from "@lcrm/ui";
 import { api, ApiError, downloadFile } from "@/lib/api-client";
+import { useAutoRefresh } from "@/lib/use-auto-refresh";
 
 interface ProductRow {
   id: string;
@@ -47,6 +48,8 @@ export default function ProductsPage() {
   useEffect(() => {
     load().catch(() => undefined);
   }, [search]);
+
+  useAutoRefresh("products", load);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();

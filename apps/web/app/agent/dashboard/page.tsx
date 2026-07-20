@@ -76,7 +76,7 @@ export default function AgentDashboardPage() {
     load().catch(() => undefined);
   }, [load]);
 
-  useAutoRefresh("agent-dashboard", load);
+  useAutoRefresh("agent-dashboard", load, callStarted);
 
   async function startSession() {
     setMessage(null);

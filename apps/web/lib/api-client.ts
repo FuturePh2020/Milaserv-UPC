@@ -67,16 +67,28 @@ export const api = {
   postForm: <T>(path: string, formData: FormData) => request<T>(path, { method: "POST", body: formData }),
 };
 
-export function downloadFile(path: string, filename: string) {
+export async function downloadFile(path: string, filename: string): Promise<void> {
   const csrf = getCookie("csrf_token");
-  fetch(`/api${path}`, { credentials: "same-origin", headers: csrf ? { "x-csrf-token": csrf } : undefined })
-    .then((res) => res.blob())
-    .then((blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+  const res = await fetch(`/api${path}`, {
+    credentials: "same-origin",
+    headers: csrf ? { "x-csrf-token": csrf } : undefined,
+  });
+  if (!res.ok) {
+    let message = `Export failed with status ${res.status}`;
+    try {
+      const body = await res.json();
+      message = body?.message || message;
+    } catch {
+      // response wasn't JSON — keep the generic status message
+    }
+    window.alert(message);
+    throw new ApiError(res.status, { message });
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
 }
