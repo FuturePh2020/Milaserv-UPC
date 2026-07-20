@@ -1,0 +1,23 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+
+# CR-001 Sprint OCR-02 — Image Processing & Quality Engine
+pillow==12.3.0
+pymupdf==1.28.0
+httpx==0.28.1
+
+# CR-001 Sprint OCR-03 — Real Text Detection & Recognition.
+# opencv-contrib-python (not -headless) and numpy<2.4 are hard requirements
+# of paddlex[ocr-core] (paddleocr's own dependency) — the OCR-02 pipeline's
+# cv2/numpy calls are unaffected (nothing it uses is contrib-exclusive or
+# numpy-2.4-specific), reverified by the full existing preprocessing suite
+# after this change.
+numpy==2.3.5
+opencv-contrib-python==4.10.0.84
+paddlepaddle==3.0.0
+paddleocr==3.7.0
+paddlex==3.7.2
+
+# test-only
+pytest==8.3.4

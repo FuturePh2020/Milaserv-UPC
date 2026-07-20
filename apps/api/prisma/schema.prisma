@@ -1,0 +1,2987 @@
+// Milaserv360 — Phase 1 (Core Platform) schema.
+// Blueprint references: §6 roles, §6.1 data scopes, §19 permissions & security,
+// §8 shared engines (Audit, Timeline, Notification, Configuration).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// Blueprint §6.1 — PARTNER and BRANCH are modeled now, activated when their
+/// master-data modules exist (Phase 2+).
+enum DataScope {
+  MY_RECORDS
+  MY_TEAM
+  DEPARTMENT
+  MULTIPLE_TEAMS
+  PARTNER
+  BRANCH
+  ALL_DATA
+}
+
+enum TeamMemberRole {
+  MEMBER
+  LEADER
+  MANAGER
+}
+
+enum SettingScopeLevel {
+  SYSTEM
+  DEPARTMENT
+  TEAM
+}
+
+enum SettingValueType {
+  STRING
+  NUMBER
+  BOOLEAN
+  JSON
+}
+
+// ── Identity & organization ─────────────────────────────────────────
+
+model User {
+  id                  String      @id @default(cuid())
+  email               String      @unique
+  passwordHash        String
+  nameAr              String
+  nameEn              String
+  phone               String?
+  status              UserStatus  @default(ACTIVE)
+  departmentId        String?
+  department          Department? @relation(fields: [departmentId], references: [id])
+  lastSignInAt        DateTime?
+  failedLoginAttempts Int         @default(0)
+  lockedUntil         DateTime?
+  mustChangePassword  Boolean     @default(false)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  deletedAt           DateTime?
+
+  roles               UserRole[]
+  teams               TeamMember[]
+  sessions            Session[]
+  notifications       Notification[]
+  ticketsCreated      Ticket[]           @relation("ticketCreatedBy")
+  ticketsResponsible  Ticket[]           @relation("ticketResponsible")
+  ticketOwnerships    TicketOwnership[]
+  ticketUpdates       TicketUpdate[]
+  kbContents          KbContent[]        @relation("kbOwner")
+  coursesAdministered Course[]           @relation("courseAdmin")
+  courseAssignments   CourseAssignment[] @relation("courseAssignee")
+  lessonProgress      LessonProgress[]   @relation("lessonProgress")
+  workSessions        WorkSession[]      @relation("workSessions")
+  leadBatches         LeadBatch[]        @relation("leadBatches")
+  assignedLeads       Lead[]             @relation("assignedLeads")
+  leadCalls           LeadCall[]         @relation("leadCalls")
+  telesalesOrders     TelesalesOrder[]   @relation("telesalesOrders")
+
+  @@index([departmentId])
+  @@index([status, deletedAt])
+}
+
+model Department {
+  id        String     @id @default(cuid())
+  code      String     @unique
+  nameAr    String
+  nameEn    String
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  deletedAt DateTime?
+
+  users User[]
+  teams Team[]
+}
+
+model Team {
+  id           String     @id @default(cuid())
+  nameAr       String
+  nameEn       String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  members           TeamMember[]
+  tickets           TicketTeam[]
+  courseAssignments CourseAssignment[]
+  workSessions      WorkSession[]
+
+  @@index([departmentId])
+}
+
+model TeamMember {
+  id       String         @id @default(cuid())
+  teamId   String
+  team     Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     TeamMemberRole @default(MEMBER)
+  joinedAt DateTime       @default(now())
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+// ── Roles & permissions (blueprint §19) ─────────────────────────────
+
+model Role {
+  id        String    @id @default(cuid())
+  /// Stable machine key (e.g. SUPER_ADMIN); system roles seeded from contracts.
+  key       String    @unique
+  nameAr    String
+  nameEn    String
+  /// System roles (blueprint §6) cannot be deleted.
+  isSystem  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model Permission {
+  id      String @id @default(cuid())
+  /// Stable key from @milaserv/contracts (e.g. "user.create"). Never renamed.
+  key     String @unique
+  module  String
+  labelAr String
+  labelEn String
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  id              String     @id @default(cuid())
+  roleId          String
+  role            Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId    String
+  permission      Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  /// Blueprint §19.1: permission = action + data scope.
+  dataScope       DataScope  @default(MY_RECORDS)
+  /// Explicit team ids when dataScope = MULTIPLE_TEAMS.
+  scopeTeamIds    String[]   @default([])
+  /// Reserved for Phase 2+ (blueprint §19.1) — inactive until Branch/Partner masters exist.
+  scopeBranchIds  String[]   @default([])
+  scopePartnerIds String[]   @default([])
+
+  @@unique([roleId, permissionId])
+}
+
+model UserRole {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+// ── Sessions ─────────────────────────────────────────────────────────
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String
+  ip               String?
+  userAgent        String?
+  lastActivityAt   DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime  @default(now())
+
+  @@index([userId, revokedAt])
+}
+
+// ── Configuration Engine (ADR-008) ──────────────────────────────────
+
+model Setting {
+  id         String            @id @default(cuid())
+  key        String
+  category   String
+  valueType  SettingValueType
+  /// JSON-encoded value; interpreted per valueType.
+  value      Json
+  scopeLevel SettingScopeLevel @default(SYSTEM)
+  /// Department/Team id when scopeLevel is not SYSTEM; "" for SYSTEM scope
+  /// (non-nullable so the composite unique constraint actually enforces).
+  scopeId    String            @default("")
+  labelAr    String
+  labelEn    String
+  updatedAt  DateTime          @updatedAt
+  createdAt  DateTime          @default(now())
+
+  @@unique([key, scopeLevel, scopeId])
+  @@index([category])
+}
+
+// ── Audit Engine (blueprint §8 — append-only, immutable) ────────────
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  /// Nullable: system/seed actions have no user actor.
+  actorId    String?
+  /// Snapshot — remains meaningful even if the user is later renamed/removed.
+  actorEmail String?
+  action     String
+  entityType String
+  entityId   String?
+  before     Json?
+  after      Json?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId, createdAt])
+  @@index([createdAt])
+}
+
+// ── Timeline Engine (blueprint §8) ──────────────────────────────────
+
+model TimelineEvent {
+  id         String   @id @default(cuid())
+  entityType String
+  entityId   String
+  eventType  String
+  actorId    String?
+  payload    Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId, createdAt])
+}
+
+// ── Number Generator (ticketing spec §2) ────────────────────────────
+
+model NumberSequence {
+  key       String
+  year      Int
+  lastValue Int    @default(0)
+
+  @@id([key, year])
+}
+
+// ── Attachment Engine foundation (blueprint §8, ticketing spec §2) ──
+
+model Attachment {
+  id           String    @id @default(cuid())
+  entityType   String
+  entityId     String
+  fileName     String
+  mimeType     String
+  sizeBytes    Int
+  storageKey   String
+  uploadedById String
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([entityType, entityId])
+}
+
+// ── Minimal Branch Directory (ticketing spec §2; extended by Branch Center §16 later) ──
+
+model Branch {
+  id               String     @id @default(cuid())
+  code             String     @unique
+  nameAr           String
+  nameEn           String
+  city             String?
+  phone            String?
+  supervisorName   String?
+  supervisorEmail  String?
+  supervisorPhone  String?
+  areaManagerName  String?
+  areaManagerEmail String?
+  status           UserStatus @default(ACTIVE)
+
+  // ── §16.1 Branch Master extension (branch-center spec G1) ──
+  storeCode           String?
+  addressAr           String?
+  addressEn           String?
+  district            String?
+  region              String?
+  postalCode          String?
+  latitude            Float?
+  longitude           Float?
+  mapUrl              String?
+  phone2              String?
+  phone3              String?
+  branchTypeKey       String?
+  branchType          BranchType? @relation(fields: [branchTypeKey], references: [key])
+  deliveryCovered     Boolean?
+  /// { "from": "HH:MM", "to": "HH:MM" } — absent = always open (spec G6).
+  workingHours        Json?
+  dutyPharmacist      String?
+  districtManagerName String?
+
+  // ── Phase 6 — Location-Aware Branch Inventory & Fulfillment: structured
+  // hierarchy pointers, additive alongside the free-text city/district/region
+  // above (never removed — the backfill only ever fills these when confident).
+  locationCityId      String?
+  locationCity        City?                     @relation(fields: [locationCityId], references: [id])
+  locationDistrictId  String?
+  locationDistrict    District?                 @relation(fields: [locationDistrictId], references: [id])
+  locationMatchStatus BranchLocationMatchStatus @default(UNRESOLVED)
+
+  // ── Phase 6 §6/§19 — operational-eligibility flags the fulfillment
+  // engine's Stage 3 filter reads. Nullable/defaulted, additive.
+  pickupEnabled                  Boolean? @default(true)
+  prescriptionFulfillmentEnabled Boolean? @default(false)
+  temporarilyClosed              Boolean  @default(false)
+  temporarilyClosedReason        String?
+  maximumDailyOrders             Int?
+  preparationCapacityPerHour     Int?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  tickets                 Ticket[]
+  weeklyHours             BranchWorkingHours[]
+  specialHours            BranchSpecialHours[]
+  serviceAreas            BranchServiceArea[]
+  capabilityAssignments   BranchCapabilityAssignment[]
+  branchInventories       BranchInventory[]
+  fulfillmentPlanBranches FulfillmentPlanBranch[]
+  inventoryReservations   InventoryReservation[]
+
+  @@index([region, city])
+  @@index([branchTypeKey])
+  @@index([locationCityId])
+  @@index([locationDistrictId])
+}
+
+/// §16.2 — branch type catalog, seeded verbatim (editable).
+model BranchType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  branches Branch[]
+}
+
+// ── Phase 6 — Location Hierarchy (Location-Aware Branch Inventory &
+// Fulfillment Engine). Single-country deployment (Saudi Arabia) — no
+// Country model: over-building a multi-country table with one seeded
+// row is not justified by the actual requirement. Region is the top of
+// the hierarchy (KSA's administrative regions). ──
+
+model Region {
+  id     String  @id @default(cuid())
+  code   String  @unique
+  nameEn String
+  nameAr String
+  active Boolean @default(true)
+
+  cities City[]
+
+  @@index([active])
+}
+
+model City {
+  id       String @id @default(cuid())
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id])
+
+  code             String  @unique
+  nameEn           String
+  nameAr           String
+  /// English normalization (normalizeEnglish) for alias/dedupe matching.
+  normalizedNameEn String
+  /// Arabic normalization (normalizeArabic) for alias/dedupe matching.
+  normalizedNameAr String
+  latitude         Float?
+  longitude        Float?
+  timezone         String?
+  active           Boolean @default(true)
+
+  districts       District[]
+  branches        Branch[]
+  serviceAreas    BranchServiceArea[]
+  searchLocations SearchLocation[]
+
+  @@index([regionId])
+  @@index([normalizedNameEn])
+  @@index([normalizedNameAr])
+  @@index([active])
+}
+
+model District {
+  id     String @id @default(cuid())
+  cityId String
+  city   City   @relation(fields: [cityId], references: [id])
+
+  code             String  @unique
+  nameEn           String
+  nameAr           String
+  normalizedNameEn String
+  normalizedNameAr String
+  latitude         Float?
+  longitude        Float?
+  active           Boolean @default(true)
+
+  branches        Branch[]
+  serviceAreas    BranchServiceArea[]
+  searchLocations SearchLocation[]
+
+  @@index([cityId])
+  @@index([normalizedNameEn])
+  @@index([normalizedNameAr])
+  @@index([active])
+}
+
+enum LocationAliasEntityType {
+  CITY
+  DISTRICT
+}
+
+/// Arabic/English spelling variants (transliteration, spacing, common
+/// abbreviations) for a City or District — polymorphic on
+/// (entityType, entityId), same shape as the spec's own design. Lighter
+/// governance than DrugAlias (no propose/approve workflow): this is
+/// operational geography metadata, not a patient-safety surface, so
+/// location.manage alone is sufficient to add one.
+model LocationAlias {
+  id              String                  @id @default(cuid())
+  entityType      LocationAliasEntityType
+  entityId        String
+  alias           String
+  normalizedAlias String
+  language        String
+  active          Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+
+  @@unique([entityType, entityId, normalizedAlias, language])
+  @@index([normalizedAlias])
+  @@index([entityType, entityId])
+}
+
+/// How confidently a Branch's free-text city/district was matched onto
+/// the structured hierarchy above. NEEDS_REVIEW is never auto-cleared —
+/// only an explicit reference-data edit moves it to MANUALLY_CONFIRMED.
+enum BranchLocationMatchStatus {
+  UNRESOLVED
+  AUTO_MATCHED
+  NEEDS_REVIEW
+  MANUALLY_CONFIRMED
+}
+
+// ── Phase 6 §7/§8/§10 — Branch operational hours, service areas, and
+// capabilities. Additive to Branch; the legacy Branch.workingHours JSON
+// field is untouched — these are richer, optional structured layers on
+// top of it that the fulfillment engine's Stage 3 (operational
+// eligibility) reads. ──
+
+model BranchWorkingHours {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  /// 0=Sunday .. 6=Saturday (matches JS Date#getDay()).
+  dayOfWeek           Int
+  opensAt             String?
+  closesAt            String?
+  secondShiftOpensAt  String?
+  secondShiftClosesAt String?
+  isClosed            Boolean   @default(false)
+  effectiveFrom       DateTime?
+  effectiveTo         DateTime?
+  active              Boolean   @default(true)
+
+  @@index([branchId, dayOfWeek])
+}
+
+/// One-off overrides — public holidays, Ramadan hours, emergency closures.
+model BranchSpecialHours {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  date     DateTime
+  opensAt  String?
+  closesAt String?
+  isClosed Boolean  @default(false)
+  reason   String?
+  active   Boolean  @default(true)
+
+  @@unique([branchId, date])
+  @@index([branchId])
+}
+
+enum ServiceAreaType {
+  CITY
+  DISTRICT
+  RADIUS
+  POLYGON
+  POSTAL_CODE
+  MANUAL_ZONE
+}
+
+/// A branch may have several service areas; serviceability is never
+/// distance-only — a physically close branch outside its own service
+/// area must still be excluded (Phase 6 §8).
+model BranchServiceArea {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  serviceAreaType ServiceAreaType
+  cityId          String?
+  city            City?           @relation(fields: [cityId], references: [id])
+  districtId      String?
+  district        District?       @relation(fields: [districtId], references: [id])
+  radiusKm        Float?
+  centerLatitude  Float?
+  centerLongitude Float?
+  /// Inert until PostGIS lands (Step 1 decision: earthdistance/cube now,
+  /// polygon support deferred) — stored so POLYGON rows aren't lost.
+  polygonGeoJson  Json?
+
+  priority                  Int       @default(0)
+  deliveryEnabled           Boolean   @default(true)
+  pickupEnabled             Boolean   @default(true)
+  minimumOrderValue         Float?
+  maximumDeliveryDistanceKm Float?
+  estimatedDeliveryMinutes  Int?
+  effectiveFrom             DateTime?
+  effectiveTo               DateTime?
+  active                    Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  @@index([branchId])
+  @@index([cityId])
+  @@index([districtId])
+  @@index([serviceAreaType])
+}
+
+/// Controlled capability catalog (PRESCRIPTION_FULFILLMENT,
+/// COLD_CHAIN, …) — the fulfillment engine excludes a branch that
+/// cannot legally/operationally handle a required item.
+model BranchCapability {
+  id     String  @id @default(cuid())
+  code   String  @unique
+  nameEn String
+  nameAr String
+  active Boolean @default(true)
+
+  assignments BranchCapabilityAssignment[]
+}
+
+model BranchCapabilityAssignment {
+  id           String           @id @default(cuid())
+  branchId     String
+  branch       Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  capabilityId String
+  capability   BranchCapability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  active        Boolean   @default(true)
+
+  @@unique([branchId, capabilityId])
+  @@index([branchId])
+  @@index([capabilityId])
+}
+
+// ── Phase 6 §11/§12 — Branch-level inventory snapshot. Additive; the
+// legacy Drug.availability {city: qty} Json field is untouched and not
+// consumed here — this table is the sole source of truth for the
+// fulfillment engine's stock checks. ──
+
+enum InventoryStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+  BLOCKED
+  UNKNOWN
+  STALE
+  IN_TRANSIT
+  DISCONTINUED
+}
+
+/// One row per (branch, drug). `availableQuantity` — never
+/// `onHandQuantity` alone — is what fulfillment decisions read;
+/// blocked/damaged/reserved stock is never counted as available
+/// (Phase 6 §11).
+model BranchInventory {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  drugId   String
+  drug     Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+
+  /// Denormalized copy of Drug.materialNo — sync writes/reads by SAP
+  /// material number without a join back to Drug.
+  sapMaterialNumber String
+
+  onHandQuantity          Float?
+  availableQuantity       Float?
+  reservedQuantity        Float?
+  blockedQuantity         Float?
+  damagedQuantity         Float?
+  inTransitQuantity       Float?
+  safetyStockQuantity     Float?
+  expectedRestockQuantity Float?
+  expectedRestockAt       DateTime?
+  batchCount              Int?
+  earliestExpiryDate      DateTime?
+
+  inventoryStatus InventoryStatus @default(UNKNOWN)
+  /// Free text identifying which InventoryProvider produced this row
+  /// (e.g. "mock", "sap") — mirrors Drug.sourceSystem's convention.
+  sourceSystem    String?
+  /// When the source system says this snapshot was true — freshness
+  /// classification (LIVE/FRESH/ACCEPTABLE/STALE) is computed from this
+  /// at query time, never persisted (a stored freshness label would
+  /// itself go stale the instant it's written).
+  sourceTimestamp DateTime?
+  receivedAt      DateTime        @default(now())
+  active          Boolean         @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([branchId, drugId])
+  @@index([branchId])
+  @@index([drugId])
+  @@index([sapMaterialNumber])
+  @@index([inventoryStatus])
+}
+
+// ── Phase 6 §16-§27 — Fulfillment Engine. Only consumes pharmacist-
+// confirmed medication lines (matchingStatus CONFIRMED/MANUALLY_SELECTED
+// with a non-null selectedDrugId); never touches raw/unconfirmed
+// candidates. No Customer or Partner master exists in this platform yet
+// (Step 1 research finding — DataScope.PARTNER is reserved but
+// inactive) so FulfillmentRequest deliberately carries no customerId/
+// partnerId fields — the linked Prescription already carries its own
+// optional customerId. City/districtId are read via searchLocation's
+// own relation, not duplicated onto FulfillmentRequest. ──
+
+enum SearchLocationSourceType {
+  MANUAL_CITY
+  MANUAL_DISTRICT
+  FREE_TEXT_ADDRESS
+  MAP_PIN
+  DEVICE_GEOLOCATION
+  SAVED_ADDRESS
+  PARTNER_API
+  IMPORTED
+  UNKNOWN
+}
+
+/// A normalized, provenance-tracked customer/search location — never
+/// silently trusted when confidence is low (Phase 6 §4).
+model SearchLocation {
+  id         String    @id @default(cuid())
+  cityId     String?
+  city       City?     @relation(fields: [cityId], references: [id])
+  districtId String?
+  district   District? @relation(fields: [districtId], references: [id])
+  latitude   Float?
+  longitude  Float?
+
+  addressText           String?
+  normalizedAddressText String?
+  postalCode            String?
+  sourceType            SearchLocationSourceType
+  geocodingStatus       String?
+  geocodingConfidence   Float?
+  userConfirmed         Boolean                  @default(false)
+  createdById           String?
+  createdAt             DateTime                 @default(now())
+
+  fulfillmentRequests FulfillmentRequest[]
+
+  @@index([cityId])
+  @@index([districtId])
+}
+
+enum FulfillmentMode {
+  DELIVERY
+  PICKUP
+  EITHER
+  INTERNAL_TRANSFER
+  UNKNOWN
+}
+
+enum FulfillmentRequestStatus {
+  DRAFT
+  LOCATION_REQUIRED
+  SEARCH_QUEUED
+  SEARCHING
+  OPTIONS_FOUND
+  PARTIAL_OPTIONS_FOUND
+  NO_OPTIONS_FOUND
+  REVIEW_REQUIRED
+  PLAN_SELECTED
+  EXPIRED
+  FAILED
+}
+
+model FulfillmentRequest {
+  id                           String                   @id @default(cuid())
+  prescriptionId               String
+  prescription                 Prescription             @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  searchLocationId             String?
+  searchLocation               SearchLocation?          @relation(fields: [searchLocationId], references: [id])
+  requestedFulfillmentMode     FulfillmentMode          @default(UNKNOWN)
+  requestedDeliveryWindowStart DateTime?
+  requestedDeliveryWindowEnd   DateTime?
+  status                       FulfillmentRequestStatus @default(DRAFT)
+  initiatedById                String?
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+
+  items FulfillmentRequestItem[]
+  plans FulfillmentPlan[]
+
+  @@index([prescriptionId])
+  @@index([status])
+}
+
+/// Only pharmacist-confirmed drug matches may be included (Phase 6 §17)
+/// — never an unconfirmed OCR candidate.
+model FulfillmentRequestItem {
+  id                   String                     @id @default(cuid())
+  fulfillmentRequestId String
+  fulfillmentRequest   FulfillmentRequest         @relation(fields: [fulfillmentRequestId], references: [id], onDelete: Cascade)
+  medicationLineId     String
+  medicationLine       PrescriptionMedicationLine @relation(fields: [medicationLineId], references: [id])
+  drugId               String
+  drug                 Drug                       @relation(fields: [drugId], references: [id])
+
+  requiredQuantity        Float?
+  quantityUnit            String?
+  quantityConfirmed       Boolean @default(false)
+  specialHandlingRequired Boolean @default(false)
+  coldChainRequired       Boolean @default(false)
+  controlledDrug          Boolean @default(false)
+  substitutionAllowed     Boolean @default(false)
+  active                  Boolean @default(true)
+
+  planItems FulfillmentPlanItem[]
+
+  @@index([fulfillmentRequestId])
+  @@index([medicationLineId])
+  @@index([drugId])
+}
+
+enum FulfillmentPlanType {
+  SINGLE_BRANCH
+  SPLIT_BRANCH
+  PICKUP
+  DELIVERY
+  MIXED_MODE
+  NO_SAFE_PLAN
+}
+
+/// One ranked candidate plan per FulfillmentRequest — the engine never
+/// auto-selects one; `selected` is only ever set by an explicit
+/// authorized action (Phase 6 §2 "never silently confirm").
+model FulfillmentPlan {
+  id                   String             @id @default(cuid())
+  fulfillmentRequestId String
+  fulfillmentRequest   FulfillmentRequest @relation(fields: [fulfillmentRequestId], references: [id], onDelete: Cascade)
+
+  planType                    FulfillmentPlanType
+  rank                        Int
+  totalScore                  Float
+  branchCount                 Int
+  completeCoverage            Boolean
+  totalDistanceKm             Float?
+  estimatedPreparationMinutes Int?
+  estimatedDeliveryMinutes    Int?
+  stockFreshnessStatus        String?
+  explanationJson             Json?
+  conflictsJson               Json?
+  selected                    Boolean             @default(false)
+  selectedById                String?
+  selectedAt                  DateTime?
+  createdAt                   DateTime            @default(now())
+
+  branches     FulfillmentPlanBranch[]
+  reservations InventoryReservation[]
+
+  @@index([fulfillmentRequestId])
+  @@index([rank])
+}
+
+model FulfillmentPlanBranch {
+  id                String          @id @default(cuid())
+  fulfillmentPlanId String
+  fulfillmentPlan   FulfillmentPlan @relation(fields: [fulfillmentPlanId], references: [id], onDelete: Cascade)
+  branchId          String
+  branch            Branch          @relation(fields: [branchId], references: [id])
+
+  sequence                    Int
+  distanceKm                  Float?
+  estimatedTravelMinutes      Int?
+  estimatedPreparationMinutes Int?
+  operatingStatus             String?
+  serviceabilityStatus        String?
+  stockVerificationStatus     String?
+  score                       Float?
+  explanationJson             Json?
+
+  items FulfillmentPlanItem[]
+
+  @@index([fulfillmentPlanId])
+  @@index([branchId])
+}
+
+enum PlanItemAvailabilityStatus {
+  AVAILABLE
+  PARTIAL
+  UNAVAILABLE
+  UNKNOWN
+}
+
+model FulfillmentPlanItem {
+  id                       String                 @id @default(cuid())
+  fulfillmentPlanBranchId  String
+  fulfillmentPlanBranch    FulfillmentPlanBranch  @relation(fields: [fulfillmentPlanBranchId], references: [id], onDelete: Cascade)
+  fulfillmentRequestItemId String
+  fulfillmentRequestItem   FulfillmentRequestItem @relation(fields: [fulfillmentRequestItemId], references: [id])
+  drugId                   String
+  drug                     Drug                   @relation(fields: [drugId], references: [id])
+
+  requestedQuantity  Float?
+  availableQuantity  Float?
+  allocatedQuantity  Float?
+  availabilityStatus PlanItemAvailabilityStatus @default(UNKNOWN)
+  freshnessStatus    String?
+  sourceTimestamp    DateTime?
+
+  @@index([fulfillmentPlanBranchId])
+  @@index([fulfillmentRequestItemId])
+  @@index([drugId])
+
+  reservations InventoryReservation[]
+}
+
+enum InventoryReservationStatus {
+  PENDING
+  CONFIRMED
+  PARTIALLY_FULFILLED
+  FULFILLED
+  EXPIRED
+  CANCELLED
+  RELEASED
+  FAILED
+}
+
+/// Phase 6 §26 — data foundation only. A row here records that stock was
+/// set aside for a confirmed plan; it is never created automatically
+/// while a user is merely viewing branch options (Phase 6 brief §2/§26:
+/// "never silently confirm"), and it never writes to a real external
+/// system (no SAP order/reservation contract exists yet, same scope
+/// boundary as InventoryProvider). Created only by
+/// FulfillmentPlanSelectionService.selectPlan(), one row per plan item.
+model InventoryReservation {
+  id                    String               @id @default(cuid())
+  fulfillmentPlanId     String
+  fulfillmentPlan       FulfillmentPlan      @relation(fields: [fulfillmentPlanId], references: [id], onDelete: Cascade)
+  fulfillmentPlanItemId String
+  fulfillmentPlanItem   FulfillmentPlanItem  @relation(fields: [fulfillmentPlanItemId], references: [id], onDelete: Cascade)
+  branchId              String
+  branch                Branch               @relation(fields: [branchId], references: [id])
+  drugId                String
+  drug                  Drug                 @relation(fields: [drugId], references: [id])
+
+  quantity     Float
+  status       InventoryReservationStatus @default(PENDING)
+  reservedById String?
+  reservedAt   DateTime                    @default(now())
+  expiresAt    DateTime?
+  releasedById String?
+  releasedAt   DateTime?
+  cancelReason String?
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+
+  @@index([fulfillmentPlanId])
+  @@index([branchId])
+  @@index([drugId])
+  @@index([status])
+}
+
+// ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
+
+enum StatusKind {
+  OPEN
+  RESOLVED
+  TERMINAL
+}
+
+model TicketType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  categories  TicketCategory[]
+  slaPolicies SlaPolicy[]
+  tickets     Ticket[]
+}
+
+model TicketCategory {
+  id     String     @id @default(cuid())
+  typeId String
+  type   TicketType @relation(fields: [typeId], references: [id])
+  key    String
+  nameAr String
+  nameEn String
+  order  Int        @default(0)
+  active Boolean    @default(true)
+
+  tickets Ticket[]
+
+  @@unique([typeId, key])
+}
+
+model TicketUrgency {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  color  String  @default("#6b7280")
+  order  Int     @default(0)
+  active Boolean @default(true)
+
+  slaPolicies SlaPolicy[]
+  tickets     Ticket[]
+}
+
+model TicketStatus {
+  id     String     @id @default(cuid())
+  key    String     @unique
+  nameAr String
+  nameEn String
+  kind   StatusKind @default(OPEN)
+  color  String     @default("#6b7280")
+  order  Int        @default(0)
+  active Boolean    @default(true)
+
+  transitionsFrom StatusTransition[] @relation("fromStatus")
+  transitionsTo   StatusTransition[] @relation("toStatus")
+  tickets         Ticket[]
+}
+
+/// Workflow-engine foundation: allowed transitions are configuration.
+model StatusTransition {
+  id                    String       @id @default(cuid())
+  fromStatusId          String
+  fromStatus            TicketStatus @relation("fromStatus", fields: [fromStatusId], references: [id], onDelete: Cascade)
+  toStatusId            String
+  toStatus              TicketStatus @relation("toStatus", fields: [toStatusId], references: [id], onDelete: Cascade)
+  requiredPermissionKey String?
+
+  @@unique([fromStatusId, toStatusId])
+}
+
+model UpdateType {
+  id        String  @id @default(cuid())
+  key       String  @unique
+  nameAr    String
+  nameEn    String
+  order     Int     @default(0)
+  active    Boolean @default(true)
+  /// Waiting-type updates pause the SLA clock (spec US-4).
+  pausesSla Boolean @default(false)
+
+  ticketUpdates TicketUpdate[]
+}
+
+model ResolutionCategory {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  resolutions TicketResolution[]
+}
+
+model SlaPolicy {
+  id                   String        @id @default(cuid())
+  typeId               String
+  type                 TicketType    @relation(fields: [typeId], references: [id])
+  urgencyId            String
+  urgency              TicketUrgency @relation(fields: [urgencyId], references: [id])
+  firstResponseMinutes Int
+  resolutionMinutes    Int
+  warningThresholdPct  Int           @default(80)
+  active               Boolean       @default(true)
+
+  tickets Ticket[]
+
+  @@unique([typeId, urgencyId])
+}
+
+// ── Tickets (ADR-003 universal engine; spec §4) ─────────────────────
+
+enum SlaState {
+  ON_TRACK
+  WARNING
+  BREACHED
+  PAUSED
+  MET
+}
+
+model Ticket {
+  id                      String         @id @default(cuid())
+  internalNumber          String         @unique
+  customerComplaintNumber String         @unique
+  typeId                  String
+  type                    TicketType     @relation(fields: [typeId], references: [id])
+  categoryId              String
+  category                TicketCategory @relation(fields: [categoryId], references: [id])
+  urgencyId               String
+  urgency                 TicketUrgency  @relation(fields: [urgencyId], references: [id])
+  statusId                String
+  status                  TicketStatus   @relation(fields: [statusId], references: [id])
+
+  customerName     String
+  customerPhone    String
+  subject          String
+  description      String
+  relatedOrderNo   String?
+  /// §13 "Request Source" — nullable; filled for online issue/request tickets.
+  requestSourceKey String?
+  requestSource    RequestSource? @relation(fields: [requestSourceKey], references: [key])
+  customerVisitAt  DateTime?
+  sapMaterialNo    String?
+  itemNameAr       String?
+  itemNameEn       String?
+
+  branchId                 String?
+  branch                   Branch? @relation(fields: [branchId], references: [id])
+  /// ADR-007: immutable snapshot of supervisor data at creation time.
+  branchSupervisorSnapshot Json?
+
+  /// ADR-004: creator never changes.
+  createdById            String
+  createdBy              User      @relation("ticketCreatedBy", fields: [createdById], references: [id])
+  responsibleId          String?
+  responsible            User?     @relation("ticketResponsible", fields: [responsibleId], references: [id])
+  resolvedById           String?
+  resolvedAt             DateTime?
+  closedById             String?
+  closedAt               DateTime?
+  reopenCount            Int       @default(0)
+  lastCustomerResponseAt DateTime?
+
+  // SLA (Sprint 4)
+  slaPolicyId           String?
+  slaPolicy             SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
+  firstResponseDueAt    DateTime?
+  resolutionDueAt       DateTime?
+  slaState              SlaState   @default(ON_TRACK)
+  slaPausedAt           DateTime?
+  slaPausedTotalMinutes Int        @default(0)
+  firstRespondedAt      DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  teams      TicketTeam[]
+  ownerships TicketOwnership[]
+  updates    TicketUpdate[]
+  resolution TicketResolution?
+
+  @@index([statusId, urgencyId])
+  @@index([responsibleId])
+  @@index([createdById])
+  @@index([branchId])
+  @@index([createdAt])
+}
+
+/// §9.9: directed teams are multi-select.
+model TicketTeam {
+  id       String @id @default(cuid())
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  teamId   String
+  team     Team   @relation(fields: [teamId], references: [id])
+
+  @@unique([ticketId, teamId])
+  @@index([teamId])
+}
+
+/// §9.5: complete responsibility history.
+model TicketOwnership {
+  id           String    @id @default(cuid())
+  ticketId     String
+  ticket       Ticket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  assignedById String
+  reason       String?
+  fromAt       DateTime  @default(now())
+  toAt         DateTime?
+
+  @@index([ticketId, fromAt])
+}
+
+/// §9.6: immutable operational updates.
+model TicketUpdate {
+  id               String     @id @default(cuid())
+  ticketId         String
+  ticket           Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId         String
+  author           User       @relation(fields: [authorId], references: [id])
+  updateTypeId     String
+  updateType       UpdateType @relation(fields: [updateTypeId], references: [id])
+  directedToTeamId String?
+  body             String
+  createdAt        DateTime   @default(now())
+
+  @@index([ticketId, createdAt])
+}
+
+/// §9.7: mandatory resolution record (ADR-005).
+model TicketResolution {
+  id                   String             @id @default(cuid())
+  ticketId             String             @unique
+  ticket               Ticket             @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  summary              String
+  rootCause            String
+  actionTaken          String
+  finalSolution        String
+  resolutionCategoryId String
+  resolutionCategory   ResolutionCategory @relation(fields: [resolutionCategoryId], references: [id])
+  customerInformed     Boolean
+  resolvedById         String
+  resolvedAt           DateTime           @default(now())
+}
+
+// ── Knowledge Base Basic (blueprint §10; spec docs/specs/kb-basic-spec-v1.0.md) ──
+
+enum KbKind {
+  SOP
+  ADDED_SOP
+  DAILY_NOTE
+  VIDEO
+  PDF
+  WORD
+  FLOW_CHART
+}
+
+enum KbStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model KbContent {
+  id        String    @id @default(cuid())
+  /// Version group: equals the first version's id (§10.4).
+  rootId    String
+  version   Int       @default(1)
+  kind      KbKind
+  titleAr   String
+  titleEn   String
+  summaryAr String?
+  summaryEn String?
+  body      String?
+  videoUrl  String?
+  ownerId   String
+  owner     User      @relation("kbOwner", fields: [ownerId], references: [id])
+  status    KbStatus  @default(DRAFT)
+  publishAt DateTime?
+  expiryAt  DateTime?
+  /// Published+public content is visible to every kb.view holder (spec B3).
+  isPublic  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  lessons CourseLesson[]
+
+  @@unique([rootId, version])
+  @@index([status, kind])
+}
+
+model Course {
+  id            String    @id @default(cuid())
+  titleAr       String
+  titleEn       String
+  descriptionAr String?
+  descriptionEn String?
+  /// §10.2 Course Admin.
+  courseAdminId String
+  courseAdmin   User      @relation("courseAdmin", fields: [courseAdminId], references: [id])
+  status        KbStatus  @default(DRAFT)
+  /// §10.3 Due Date (default for assignments without their own).
+  dueAt         DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  lessons     CourseLesson[]
+  assignments CourseAssignment[]
+}
+
+model CourseLesson {
+  id              String     @id @default(cuid())
+  courseId        String
+  course          Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  order           Int
+  titleAr         String
+  titleEn         String
+  contentId       String?
+  content         KbContent? @relation(fields: [contentId], references: [id])
+  videoUrl        String?
+  durationSeconds Int?
+  createdAt       DateTime   @default(now())
+
+  progress LessonProgress[]
+
+  @@unique([courseId, order])
+}
+
+/// §10.2: assignment to a team OR a specific user (exactly one target).
+model CourseAssignment {
+  id           String    @id @default(cuid())
+  courseId     String
+  course       Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teamId       String?
+  team         Team?     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?     @relation("courseAssignee", fields: [userId], references: [id], onDelete: Cascade)
+  assignedById String
+  dueAt        DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([courseId])
+  @@index([teamId])
+  @@index([userId])
+}
+
+/// §10.3 progress indicators; course % derived from completed lessons.
+model LessonProgress {
+  id               String       @id @default(cuid())
+  lessonId         String
+  lesson           CourseLesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User         @relation("lessonProgress", fields: [userId], references: [id], onDelete: Cascade)
+  positionSeconds  Int          @default(0)
+  watchTimeSeconds Int          @default(0)
+  completedAt      DateTime?
+  updatedAt        DateTime     @updatedAt
+  createdAt        DateTime     @default(now())
+
+  @@unique([lessonId, userId])
+  @@index([userId, updatedAt])
+}
+
+// ── Notification Engine foundation (blueprint §8) ───────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  titleAr   String
+  titleEn   String
+  bodyAr    String?
+  bodyEn    String?
+  /// Structured payload for deep-linking (entityType/entityId, …).
+  payload   Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+// ── Break Tracker & Workforce (blueprint §11) ───────────────────────
+
+enum WorkSessionStatus {
+  ACTIVE
+  ENDED
+}
+
+enum SessionEndReason {
+  MANUAL
+  AUTO
+}
+
+enum WorkPeriodType {
+  WORK
+  BREAK
+  IDLE
+}
+
+/// One work shift (§11.1). At most one ACTIVE session per user — enforced by
+/// a partial unique index added in the migration SQL.
+model WorkSession {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation("workSessions", fields: [userId], references: [id], onDelete: Cascade)
+  /// Primary-team snapshot at session start (live view + concurrency unit).
+  teamId    String?
+  team      Team?             @relation(fields: [teamId], references: [id])
+  status    WorkSessionStatus @default(ACTIVE)
+  startedAt DateTime          @default(now())
+  endedAt   DateTime?
+  endReason SessionEndReason?
+
+  lastHeartbeatAt DateTime @default(now())
+  lastActivityAt  DateTime @default(now())
+
+  /// Rollups of closed periods; the open period is added at read time.
+  activeSeconds Int @default(0)
+  idleSeconds   Int @default(0)
+  breakSeconds  Int @default(0)
+
+  periods WorkPeriod[]
+
+  @@index([userId, status])
+  @@index([status, lastHeartbeatAt])
+  @@index([teamId, status])
+}
+
+/// §11.1 "تسجيل بداية ونهاية كل فترة" — the auditable period record.
+model WorkPeriod {
+  id        String         @id @default(cuid())
+  sessionId String
+  session   WorkSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  type      WorkPeriodType
+  startedAt DateTime
+  endedAt   DateTime?
+
+  @@index([sessionId, endedAt])
+  @@index([type, endedAt, startedAt])
+}
+
+// ── Customer Care performance (blueprint §12.1/§12.2, Sprint 7) ─────
+
+enum MetricAggregation {
+  SUM
+  AVG
+}
+
+enum MetricSource {
+  YEASTAR
+  TICKETING
+  TELESALES
+}
+
+enum PerfScopeType {
+  USER
+  TEAM
+}
+
+enum TargetPeriod {
+  DAILY
+  MONTHLY
+  YEARLY
+}
+
+/// §12.1 KPI catalog as data (ADR-008, spec D2).
+model PerformanceMetricDef {
+  id             String            @id @default(cuid())
+  key            String            @unique
+  nameAr         String
+  nameEn         String
+  /// count | seconds | percent — display formatting hint.
+  unit           String
+  /// How daily rows combine into a period actual (spec D2).
+  aggregation    MetricAggregation
+  source         MetricSource
+  /// false for Missed/Abandoned/AVG Handle/Hold/Wait (spec D6).
+  higherIsBetter Boolean           @default(true)
+  sortOrder      Int               @default(0)
+
+  values  MetricValue[]
+  targets PerformanceTarget[]
+}
+
+/// One KPI value per day per user/team — the ingestion target (spec D1).
+model MetricValue {
+  id         String               @id @default(cuid())
+  metricDate DateTime             @db.Date
+  scopeType  PerfScopeType
+  scopeId    String
+  metricKey  String
+  metric     PerformanceMetricDef @relation(fields: [metricKey], references: [key])
+  value      Decimal              @db.Decimal(14, 2)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@unique([metricDate, scopeType, scopeId, metricKey])
+  @@index([scopeType, scopeId, metricDate])
+}
+
+/// §12.2: targets per employee or team, daily/monthly/yearly.
+model PerformanceTarget {
+  id          String               @id @default(cuid())
+  scopeType   PerfScopeType
+  scopeId     String
+  metricKey   String
+  metric      PerformanceMetricDef @relation(fields: [metricKey], references: [key])
+  period      TargetPeriod
+  targetValue Decimal              @db.Decimal(14, 2)
+  active      Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  @@unique([scopeType, scopeId, metricKey, period])
+  @@index([scopeType, scopeId])
+}
+
+// ── CRM, Leads & Telesales (blueprint §14) ──────────────────────────
+
+enum LeadStatus {
+  NEW
+  ASSIGNED
+  CLOSED
+}
+
+enum TelesalesOrderStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+/// §14.2 — call result catalog, seeded verbatim.
+model CallStatus {
+  id        String @id @default(cuid())
+  key       String @unique
+  nameAr    String
+  nameEn    String
+  sortOrder Int    @default(0)
+
+  calls LeadCall[]
+}
+
+/// §14.3 — disposition catalog with behavior flags (spec E3, ADR-008).
+model LeadDisposition {
+  id                 String  @id @default(cuid())
+  key                String  @unique
+  nameAr             String
+  nameEn             String
+  /// Lead is closed after this disposition.
+  closesLead         Boolean @default(false)
+  /// rescheduledAt becomes mandatory with this disposition.
+  requiresReschedule Boolean @default(false)
+  /// An order payload becomes mandatory (Order Created).
+  createsOrder       Boolean @default(false)
+  sortOrder          Int     @default(0)
+
+  calls LeadCall[]
+}
+
+/// §14.4 — order type catalog, seeded verbatim.
+model TelesalesOrderType {
+  id        String @id @default(cuid())
+  key       String @unique
+  nameAr    String
+  nameEn    String
+  sortOrder Int    @default(0)
+
+  orders TelesalesOrder[]
+}
+
+/// One uploaded lead file (§14.1: source/partner/campaign set at upload).
+model LeadBatch {
+  id            String   @id @default(cuid())
+  fileName      String
+  leadSource    String
+  /// Snapshot string until the Partner master exists (spec E6).
+  partnerName   String?
+  campaign      String?
+  uploadedById  String
+  uploadedBy    User     @relation("leadBatches", fields: [uploadedById], references: [id])
+  importedCount Int      @default(0)
+  skippedCount  Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  leads Lead[]
+}
+
+model Lead {
+  id      String     @id @default(cuid())
+  batchId String?
+  batch   LeadBatch? @relation(fields: [batchId], references: [id])
+
+  name        String
+  /// Normalized digits — duplicate-detection key (spec E2).
+  phone       String
+  city        String?
+  notes       String?
+  leadSource  String
+  partnerName String?
+  campaign    String?
+
+  status               LeadStatus @default(NEW)
+  assignedToId         String?
+  assignedTo           User?      @relation("assignedLeads", fields: [assignedToId], references: [id])
+  assignedAt           DateTime?
+  /// Follow-up due time (§14.1 Reschedule); lead returns via /next when due.
+  rescheduledAt        DateTime?
+  lastCallAt           DateTime?
+  closedAt             DateTime?
+  closedDispositionKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  calls  LeadCall[]
+  orders TelesalesOrder[]
+
+  @@index([status, rescheduledAt])
+  @@index([assignedToId, status])
+  @@index([phone])
+}
+
+/// §14.1 — every call attempt: result, duration, disposition.
+model LeadCall {
+  id              String          @id @default(cuid())
+  leadId          String
+  lead            Lead            @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  agentId         String
+  agent           User            @relation("leadCalls", fields: [agentId], references: [id])
+  callStatusKey   String
+  callStatus      CallStatus      @relation(fields: [callStatusKey], references: [key])
+  dispositionKey  String
+  disposition     LeadDisposition @relation(fields: [dispositionKey], references: [key])
+  durationSeconds Int             @default(0)
+  notes           String?
+  rescheduledAt   DateTime?
+  orderId         String?
+  order           TelesalesOrder? @relation(fields: [orderId], references: [id])
+  createdAt       DateTime        @default(now())
+
+  @@index([agentId, createdAt])
+  @@index([leadId, createdAt])
+}
+
+/// Performance-readiness order record (spec E7) — not the pharmacy pipeline.
+model TelesalesOrder {
+  id            String               @id @default(cuid())
+  number        String               @unique
+  leadId        String?
+  lead          Lead?                @relation(fields: [leadId], references: [id])
+  customerName  String
+  customerPhone String
+  orderTypeKey  String
+  orderType     TelesalesOrderType   @relation(fields: [orderTypeKey], references: [key])
+  value         Decimal              @db.Decimal(14, 2)
+  status        TelesalesOrderStatus @default(OPEN)
+  createdById   String
+  createdBy     User                 @relation("telesalesOrders", fields: [createdById], references: [id])
+  completedAt   DateTime?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  calls LeadCall[]
+
+  @@index([createdById, createdAt])
+  @@index([status, createdAt])
+}
+
+// ── Online Operation & Ordering (blueprint §13) ─────────────────────
+
+enum IntegrationOpStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  DEAD
+}
+
+/// §13 "Order Source" — editable catalog (spec F3).
+model OrderSource {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  orders OnlineOrder[]
+}
+
+/// §13 "Request Source" — editable catalog (spec F3).
+model RequestSource {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  tickets Ticket[]
+}
+
+/// §13 "Daily Orders" — integration-owned records ingested via the
+/// Integration Layer slot (spec F4). Issues/requests link through the
+/// ticket engine's relatedOrderNo (§9.4).
+model OnlineOrder {
+  id             String      @id @default(cuid())
+  externalNumber String      @unique
+  orderSourceKey String
+  orderSource    OrderSource @relation(fields: [orderSourceKey], references: [key])
+  orderedAt      DateTime
+  customerName   String?
+  customerPhone  String?
+  value          Decimal?    @db.Decimal(14, 2)
+  /// Status as reported by the Ordering System (informational).
+  externalStatus String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([orderedAt])
+  @@index([orderSourceKey, orderedAt])
+}
+
+/// §13 Retry Queue + §21.1 integration standard (spec F5). Callers enqueue
+/// and never block on the external system (§22 Availability).
+model IntegrationOperation {
+  id             String              @id @default(cuid())
+  integrationKey String
+  operation      String
+  payload        Json
+  status         IntegrationOpStatus @default(PENDING)
+  attempts       Int                 @default(0)
+  nextRetryAt    DateTime            @default(now())
+  lastError      String?
+  succeededAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  @@index([status, nextRetryAt])
+  @@index([integrationKey, createdAt])
+}
+
+// ── United Pharmacy Center — DIC (blueprint §15) ────────────────────
+
+enum ChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// §15.2 item classifications — catalog (feed values; editable).
+model DrugItemType {
+  id     String  @id @default(cuid())
+  key    String  @unique
+  nameAr String
+  nameEn String
+  active Boolean @default(true)
+
+  drugs Drug[]
+}
+
+/// §15.3 — MEENA/TAWUNIYA/BUPA seeded; additional companies are inserts.
+/// Phase 4: also doubles as the design doc's "CoverageProvider" — extended
+/// in place (providerType) rather than renamed, since companyKey is a real
+/// FK target for thousands of existing DrugCoverage rows.
+model InsuranceCompany {
+  id           String  @id @default(cuid())
+  key          String  @unique
+  nameAr       String
+  nameEn       String
+  /// e.g. "INSURANCE" | "PROGRAM" | "INTERNAL" — informational grouping,
+  /// not enforced by an enum since new provider kinds shouldn't need a migration.
+  providerType String?
+  active       Boolean @default(true)
+
+  coverages DrugCoverage[]
+}
+
+/// §18 Drug master — canonical feed: the company's Mapping export (spec H1).
+model Drug {
+  id            String  @id @default(cuid())
+  materialNo    String  @unique
+  oldMaterialNo String?
+  ean           String?
+  gtin          String?
+  sfdaCode      String?
+  /// §15.2 Coded/Not Coded — SFDA code present (spec H4).
+  coded         Boolean @default(false)
+
+  nameEn       String
+  nameAr       String?
+  brand        String?
+  division     String?
+  category     String?
+  subCategory  String?
+  className    String?
+  subClassName String?
+
+  price        Decimal? @db.Decimal(12, 2)
+  priceWithTax Decimal? @db.Decimal(12, 2)
+
+  itemTypeKey  String?
+  itemType     DrugItemType? @relation(fields: [itemTypeKey], references: [key])
+  raqeeb       Boolean       @default(false)
+  acuteChronic String?
+
+  /// Pharmacist-maintained fields (spec H5) — edited via the 15.3 approval flow.
+  /// Free text, kept for backward compatibility; DrugIngredient below is the
+  /// new structured form (Phase 4) — progressively populated, not required.
+  activeIngredient String?
+  usage            String?
+  offers           String?
+  note             String?
+
+  /// {city: qty} snapshot from the feed's city columns (spec H6).
+  availability Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ── Phase 4 — DIC Drug Master & Normalization Foundation ────────────
+  // docs/change-requests/CR-002-dic-drug-master-foundation.md
+  // All additive/nullable so every existing row (22,732 real drugs) stays
+  // valid without a backfill. barcode is distinct from the existing
+  // ean/gtin (feed-native identifiers, kept as-is).
+  barcode                    String?
+  normalizedTradeNameEnglish String?
+  normalizedTradeNameArabic  String?
+  searchNameEnglish          String?
+  searchNameArabic           String?
+  /// Concatenation of every searchable field (names, aliases, ingredient,
+  /// manufacturer, strength, dosage form) — the single trigram-indexed
+  /// column the "all fields" search matches against (design doc §15).
+  combinedSearchText         String?
+  dosageFormId               String?
+  dosageForm                 DosageForm?       @relation(fields: [dosageFormId], references: [id])
+  /// Original free-text strength (e.g. "500 mg") — always preserved;
+  /// DrugStrengthComponent below is the structured form.
+  strengthText               String?
+  manufacturerId             String?
+  manufacturer               Manufacturer?     @relation(fields: [manufacturerId], references: [id])
+  countryOfOriginId          String?
+  countryOfOrigin            Country?          @relation(fields: [countryOfOriginId], references: [id])
+  /// Free descriptive category beyond itemType/DrugItemType — e.g. an
+  /// SFDA regulatory bucket. Deliberately not an enum (design doc §2):
+  /// regulatory categories vary by authority and shouldn't need a
+  /// migration to add one.
+  regulatoryCategory         String?
+  requiresPrescription       Boolean?
+  requiresSpecialHandling    Boolean           @default(false)
+  controlledDrug             Boolean           @default(false)
+  coldChain                  Boolean           @default(false)
+  active                     Boolean           @default(true)
+  discontinued               Boolean           @default(false)
+  discontinuationDate        DateTime?
+  discontinuationReason      String?
+  /// Where this record came from — the feed importer, the new staged
+  /// import, or a manual entry (design doc §2/§20).
+  sourceSystem               String?
+  sourceRecordId             String?
+  dataQualityStatus          DataQualityStatus @default(NEEDS_REVIEW)
+  createdById                String?
+  updatedById                String?
+  approvedById               String?
+  approvedAt                 DateTime?
+  /// Optimistic lock (design doc §22) — incremented on every update by
+  /// the service layer, never by the client.
+  version                    Int               @default(0)
+  /// Set only once merged into another Drug (design doc §22) — a merged
+  /// record is never deleted, only redirected.
+  mergedIntoDrugId           String?
+  mergedInto                 Drug?             @relation("drugMerge", fields: [mergedIntoDrugId], references: [id])
+  mergedFrom                 Drug[]            @relation("drugMerge")
+
+  alternatives             DrugAlternative[]
+  crossSells               DrugCrossSell[]
+  coverages                DrugCoverage[]
+  changeRequests           DrugChangeRequest[]
+  prescriptionLines        PrescriptionLine[]
+  /// CR-001 Prescription Intelligence Engine (Sprint OCR-01).
+  prescriptionCandidates   PrescriptionDrugCandidate[]
+  /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
+  medicationLineSelections PrescriptionMedicationLine[]
+  matchDecisions           DrugMatchDecision[]
+
+  // ── Phase 4 relations ────────────────────────────────────────────────
+  ingredients          DrugIngredient[]
+  strengthComponents   DrugStrengthComponent[]
+  packages             DrugPackage[]
+  aliases              DrugAlias[]
+  therapeuticClasses   DrugTherapeuticClass[]
+  alternativeLinksFrom DrugAlternativeLink[]   @relation("alternativeLinkSource")
+  alternativeLinksTo   DrugAlternativeLink[]   @relation("alternativeLinkTarget")
+  importRows           DrugImportRow[]
+
+  /// Phase 6 §11 — per-branch stock snapshot rows.
+  branchInventory         BranchInventory[]
+  /// Phase 6 §17/§20 — fulfillment request/plan line items.
+  fulfillmentRequestItems FulfillmentRequestItem[]
+  fulfillmentPlanItems    FulfillmentPlanItem[]
+  /// Phase 6 §26 — reservation foundation rows (data model only).
+  inventoryReservations   InventoryReservation[]
+
+  @@index([nameEn])
+  @@index([nameAr])
+  @@index([brand])
+  @@index([barcode])
+  @@index([dataQualityStatus])
+  @@index([active, discontinued])
+  @@index([manufacturerId])
+  @@index([dosageFormId])
+}
+
+/// §15.2 Alternatives — Mapped Product 1..22 (ordered).
+model DrugAlternative {
+  id            String @id @default(cuid())
+  drugId        String
+  drug          Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  altMaterialNo String
+  order         Int    @default(0)
+
+  @@unique([drugId, altMaterialNo])
+}
+
+/// §15.2 Cross-Selling — Combined Products column (spec H7).
+model DrugCrossSell {
+  id         String @id @default(cuid())
+  drugId     String
+  drug       Drug   @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  materialNo String
+
+  @@unique([drugId, materialNo])
+}
+
+/// §15.3 coverage mapping rows. Phase 4 extends this in place — `covered`
+/// stays the boolean every existing caller/test reads; `coverageStatus`
+/// is the new richer status, backfilled from `covered` in the migration.
+model DrugCoverage {
+  id         String           @id @default(cuid())
+  drugId     String
+  drug       Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  companyKey String
+  company    InsuranceCompany @relation(fields: [companyKey], references: [key])
+  covered    Boolean
+  note       String?
+  updatedAt  DateTime         @updatedAt
+
+  // ── Phase 4 additions ────────────────────────────────────────────────
+  coverageStatus   CoverageStatus @default(UNKNOWN)
+  requiresApproval Boolean        @default(false)
+  coverageNotes    String?
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  sourceSystem     String?
+  lastVerifiedAt   DateTime?
+  active           Boolean        @default(true)
+
+  @@unique([drugId, companyKey])
+  @@index([companyKey, covered])
+  @@index([coverageStatus])
+}
+
+/// §15.3 Approval Workflow for Master Data Changes (spec H8).
+model DrugChangeRequest {
+  id            String              @id @default(cuid())
+  drugId        String
+  drug          Drug                @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  /// Proposed patch: { field: newValue } for the H5 editable fields/coverage.
+  patch         Json
+  status        ChangeRequestStatus @default(PENDING)
+  requestedById String
+  decidedById   String?
+  decisionNote  String?
+  createdAt     DateTime            @default(now())
+  decidedAt     DateTime?
+
+  @@index([status, createdAt])
+}
+
+// ── Phase 4 — DIC Drug Master & Normalization Foundation ────────────
+// docs/change-requests/CR-002-dic-drug-master-foundation.md
+// Extends the §15 DIC module above rather than replacing it — the
+// existing monthly feed importer keeps writing the flat Drug columns
+// unchanged; everything below is additive normalized structure layered
+// on top. No OCR-to-drug matching, inventory availability checking, or
+// automatic alternative recommendation ships in this phase.
+
+enum DataQualityStatus {
+  DRAFT
+  INCOMPLETE
+  NEEDS_REVIEW
+  VERIFIED
+  REJECTED
+  ARCHIVED
+}
+
+enum AliasType {
+  TRADE_NAME
+  SCIENTIFIC_NAME
+  ABBREVIATION
+  COMMON_MISSPELLING
+  OCR_VARIANT
+  LEGACY_NAME
+  ARABIC_TRANSLITERATION
+  ENGLISH_TRANSLITERATION
+  MANUFACTURER_VARIANT
+  PACKAGING_VARIANT
+  USER_CORRECTION
+  IMPORTED_ALIAS
+}
+
+enum AliasSource {
+  MANUAL
+  IMPORT
+  OCR_CORRECTION
+  LEGACY_DATABASE
+  SYSTEM_GENERATED
+  PHARMACIST_APPROVED
+}
+
+enum IngredientRole {
+  PRIMARY
+  SECONDARY
+  COMBINATION_COMPONENT
+  EXCIPIENT
+  OTHER
+}
+
+enum DrugAlternativeType {
+  SAME_ACTIVE_INGREDIENT
+  SAME_ACTIVE_AND_STRENGTH
+  SAME_ACTIVE_DIFFERENT_STRENGTH
+  SAME_DOSAGE_FORM
+  GENERIC_ALTERNATIVE
+  BRAND_ALTERNATIVE
+  THERAPEUTIC_ALTERNATIVE
+}
+
+enum CoverageStatus {
+  COVERED
+  NOT_COVERED
+  PARTIALLY_COVERED
+  REQUIRES_APPROVAL
+  UNKNOWN
+}
+
+enum ImportBatchStatus {
+  UPLOADED
+  MAPPING
+  VALIDATING
+  VALIDATED
+  APPROVED
+  EXECUTING
+  COMPLETED
+  FAILED
+  ROLLED_BACK
+}
+
+enum ImportRowStatus {
+  PENDING
+  VALID
+  INVALID
+  DUPLICATE
+  IMPORTED
+  SKIPPED
+  FAILED
+}
+
+enum DuplicateResolution {
+  CREATE_NEW
+  LINK_EXISTING
+  MERGE
+  REJECT_ROW
+  DEFER_REVIEW
+}
+
+/// Country — manufacturer / drug country-of-origin reference.
+model Country {
+  id      String  @id @default(cuid())
+  isoCode String  @unique
+  nameEn  String
+  nameAr  String
+  active  Boolean @default(true)
+
+  manufacturers Manufacturer[]
+  drugs         Drug[]
+
+  @@index([active])
+}
+
+/// Manufacturer — the normalized form of Drug.brand (kept as free text
+/// for backward compatibility; manufacturerId is populated progressively,
+/// never required).
+model Manufacturer {
+  id               String   @id @default(cuid())
+  nameEn           String
+  nameAr           String?
+  normalizedNameEn String
+  normalizedNameAr String?
+  countryId        String?
+  country          Country? @relation(fields: [countryId], references: [id])
+  active           Boolean  @default(true)
+  sourceSystem     String?
+  sourceRecordId   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  drugs Drug[]
+
+  @@index([normalizedNameEn])
+  @@index([active])
+}
+
+/// Controlled dosage-form catalog (Tablet, Capsule, Syrup, ...) — never
+/// free text (design doc §4).
+model DosageForm {
+  id               String  @id @default(cuid())
+  code             String  @unique
+  nameEn           String
+  nameAr           String
+  normalizedNameEn String
+  normalizedNameAr String
+  /// Alternate spellings/synonyms this form is known by — a search aid,
+  /// never authoritative on its own.
+  synonymsJson     Json?
+  active           Boolean @default(true)
+
+  drugs Drug[]
+
+  @@index([active])
+}
+
+/// Controlled unit catalog (mg, ml, IU, %, tablet, ...) — never free
+/// text (design doc §4).
+model MeasurementUnit {
+  id                  String   @id @default(cuid())
+  code                String   @unique
+  nameEn              String
+  nameAr              String
+  unitCategory        String
+  /// Multiply a value in this unit by this factor to reach baseUnitCode
+  /// (e.g. g → mg is 1000).
+  normalizationFactor Decimal? @db.Decimal(18, 6)
+  baseUnitCode        String?
+  active              Boolean  @default(true)
+
+  numeratorStrengths   DrugStrengthComponent[] @relation("strengthNumeratorUnit")
+  denominatorStrengths DrugStrengthComponent[] @relation("strengthDenominatorUnit")
+  drugIngredients      DrugIngredient[]
+  packages             DrugPackage[]
+
+  @@index([active])
+}
+
+/// Active-ingredient master (scientific/generic names) — distinct from
+/// Drug.activeIngredient (free text, kept for backward compatibility
+/// until every drug has a structured DrugIngredient link).
+model ActiveIngredient {
+  id                         String   @id @default(cuid())
+  scientificNameEn           String
+  scientificNameAr           String?
+  normalizedScientificNameEn String
+  normalizedScientificNameAr String?
+  searchNameEn               String
+  searchNameAr               String?
+  abbreviation               String?
+  atcCode                    String?
+  active                     Boolean  @default(true)
+  createdById                String?
+  updatedById                String?
+  approvedById               String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  drugIngredients    DrugIngredient[]
+  strengthComponents DrugStrengthComponent[]
+
+  @@index([normalizedScientificNameEn])
+  @@index([atcCode])
+  @@index([active])
+}
+
+/// Drug ↔ ActiveIngredient join — one row per ingredient, so a
+/// combination medicine is simply multiple rows for the same drugId
+/// (design doc §3).
+model DrugIngredient {
+  id                        String           @id @default(cuid())
+  drugId                    String
+  drug                      Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  activeIngredientId        String
+  activeIngredient          ActiveIngredient @relation(fields: [activeIngredientId], references: [id])
+  /// Original strength text as entered/imported (e.g. "500 mg") — always
+  /// preserved alongside the structured numeric form below.
+  ingredientStrength        String?
+  ingredientStrengthNumeric Decimal?         @db.Decimal(18, 6)
+  ingredientUnitId          String?
+  ingredientUnit            MeasurementUnit? @relation(fields: [ingredientUnitId], references: [id])
+  concentrationText         String?
+  ingredientRole            IngredientRole   @default(PRIMARY)
+  sequence                  Int              @default(0)
+  active                    Boolean          @default(true)
+
+  @@unique([drugId, activeIngredientId])
+  @@index([drugId])
+  @@index([activeIngredientId])
+}
+
+/// Structured strength (design doc §7) — "500 mg", "250 mg / 5 ml", and
+/// "875 mg + 125 mg" (one row per component) are all representable as
+/// numerator[/denominator] pairs. Drug.strengthText always keeps the
+/// original free-text form; this is never the only representation.
+model DrugStrengthComponent {
+  id                     String            @id @default(cuid())
+  drugId                 String
+  drug                   Drug              @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  activeIngredientId     String?
+  activeIngredient       ActiveIngredient? @relation(fields: [activeIngredientId], references: [id])
+  numeratorValue         Decimal?          @db.Decimal(18, 6)
+  numeratorUnitId        String?
+  numeratorUnit          MeasurementUnit?  @relation("strengthNumeratorUnit", fields: [numeratorUnitId], references: [id])
+  denominatorValue       Decimal?          @db.Decimal(18, 6)
+  denominatorUnitId      String?
+  denominatorUnit        MeasurementUnit?  @relation("strengthDenominatorUnit", fields: [denominatorUnitId], references: [id])
+  originalStrengthText   String
+  normalizedStrengthText String?
+  sequence               Int               @default(0)
+
+  @@index([drugId])
+}
+
+/// Packaging — distinct from strength (design doc §8): "20 tablets",
+/// "100 ml bottle", never confused with the dose itself.
+model DrugPackage {
+  id                     String           @id @default(cuid())
+  drugId                 String
+  drug                   Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  packageType            String
+  packSize               Decimal?         @db.Decimal(18, 3)
+  packUnitId             String?
+  packUnit               MeasurementUnit? @relation(fields: [packUnitId], references: [id])
+  unitsPerPackage        Int?
+  packagingDescriptionEn String?
+  packagingDescriptionAr String?
+  barcode                String?
+  active                 Boolean          @default(true)
+
+  @@index([drugId])
+  @@index([barcode])
+}
+
+/// Hierarchical pharmacological classification — distinct from
+/// Drug.className/subClassName, which are feed-provided merchandising
+/// categories (Excel "Class"/"Sub_Class" columns), never this.
+model TherapeuticClass {
+  id       String             @id @default(cuid())
+  code     String?            @unique
+  nameEn   String
+  nameAr   String
+  parentId String?
+  parent   TherapeuticClass?  @relation("therapeuticClassHierarchy", fields: [parentId], references: [id])
+  children TherapeuticClass[] @relation("therapeuticClassHierarchy")
+  active   Boolean            @default(true)
+
+  drugClasses DrugTherapeuticClass[]
+
+  @@index([parentId])
+}
+
+model DrugTherapeuticClass {
+  id                 String           @id @default(cuid())
+  drugId             String
+  drug               Drug             @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  therapeuticClassId String
+  therapeuticClass   TherapeuticClass @relation(fields: [therapeuticClassId], references: [id])
+  primary            Boolean          @default(false)
+  active             Boolean          @default(true)
+
+  @@unique([drugId, therapeuticClassId])
+  @@index([drugId])
+}
+
+/// Alternate names a drug is known by — trade/scientific/abbreviation/
+/// OCR variant/transliteration/etc. Never auto-authoritative:
+/// system-generated and OCR-sourced aliases always start unapproved
+/// (design doc §6).
+model DrugAlias {
+  id              String      @id @default(cuid())
+  drugId          String
+  drug            Drug        @relation(fields: [drugId], references: [id], onDelete: Cascade)
+  alias           String
+  normalizedAlias String
+  language        String
+  script          String?
+  aliasType       AliasType
+  source          AliasSource
+  confidence      Float?
+  approved        Boolean     @default(false)
+  active          Boolean     @default(true)
+  createdById     String?
+  approvedById    String?
+  approvedAt      DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@unique([drugId, normalizedAlias])
+  @@index([normalizedAlias])
+  @@index([drugId])
+  @@index([approved])
+}
+
+/// Pharmacist-approved alternative between two distinct drugs — named
+/// "*Link*" to avoid colliding with the existing feed-declared
+/// DrugAlternative (Mapped Product 1-22, unapproved, above this
+/// section). Only pharmacistApproved rows may ever be surfaced as an
+/// approved alternative (design doc §10) — this phase builds the data
+/// structure only, never an auto-recommendation engine.
+model DrugAlternativeLink {
+  id                   String              @id @default(cuid())
+  sourceDrugId         String
+  sourceDrug           Drug                @relation("alternativeLinkSource", fields: [sourceDrugId], references: [id], onDelete: Cascade)
+  alternativeDrugId    String
+  alternativeDrug      Drug                @relation("alternativeLinkTarget", fields: [alternativeDrugId], references: [id], onDelete: Cascade)
+  alternativeType      DrugAlternativeType
+  equivalenceLevel     String?
+  sameActiveIngredient Boolean             @default(false)
+  sameStrength         Boolean             @default(false)
+  sameDosageForm       Boolean             @default(false)
+  pharmacistApproved   Boolean             @default(false)
+  approvedById         String?
+  approvedAt           DateTime?
+  priority             Int                 @default(0)
+  notes                String?
+  active               Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  @@unique([sourceDrugId, alternativeDrugId])
+  @@index([sourceDrugId])
+  @@index([pharmacistApproved])
+}
+
+/// One uploaded Excel/CSV file — staged (design doc §7/§20). Never
+/// written straight to Drug; DrugImportRow below is the row-level
+/// staging area, promoted to real Drug/DrugAlias/... rows only once
+/// status reaches APPROVED and execution runs.
+model DrugImportBatch {
+  id             String            @id @default(cuid())
+  fileName       String
+  fileHash       String
+  uploadedById   String
+  status         ImportBatchStatus @default(UPLOADED)
+  totalRows      Int               @default(0)
+  validRows      Int               @default(0)
+  invalidRows    Int               @default(0)
+  duplicateRows  Int               @default(0)
+  importedRows   Int               @default(0)
+  failedRows     Int               @default(0)
+  mappingJson    Json?
+  approvedById   String?
+  approvedAt     DateTime?
+  rolledBackById String?
+  rolledBackAt   DateTime?
+  createdAt      DateTime          @default(now())
+  completedAt    DateTime?
+
+  rows DrugImportRow[]
+
+  @@index([status, createdAt])
+}
+
+/// One staged row within a DrugImportBatch (design doc §20/§21).
+model DrugImportRow {
+  id                      String               @id @default(cuid())
+  batchId                 String
+  batch                   DrugImportBatch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber               Int
+  rawDataJson             Json
+  normalizedDataJson      Json?
+  validationErrorsJson    Json?
+  duplicateCandidatesJson Json?
+  resolution              DuplicateResolution?
+  status                  ImportRowStatus      @default(PENDING)
+  linkedDrugId            String?
+  linkedDrug              Drug?                @relation(fields: [linkedDrugId], references: [id])
+  createdAt               DateTime             @default(now())
+
+  @@index([batchId])
+  @@index([status])
+}
+
+// ── §17 OCR Prescription Processing (spec docs/specs/ocr-spec-v1.0.md) ──
+
+enum PrescriptionStatus {
+  UPLOADED
+  EXTRACTING
+  REVIEW
+  CONFIRMED
+  REJECTED
+}
+
+enum PrescriptionLineStatus {
+  SUGGESTED
+  CONFIRMED
+  CORRECTED
+  REJECTED
+}
+
+/// §17 prescription — extraction via the Integration Engine (I1);
+/// human review is mandatory before confirmation (I4).
+///
+/// CR-001 (docs/change-requests/CR-001-prescription-intelligence-engine.md)
+/// extends this table in place rather than duplicating it: `lines` is the
+/// Phase 10 pipeline (kept running unchanged until the OCR-12 migration),
+/// `pages`/`drugCandidates` are the new CR-001 pipeline (Sprint OCR-01+).
+model Prescription {
+  id             String             @id @default(cuid())
+  number         String             @unique
+  status         PrescriptionStatus @default(UPLOADED)
+  attachmentId   String?
+  uploadedById   String
+  reviewedById   String?
+  reviewedAt     DateTime?
+  /// I6: links existing records — OCR never creates tickets/orders.
+  ticketId       String?
+  relatedOrderNo String?
+  note           String?
+  engineMeta     Json?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  lines          PrescriptionLine[]
+
+  /// CR-001 fields (design spec §4.6) — all nullable, additive.
+  customerId        String?
+  source            String?
+  processedFileUrl  String?
+  overallConfidence Float?
+  detectedLanguage  String?
+  completedAt       DateTime?
+  pages             PrescriptionPage[]
+  drugCandidates    PrescriptionDrugCandidate[]
+
+  /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
+  medicationLines PrescriptionMedicationLine[]
+  matchRuns       DrugMatchRun[]
+
+  /// Phase 6 — Location-Aware Branch Inventory & Fulfillment.
+  fulfillmentRequests FulfillmentRequest[]
+
+  @@index([status, createdAt])
+  @@index([uploadedById])
+}
+
+model PrescriptionLine {
+  id               String                 @id @default(cuid())
+  prescriptionId   String
+  prescription     Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  lineNo           Int
+  rawText          String
+  /// Engine-reported confidence (0–1); null for manually entered lines.
+  engineConfidence Float?
+  /// Drug-master match certainty (spec I3); null when unmatched.
+  matchScore       Float?
+  matchedDrugId    String?
+  matchedDrug      Drug?                  @relation(fields: [matchedDrugId], references: [id])
+  status           PrescriptionLineStatus @default(SUGGESTED)
+  updatedAt        DateTime               @updatedAt
+
+  @@unique([prescriptionId, lineNo])
+}
+
+// ── CR-001 Prescription Intelligence Engine ──────────────────────────
+// docs/change-requests/CR-001-prescription-intelligence-engine.md
+// Sprint OCR-01: entities only — no matching engine yet. Every candidate
+// created by the mock pipeline defaults to NEEDS_PHARMACIST_REVIEW; the
+// AUTO_MATCHED / AMBIGUOUS_MATCH / NOT_FOUND states become reachable once
+// the real matching + confidence engine ships (design spec §7/§8).
+
+enum PrescriptionPageStatus {
+  QUEUED
+  ANALYZING_QUALITY
+  PREPROCESSING
+  /// CR-001 Sprint OCR-02: the 18-step image-processing engine has run and
+  /// produced an OCR-ready image; a transient status between PREPROCESSING
+  /// and EXTRACTING_TEXT (Sprint OCR-01's mock text stage, unchanged).
+  READY_FOR_OCR
+  EXTRACTING_TEXT
+  DETECTING_CANDIDATES
+  COMPLETED
+  IMAGE_REUPLOAD_REQUIRED
+  FAILED
+}
+
+/// CR-001 Sprint OCR-02 (Milaserv360 OCR Phase 2 — Image Processing &
+/// Quality Engine). Distinct from PrescriptionPageStatus: this is a
+/// descriptive quality band, not a workflow state.
+enum PreprocessingQualityStatus {
+  EXCELLENT
+  GOOD
+  FAIR
+  POOR
+  REUPLOAD_REQUIRED
+}
+
+enum PrescriptionImageVersionType {
+  ORIGINAL
+  ROTATED
+  CROPPED
+  ENHANCED
+  OCR_READY
+}
+
+/// CR-001 Sprint OCR-02 Extension — Universal Image Intake. Best-effort
+/// classification from generic signals (aspect ratio, EXIF presence,
+/// screenshot heuristics) — never a hard guarantee, always overridable by
+/// a human via manual crop.
+enum PrescriptionSourceType {
+  CAMERA
+  SCANNER
+  SCREENSHOT
+  WHATSAPP_SCREENSHOT
+  PDF
+  UNKNOWN
+}
+
+enum PrescriptionCandidateStatus {
+  AUTO_MATCHED
+  NEEDS_PHARMACIST_REVIEW
+  AMBIGUOUS_MATCH
+  NOT_FOUND
+  CONFIRMED
+  REJECTED
+}
+
+model PrescriptionPage {
+  id                 String                 @id @default(cuid())
+  prescriptionId     String
+  prescription       Prescription           @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  pageNumber         Int
+  originalStorageKey String
+  enhancedStorageKey String?
+  /// sha256 of the uploaded bytes — duplicate-upload detection (never
+  /// silently deduplicated; only flagged, per design spec §11).
+  contentHash        String?
+  /// 0–1, from Python's /v1/analyze-quality (design spec §5.1).
+  imageQualityScore  Float?
+  /// Degrees corrected during preprocessing (0/90/180/270).
+  orientation        Int?
+  processingStatus   PrescriptionPageStatus @default(QUEUED)
+  processingError    String?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  textBlocks         OCRTextBlock[]
+
+  /// CR-001 Sprint OCR-02 (Image Processing & Quality Engine) — all
+  /// nullable, additive; populated by the 18-step preprocessing pipeline.
+  blurScore                Float?
+  brightnessScore          Float?
+  contrastScore            Float?
+  noiseScore               Float?
+  rotationAngle            Float?
+  cropConfidence           Float?
+  /// Algorithm/config version that produced these scores — lets a future
+  /// re-run be told apart from a stale one after the pipeline changes.
+  preprocessingVersion     String?
+  /// Wall-clock time of the full preprocessing pipeline, in milliseconds.
+  preprocessingDuration    Int?
+  /// 0–100 aggregate — distinct from imageQualityScore (0–1, Sprint OCR-01's
+  /// coarse pre-preprocessing gate, kept unchanged).
+  finalQualityScore        Float?
+  qualityStatus            PreprocessingQualityStatus?
+  preprocessingStartedAt   DateTime?
+  preprocessingCompletedAt DateTime?
+  imageVersions            PrescriptionPageImageVersion[]
+
+  /// CR-001 Sprint OCR-02 Extension — Universal Image Intake & Drag-and-
+  /// Drop Upload. All nullable/defaulted, additive; populated at upload
+  /// time by the region-detection step (design doc: "Backend Upload
+  /// Flow"), before preprocessing ever runs.
+  sourceType                 PrescriptionSourceType @default(UNKNOWN)
+  screenshotDetected         Boolean?
+  /// Best-effort, e.g. "whatsapp" — a secondary heuristic signal, never
+  /// the basis for hard-coded UI-coordinate cropping.
+  screenshotApplicationHint  String?
+  /// The best-scored candidate region at detection time — {x,y,width,
+  /// height,confidence} in the original image's coordinate space. See
+  /// `regions` for every candidate when more than one was found.
+  detectedDocumentRegionJson Json?
+  regionDetectionConfidence  Float?
+  /// True until a human confirms a region or supplies a manual crop —
+  /// gates this page out of submit()'s auto-enqueue (design doc:
+  /// "Low-confidence crops require manual confirmation").
+  manualCropRequired         Boolean                @default(false)
+  /// A human-supplied override — {x,y,width,height} — takes precedence
+  /// over detectedDocumentRegionJson once set.
+  manualCropJson             Json?
+  clipboardPasted            Boolean                @default(false)
+  originalWidth              Int?
+  originalHeight             Int?
+  /// Index into `regions` the reviewer picked as primary, when more than
+  /// one candidate existed.
+  selectedRegionIndex        Int?
+  regions                    PrescriptionRegion[]
+
+  /// CR-001 Sprint OCR-03 (Real Text Detection & Recognition) — all
+  /// nullable/defaulted, additive; populated once real OCR recognition
+  /// runs. Distinct from imageQualityScore/finalQualityScore (Sprint
+  /// OCR-01/02's *image*-quality gates) — these describe how confidently
+  /// the *text* was recognized.
+  ocrProviderName    String?
+  ocrProviderVersion String?
+  ocrModelInfoJson   Json?
+  ocrStartedAt       DateTime?
+  ocrCompletedAt     DateTime?
+  ocrDurationMs      Int?
+  ocrBlockCount      Int?
+  /// 0-100 aggregate of every block's recognition confidence.
+  ocrPageConfidence  Float?
+  rawPageText        String?
+  normalizedPageText String?
+  /// True whenever ocrPageConfidence (or an individual block) falls
+  /// below the configurable review threshold. Surfaced as a prominent
+  /// warning in the reviewer UI rather than a separate blocking
+  /// processingStatus value: every prescription already reaches human
+  /// REVIEW regardless (no auto-confirm path exists until the matching
+  /// engine ships — Sprint OCR-05/06), so this is an attention flag, not
+  /// an additional gate (design doc §10's OCR_LOW_CONFIDENCE/
+  /// OCR_REVIEW_REQUIRED intent, expressed as a flag instead of new
+  /// enum values that would duplicate what this flag already says).
+  requiresOcrReview  Boolean                      @default(false)
+  ocrFailureCode     String?
+  ocrFailureReason   String?
+  /// Not a hard FK (like PrescriptionRegion.spawnedPageId elsewhere in
+  /// this schema) — avoids a circular relation with PrescriptionOcrRun,
+  /// which itself points back at this page. Points at whichever run's
+  /// OCRTextBlock rows are the "live" ones the rest of the app reads;
+  /// every prior run's blocks stay queryable for history (design doc
+  /// §16 "never silently overwrite previous OCR runs").
+  currentOcrRunId    String?
+  ocrRuns            PrescriptionOcrRun[]
+  /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
+  medicationLines    PrescriptionMedicationLine[]
+
+  @@unique([prescriptionId, pageNumber])
+  @@index([processingStatus])
+  @@index([contentHash])
+}
+
+/// CR-001 Sprint OCR-03 — one row per OCR attempt on a page (design doc
+/// §16 "OCR Reprocessing"). OCRTextBlock rows belong to exactly one run;
+/// PrescriptionPage.currentOcrRunId points at the "live" one.
+model PrescriptionOcrRun {
+  id                   String           @id @default(cuid())
+  prescriptionPageId   String
+  page                 PrescriptionPage @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  /// 1, 2, 3... per page.
+  runNumber            Int
+  providerName         String
+  providerVersion      String?
+  modelInfoJson        Json?
+  /// "initial" | "manual_rerun" | "recrop" — what triggered this run.
+  trigger              String           @default("initial")
+  /// Every OCR setting resolved at the time this run started (design doc
+  /// §16 "settings snapshot") — a historical run never re-reads live
+  /// Settings.
+  settingsSnapshotJson Json?
+  /// "RUNNING" | "COMPLETED" | "FAILED" — plain string, no enum: this is
+  /// run bookkeeping, not a PrescriptionPageStatus-style pipeline stage.
+  status               String           @default("RUNNING")
+  startedAt            DateTime         @default(now())
+  completedAt          DateTime?
+  durationMs           Int?
+  blockCount           Int?
+  pageConfidence       Float?
+  failureCode          String?
+  failureReason        String?
+  /// Set only for a manually-triggered rerun (design doc §16 "provider").
+  requestedById        String?
+  textBlocks           OCRTextBlock[]
+
+  @@unique([prescriptionPageId, runNumber])
+  @@index([prescriptionPageId])
+}
+
+/// CR-001 Sprint OCR-02 Extension — one row per candidate document region
+/// a screenshot/photo might contain (design doc: "Multiple Region
+/// Handling" — uncertain regions are never silently discarded).
+model PrescriptionRegion {
+  id                 String           @id @default(cuid())
+  prescriptionPageId String
+  page               PrescriptionPage @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  regionIndex        Int
+  /// {x,y,width,height} in the original image's coordinate space.
+  boundingBoxJson    Json
+  confidence         Float
+  /// Free-form, e.g. "document" | "chat_bubble" | "ui_chrome" — no fixed
+  /// taxonomy imposed by this sprint.
+  regionType         String?
+  selected           Boolean          @default(false)
+  /// PENDING | SELECTED | SPAWNED_PAGE | DISCARDED — plain string, no
+  /// enum: this status is UI/reviewer-workflow bookkeeping, not a
+  /// pipeline stage like PrescriptionPageStatus.
+  processingStatus   String           @default("PENDING")
+  /// Set once a reviewer chooses to process this region as its own page
+  /// (design doc: "Allow processing of multiple regions as separate
+  /// pages") — traceability from region back to the page it produced.
+  spawnedPageId      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@unique([prescriptionPageId, regionIndex])
+  @@index([prescriptionPageId])
+}
+
+/// CR-001 Sprint OCR-02 — one row per stored image version, never
+/// overwriting the original (design spec: "Store multiple versions").
+model PrescriptionPageImageVersion {
+  id                 String                       @id @default(cuid())
+  prescriptionPageId String
+  page               PrescriptionPage             @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  versionType        PrescriptionImageVersionType
+  storageKey         String
+  width              Int?
+  height             Int?
+  /// Which PDF page this version came from (0 for plain images and for a
+  /// PDF's first page — Sprint OCR-02 stores one PrescriptionPage's worth
+  /// of versions per the Sprint OCR-01 one-file-one-page data model; a
+  /// multi-page PDF's later pages are analyzed but not persisted here).
+  sourcePageIndex    Int                          @default(0)
+  createdAt          DateTime                     @default(now())
+
+  @@unique([prescriptionPageId, versionType, sourcePageIndex])
+  @@index([prescriptionPageId])
+}
+
+model OCRTextBlock {
+  id                 String                      @id @default(cuid())
+  prescriptionPageId String
+  page               PrescriptionPage            @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  rawText            String
+  normalizedText     String?
+  /// {x, y, width, height} in the enhanced image's coordinate space.
+  boundingBox        Json?
+  language           String?
+  ocrConfidence      Float?
+  lineNumber         Int
+  /// Python's medicine-line heuristic (design spec §2) — not a DIC match.
+  isMedicineLine     Boolean                     @default(false)
+  candidates         PrescriptionDrugCandidate[]
+
+  /// CR-001 Sprint OCR-03 — nullable for backward compatibility with any
+  /// pre-Sprint-OCR-03 rows; every row this sprint's pipeline creates
+  /// sets it. Every block belongs to exactly one OCR run — reprocessing
+  /// creates new rows under a new run rather than overwriting these
+  /// (design doc §16).
+  ocrRunId String?
+  ocrRun   PrescriptionOcrRun? @relation(fields: [ocrRunId], references: [id], onDelete: Cascade)
+
+  /// The pre-reading-order merge index — a stable identity across
+  /// re-sorts, distinct from lineNumber (existing field above), which is
+  /// the reading-order position.
+  blockIndex                Int             @default(0)
+  detectedScript            String?
+  textDirection             String?
+  boundingPolygonJson       Json?
+  recognitionCandidatesJson Json?
+  providerName              String?
+  providerVersion           String?
+  modelName                 String?
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+  corrections               OCRCorrection[]
+
+  @@index([prescriptionPageId])
+  @@index([ocrRunId])
+}
+
+/// One OCR line may yield zero, one, or several ranked candidates —
+/// the structural reason this replaces PrescriptionLine's 1:1 model
+/// (design spec §4.6).
+model PrescriptionDrugCandidate {
+  id                  String                      @id @default(cuid())
+  prescriptionId      String
+  prescription        Prescription                @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  ocrTextBlockId      String?
+  ocrTextBlock        OCRTextBlock?               @relation(fields: [ocrTextBlockId], references: [id])
+  extractedDrugText   String
+  extractedStrength   String?
+  extractedDosageForm String?
+  matchedDrugId       String?
+  matchedDrug         Drug?                       @relation(fields: [matchedDrugId], references: [id])
+  matchConfidence     Float?
+  status              PrescriptionCandidateStatus @default(NEEDS_PHARMACIST_REVIEW)
+  /// Score breakdown / match reasons (design spec §7) — populated for
+  /// real by the Phase 5 matching engine; null on any pre-Phase-5 row.
+  matchExplanation    Json?
+  reviewedById        String?
+  reviewedAt          DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  corrections         OCRCorrection[]
+
+  // ── CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine ────────
+  // All nullable/defaulted, additive; null on any row a pre-Phase-5
+  // pipeline created. This table doubles as the design summary's
+  // "DrugMatchCandidate" — extended in place rather than duplicated,
+  // since it already existed for exactly this purpose (see the
+  // pre-Phase-5 matchExplanation comment above).
+  medicationLineId         String?
+  medicationLine           PrescriptionMedicationLine?  @relation("LineCandidates", fields: [medicationLineId], references: [id], onDelete: Cascade)
+  matchRunId               String?
+  matchRun                 DrugMatchRun?                @relation(fields: [matchRunId], references: [id], onDelete: Cascade)
+  /// 1 = top-ranked candidate for this line.
+  rank                     Int?
+  nameScore                Float?
+  ingredientScore          Float?
+  strengthScore            Float?
+  dosageFormScore          Float?
+  contextScore             Float?
+  dataQualityScore         Float?
+  /// Small +/- adjustment from OCR/page confidence — never a weighted
+  /// share of the score, so an unreliable read tempers confidence
+  /// rather than silently boosting a lucky fuzzy match.
+  ocrReliabilityAdjustment Float?
+  conflictPenalty          Float?
+  confidenceLevel          MatchConfidenceLevel?
+  /// This candidate's totalScore minus the next-ranked candidate's —
+  /// classifyConfidence() never trusts an absolute score alone
+  /// (design summary §17).
+  candidateMargin          Float?
+  /// DrugMatchEvidence[] — type/sourceText/matchedDICValue/rawScore/
+  /// weightedScore/explanation/sourceBlockIds per signal that fed this
+  /// candidate's score (design summary §7).
+  evidenceJson             Json?
+  /// Conflict codes detected against this specific candidate (design
+  /// summary §15) — e.g. STRENGTH_CONFLICT, DISCONTINUED_DRUG.
+  conflictsJson            Json?
+  /// Human-readable explanation — never only in logs (design summary
+  /// §23).
+  explanationText          String?
+  selected                 Boolean                      @default(false)
+  rejected                 Boolean                      @default(false)
+  selectedForLines         PrescriptionMedicationLine[] @relation("SelectedCandidate")
+  selectedForDecisions     DrugMatchDecision[]          @relation("DecisionCandidate")
+
+  @@index([prescriptionId])
+  @@index([status])
+  @@index([medicationLineId])
+  @@index([matchRunId])
+}
+
+/// Pharmacist corrections — analytics/training trail only; never writes
+/// to Drug/DrugAlias directly (design spec §12 "learn without silently
+/// modifying the master").
+model OCRCorrection {
+  id               String                     @id @default(cuid())
+  /// CR-001 Sprint OCR-03 — widened from required to optional: this row
+  /// now also covers block-level corrections (design doc §15 "Manual
+  /// OCR Review Foundation"), which reuse this same shape rather than a
+  /// parallel table. Exactly one of candidateId/ocrTextBlockId is set —
+  /// enforced in the service layer, mirroring how ConfirmCropDto's
+  /// "exactly one of" rule is enforced (Sprint OCR-02 Extension).
+  candidateId      String?
+  candidate        PrescriptionDrugCandidate? @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  ocrTextBlockId   String?
+  ocrTextBlock     OCRTextBlock?              @relation(fields: [ocrTextBlockId], references: [id], onDelete: Cascade)
+  originalOCRText  String
+  correctedText    String?
+  originalDrugId   String?
+  correctedDrugId  String?
+  /// CR-001 Sprint OCR-03 — block-level correction actions beyond a
+  /// plain text edit: "unreadable" | "irrelevant_ui" | null.
+  markedAs         String?
+  correctedById    String
+  correctionReason String?
+  createdAt        DateTime                   @default(now())
+
+  @@index([candidateId])
+  @@index([ocrTextBlockId])
+}
+
+// ── CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine ─────────
+// docs/change-requests/CR-001-prescription-intelligence-engine.md
+//
+// Explicitly out of scope: branch inventory availability, stock
+// reservation, pharmaceutical substitution recommendation, order
+// creation, automatic prescription approval. No confidence band ever
+// auto-confirms a medication — every candidate the engine produces
+// still requires a pharmacist decision (design summary §2/§16).
+
+enum PrescriptionLineType {
+  MEDICATION
+  DOSAGE_INSTRUCTION
+  PATIENT_INFORMATION
+  DOCTOR_INFORMATION
+  DATE
+  DIAGNOSIS
+  HEADER
+  FOOTER
+  WHATSAPP_UI
+  UNKNOWN
+}
+
+enum MedicationLineMatchingStatus {
+  CANDIDATES_FOUND
+  HIGH_CONFIDENCE
+  AMBIGUOUS
+  LOW_CONFIDENCE
+  UNRESOLVED
+  CONFIRMED
+  REJECTED
+  MANUALLY_SELECTED
+  NOT_A_MEDICATION
+}
+
+enum DrugMatchRunStatus {
+  MATCHING_QUEUED
+  MATCHING_PROCESSING
+  MATCHING_COMPLETED
+  MATCHING_REVIEW_REQUIRED
+  MATCHING_PARTIALLY_RESOLVED
+  MATCHING_RESOLVED
+  MATCHING_FAILED
+}
+
+enum MatchConfidenceLevel {
+  VERY_HIGH
+  HIGH
+  MEDIUM
+  LOW
+  UNRESOLVED
+}
+
+enum MatchDecisionType {
+  CANDIDATE_CONFIRMED
+  CANDIDATE_REJECTED
+  MANUAL_DRUG_SELECTED
+  NO_DRUG_FOUND
+  NON_MEDICATION_LINE
+  REQUIRES_CLARIFICATION
+}
+
+/// One prescription-level attempt at the full SEGMENT -> EXTRACT ->
+/// GENERATE -> SCORE -> DETECT_CONFLICTS -> SAVE -> ROUTE pipeline
+/// (design summary §20). Never deleted — a reprocess creates a new run
+/// alongside every prior one, mirroring PrescriptionOcrRun's own
+/// "never silently overwrite" rule for OCR.
+model DrugMatchRun {
+  id                        String             @id @default(cuid())
+  prescriptionId            String
+  prescription              Prescription       @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  /// Every page's currentOcrRunId this run read from, at trigger time.
+  ocrRunIdsJson             Json
+  matchingEngineVersion     String
+  /// Every matching weight/threshold resolved from Settings at the
+  /// moment this run started — reproducible even after weights change
+  /// later (mirrors PrescriptionOcrRun.settingsSnapshotJson).
+  configurationSnapshotJson Json
+  status                    DrugMatchRunStatus @default(MATCHING_QUEUED)
+  startedAt                 DateTime?
+  completedAt               DateTime?
+  durationMs                Int?
+  lineCount                 Int                @default(0)
+  matchedLineCount          Int                @default(0)
+  unresolvedLineCount       Int                @default(0)
+  /// Set only for a manually-triggered reprocess; null for the
+  /// automatic post-OCR trigger.
+  initiatedById             String?
+  failureCode               String?
+  failureReason             String?
+  createdAt                 DateTime           @default(now())
+
+  medicationLines PrescriptionMedicationLine[]
+  candidates      PrescriptionDrugCandidate[]
+
+  @@index([prescriptionId])
+  @@index([status])
+}
+
+/// Segmentation output (design summary §4) — logical prescription
+/// lines grouped from one or more OCRTextBlocks, distinct from the
+/// legacy per-block PrescriptionLine model (blueprint §17, frozen).
+/// Belongs to a specific DrugMatchRun (never overwritten by a
+/// reprocess) so a line's own candidates/decisions stay historically
+/// intact even after re-segmentation.
+model PrescriptionMedicationLine {
+  id                   String                       @id @default(cuid())
+  prescriptionId       String
+  prescription         Prescription                 @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  prescriptionPageId   String
+  page                 PrescriptionPage             @relation(fields: [prescriptionPageId], references: [id], onDelete: Cascade)
+  matchRunId           String
+  matchRun             DrugMatchRun                 @relation(fields: [matchRunId], references: [id], onDelete: Cascade)
+  lineIndex            Int
+  rawText              String
+  normalizedText       String?
+  /// OCRTextBlock ids this line was grouped from, in reading order.
+  sourceBlockIdsJson   Json
+  boundingRegionJson   Json?
+  probableLineType     PrescriptionLineType         @default(UNKNOWN)
+  detectedLanguage     String?
+  /// Average OCR recognition confidence (0-1) across the source blocks.
+  ocrConfidence        Float?
+  /// The phrase extractor's own confidence in the line-type/phrase
+  /// split (0-1), distinct from ocrConfidence.
+  extractionConfidence Float?
+  matchingStatus       MedicationLineMatchingStatus @default(CANDIDATES_FOUND)
+  selectedDrugId       String?
+  selectedDrug         Drug?                        @relation(fields: [selectedDrugId], references: [id])
+  selectedCandidateId  String?
+  selectedCandidate    PrescriptionDrugCandidate?   @relation("SelectedCandidate", fields: [selectedCandidateId], references: [id])
+  selectedById         String?
+  selectedAt           DateTime?
+  /// Never auto-cleared to false — only a recorded decision does that
+  /// (design summary §2: "never silently confirm").
+  reviewRequired       Boolean                      @default(true)
+  createdAt            DateTime                     @default(now())
+  updatedAt            DateTime                     @updatedAt
+
+  candidates PrescriptionDrugCandidate[] @relation("LineCandidates")
+  decisions  DrugMatchDecision[]
+
+  /// Phase 6 — Location-Aware Branch Inventory & Fulfillment.
+  fulfillmentRequestItems FulfillmentRequestItem[]
+
+  @@unique([matchRunId, lineIndex])
+  @@index([prescriptionId])
+  @@index([prescriptionPageId])
+  @@index([matchingStatus])
+}
+
+/// Append-only decision history — distinct from the *live* state on
+/// PrescriptionMedicationLine, mirroring how OCRCorrection/
+/// DrugChangeRequest never overwrite, only append (design summary §18).
+model DrugMatchDecision {
+  id                  String                     @id @default(cuid())
+  medicationLineId    String
+  medicationLine      PrescriptionMedicationLine @relation(fields: [medicationLineId], references: [id], onDelete: Cascade)
+  selectedDrugId      String?
+  selectedDrug        Drug?                      @relation(fields: [selectedDrugId], references: [id])
+  selectedCandidateId String?
+  selectedCandidate   PrescriptionDrugCandidate? @relation("DecisionCandidate", fields: [selectedCandidateId], references: [id])
+  decisionType        MatchDecisionType
+  decidedById         String
+  decidedAt           DateTime                   @default(now())
+  notes               String?
+  /// The line's previously-selected drug, if any — lets a decision
+  /// history show what changed, not just the final state.
+  previousDrugId      String?
+  auditMetadataJson   Json?
+
+  @@index([medicationLineId])
+}

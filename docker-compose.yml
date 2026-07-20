@@ -1,0 +1,160 @@
+name: milaserv360
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-milaserv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-milaserv360}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-milaserv} -d ${POSTGRES_DB:-milaserv360}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--requirepass', '${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}']
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a $$REDIS_PASSWORD ping | grep PONG']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  # CR-001 Prescription Intelligence Engine (Sprint OCR-01) —
+  # docs/change-requests/CR-001-prescription-intelligence-engine.md §1/§9.
+  # S3-compatible object storage for prescription files; the api container
+  # talks to it as PRESCRIPTION_STORAGE_DRIVER=minio.
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    profiles: ['app']
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # First-party OCR pipeline microservice — never receives DB credentials,
+  # never leaves the private compose network (design spec §1/§2).
+  ocr-service:
+    build:
+      context: services/ocr-service
+    restart: unless-stopped
+    profiles: ['app']
+    environment:
+      # CR-001 Sprint OCR-03 — Real Text Detection & Recognition. Every
+      # value here is infra-level (device/model selection), distinct from
+      # the business tunables (thresholds, enabled processors) NestJS
+      # Settings resolves and passes per-call — see app/config.py.
+      OCR_PROVIDER: paddleocr
+      OCR_DEVICE: ${OCR_DEVICE:-cpu}
+      OCR_USE_GPU: ${OCR_USE_GPU:-false}
+      OCR_MODEL_CACHE_PATH: /models
+      OCR_DEFAULT_LANGUAGE: ${OCR_DEFAULT_LANGUAGE:-auto}
+      OCR_ENABLE_ARABIC: ${OCR_ENABLE_ARABIC:-true}
+      OCR_ENABLE_ENGLISH: ${OCR_ENABLE_ENGLISH:-true}
+      OCR_ENABLE_ORIENTATION: ${OCR_ENABLE_ORIENTATION:-true}
+      OCR_ENABLE_DOCUMENT_UNWARPING: ${OCR_ENABLE_DOCUMENT_UNWARPING:-true}
+      OCR_BATCH_SIZE: ${OCR_BATCH_SIZE:-4}
+      OCR_REQUEST_TIMEOUT_SECONDS: ${OCR_REQUEST_TIMEOUT_SECONDS:-120}
+      # Shared secret with the api container (design brief §12/§18) —
+      # unset means unauthenticated, logged loudly at startup; set it for
+      # any shared/production environment.
+      OCR_INTERNAL_TOKEN: ${OCR_INTERNAL_TOKEN:-}
+    volumes:
+      # Model weights survive `docker compose down && up` — never
+      # silently re-downloaded (design brief §3).
+      - ocr_models:/models
+    ports:
+      - '8100:8100'
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+    restart: unless-stopped
+    profiles: ['app']
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ocr-service:
+        condition: service_started
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      API_PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-milaserv}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-milaserv360}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-900s}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-30}
+      PASSWORD_MIN_LENGTH: ${PASSWORD_MIN_LENGTH:-10}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}
+      PRESCRIPTION_STORAGE_DRIVER: minio
+      MINIO_ENDPOINT: minio
+      MINIO_PORT: 9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET_PRESCRIPTIONS: ${MINIO_BUCKET_PRESCRIPTIONS:-prescriptions}
+      MINIO_USE_SSL: 'false'
+      # ocr-service (a separate container) fetches signed prescription
+      # file URLs through this — must be reachable from its network, not
+      # just the browser's.
+      API_PUBLIC_BASE_URL: http://api:4000
+      # CR-001 Sprint OCR-03 — must match ocr-service's own value above.
+      OCR_INTERNAL_TOKEN: ${OCR_INTERNAL_TOKEN:-}
+    ports:
+      - '4000:4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_DEFAULT_LOCALE: ${NEXT_PUBLIC_DEFAULT_LOCALE:-ar}
+    restart: unless-stopped
+    profiles: ['app']
+    depends_on:
+      - api
+    ports:
+      - '3000:3000'
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  ocr_models:

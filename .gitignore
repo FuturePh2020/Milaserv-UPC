@@ -1,0 +1,45 @@
+# dependencies
+node_modules/
+
+# builds
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# env — never commit real secrets
+.env
+.env.*
+!.env.example
+
+# logs & caches
+*.log
+.eslintcache
+coverage/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# prisma
+apps/api/prisma/*.db
+
+# local redis dumps (manual dev redis-server runs)
+*.rdb
+
+# attachments (local dev storage) — anchored paths so this doesn't also
+# match source directories like apps/api/src/**/storage/
+/storage/
+apps/api/storage/
+
+# Python (services/ocr-service)
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# CR-001 Sprint OCR-03 — evaluation run outputs (transient; the fixture
+# dataset itself under evaluation/dataset/ is tracked).
+services/ocr-service/evaluation/results/*.json
