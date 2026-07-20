@@ -20,6 +20,7 @@ import { newPrescriptionStorageKey } from '../storage/prescription-storage';
 import { PRESCRIPTION_QUEUE_REDIS } from './queue-redis.provider';
 import { PRESCRIPTION_OCR_QUEUE_NAME } from './prescription-ocr.queue';
 import type { PrescriptionOcrJobData } from './prescription-ocr.queue';
+import { PrescriptionDrugMatchingQueueService } from '../matching/queue/prescription-drug-matching.queue';
 
 const SIGNED_URL_TTL_SECONDS = 300;
 
@@ -70,6 +71,7 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
     private readonly pythonOcr: PythonOcrClientService,
     private readonly preprocessingConfig: PreprocessingConfigService,
     private readonly ocrConfig: OcrConfigService,
+    private readonly drugMatchingQueue: PrescriptionDrugMatchingQueueService,
   ) {}
 
   onModuleInit() {
@@ -266,51 +268,20 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
       null,
     );
 
-    // ── Stage: medicine-line / candidate detection ──────────────────────
-    await this.prisma.prescriptionPage.update({
-      where: { id: pageId },
-      data: { processingStatus: 'DETECTING_CANDIDATES' },
-    });
     // Scoped to this run's own blocks — reprocessing never deletes prior
     // runs' rows, so an unscoped findMany would mix runs together.
     const blocks = await this.prisma.oCRTextBlock.findMany({
       where: { prescriptionPageId: pageId, ocrRunId: ocrOutcome.run.id },
       orderBy: { lineNumber: 'asc' },
     });
-    if (blocks.length) {
-      const candidates = await this.pythonOcr.detectCandidates(
-        blocks.map((b) => ({
-          rawText: b.rawText,
-          normalizedText: b.normalizedText ?? b.rawText,
-          boundingBox: (b.boundingBox as Record<string, number>) ?? {},
-          language: b.language ?? 'en',
-          confidence: b.ocrConfidence ?? 0,
-          lineNumber: b.lineNumber,
-        })),
-      );
-      for (const line of candidates.candidateLines) {
-        const block = blocks[line.blockIndex];
-        if (!block) continue;
-        await this.prisma.oCRTextBlock.update({
-          where: { id: block.id },
-          data: { isMedicineLine: true },
-        });
-        // No matching engine yet (Sprint OCR-05/06) — every candidate the
-        // pipeline creates is unmatched and defaults to
-        // NEEDS_PHARMACIST_REVIEW; this is the safety rule, not a gap:
-        // nothing is ever auto-confirmed without a matcher to back it.
-        await this.prisma.prescriptionDrugCandidate.create({
-          data: {
-            prescriptionId: page.prescriptionId,
-            ocrTextBlockId: block.id,
-            extractedDrugText: line.extractedDrugText,
-            extractedStrength: line.extractedStrength ?? null,
-            extractedDosageForm: line.extractedDosageForm ?? null,
-          },
-        });
-      }
-    }
 
+    // CR-001 Phase 5 — the mock DETECTING_CANDIDATES stage (Sprint
+    // OCR-01's stubbed Python /v1/detect-candidates call) is gone: text
+    // recognition ends this page's own pipeline. The real, prescription-
+    // level matching engine (DrugMatchingEngine) runs once every page has
+    // reached a terminal state (see finalizePrescriptionIfDone below),
+    // since candidate matching benefits from seeing every page's lines
+    // together rather than one page in isolation.
     await this.prisma.prescriptionPage.update({
       where: { id: pageId },
       data: { processingStatus: 'COMPLETED' },
@@ -630,5 +601,11 @@ export class PrescriptionOcrWorkerService implements OnModuleInit, OnModuleDestr
       titleEn: `Prescription ${rx.number} is ready for review`,
       payload: { entityType: 'prescription', entityId: prescriptionId },
     });
+
+    // CR-001 Phase 5 — hand off to the real drug-matching engine now
+    // that every page has a terminal OCR outcome, mirroring how OCR page
+    // jobs are enqueued without the caller waiting on them (never blocks
+    // this finalization path).
+    await this.drugMatchingQueue.enqueuePrescription(prescriptionId);
   }
 }

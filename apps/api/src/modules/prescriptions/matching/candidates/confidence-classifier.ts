@@ -8,8 +8,14 @@ import type { MatchThresholds } from '../match-config.service';
  * never sufficient — a 91 with a 1-point margin over the runner-up is
  * AMBIGUOUS-leaning (MEDIUM here), while a 91 with a 36-point margin is
  * confident (VERY_HIGH) — the margin requirement is what tells the two
- * apart. No band here ever implies clinical approval; that always
- * requires a separate pharmacist decision (design summary §2/§16).
+ * apart. A null margin (no runner-up at all — a lone candidate) is
+ * different from a small margin: the margin requirement exists to catch
+ * ambiguity between competing candidates, so with nothing to be
+ * ambiguous against, it simply doesn't apply — an uncontested strong
+ * match is judged on its score alone, not penalized as if it were tied
+ * with an invisible zero-score rival. No band here ever implies clinical
+ * approval; that always requires a separate pharmacist decision (design
+ * summary §2/§16).
  */
 export class ConfidenceClassifier {
   classify(
@@ -23,19 +29,19 @@ export class ConfidenceClassifier {
     }
 
     const ocrCapped = ocrConfidence !== null && ocrConfidence < thresholds.minimumOcrConfidence;
-    const effectiveMargin = margin ?? 0;
+    const marginAtLeast = (required: number) => margin === null || margin >= required;
 
     if (
       !ocrCapped &&
       topScore >= thresholds.veryHighMinScore &&
-      effectiveMargin >= thresholds.veryHighMarginThreshold
+      marginAtLeast(thresholds.veryHighMarginThreshold)
     ) {
       return 'VERY_HIGH';
     }
     if (
       !ocrCapped &&
       topScore >= thresholds.highMinScore &&
-      effectiveMargin >= thresholds.minimumCandidateMargin
+      marginAtLeast(thresholds.minimumCandidateMargin)
     ) {
       return 'HIGH';
     }

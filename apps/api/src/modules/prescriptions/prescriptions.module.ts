@@ -14,6 +14,11 @@ import {
 } from './queue/queue-redis.provider';
 import { PrescriptionOcrQueueService } from './queue/prescription-ocr.queue';
 import { PrescriptionOcrWorkerService } from './queue/prescription-ocr.worker';
+import { MatchConfigService } from './matching/match-config.service';
+import { DrugCandidateGenerator } from './matching/candidates/drug-candidate-generator';
+import { DrugMatchingEngine } from './matching/drug-matching.engine';
+import { PrescriptionDrugMatchingQueueService } from './matching/queue/prescription-drug-matching.queue';
+import { DrugMatchingWorkerService } from './matching/queue/drug-matching.worker';
 
 /**
  * CR-001 Prescription Intelligence Engine — Sprint OCR-01
@@ -34,7 +39,16 @@ import { PrescriptionOcrWorkerService } from './queue/prescription-ocr.worker';
     PrescriptionQueueRedisShutdown,
     PrescriptionOcrQueueService,
     PrescriptionOcrWorkerService,
+    MatchConfigService,
+    DrugCandidateGenerator,
+    DrugMatchingEngine,
+    PrescriptionDrugMatchingQueueService,
+    DrugMatchingWorkerService,
   ],
-  exports: [PrescriptionsService, PrescriptionOcrQueueService],
+  exports: [
+    PrescriptionsService,
+    PrescriptionOcrQueueService,
+    PrescriptionDrugMatchingQueueService,
+  ],
 })
 export class PrescriptionsModule {}

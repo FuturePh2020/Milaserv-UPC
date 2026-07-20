@@ -46,8 +46,9 @@ describe('ConfidenceClassifier', () => {
     expect(classifier.classify(95, 40, 0.2, THRESHOLDS)).toBe('MEDIUM');
   });
 
-  it('treats a null margin (single candidate, no runner-up) as zero margin', () => {
-    expect(classifier.classify(91, null, 0.9, THRESHOLDS)).toBe('MEDIUM');
+  it('judges a lone candidate (no runner-up) on score alone — the margin requirement does not apply', () => {
+    expect(classifier.classify(91, null, 0.9, THRESHOLDS)).toBe('VERY_HIGH');
+    expect(classifier.classify(75, null, 0.9, THRESHOLDS)).toBe('HIGH');
   });
 
   it('never returns a band that implies automatic clinical approval — the type itself has no APPROVED value', () => {

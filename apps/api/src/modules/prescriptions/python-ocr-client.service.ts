@@ -112,17 +112,6 @@ export interface ProviderStatusResult {
   capabilities?: Record<string, unknown>;
 }
 
-export interface CandidateLineDto {
-  blockIndex: number;
-  extractedDrugText: string;
-  extractedStrength?: string;
-  extractedDosageForm?: string;
-}
-
-export interface DetectCandidatesResult {
-  candidateLines: CandidateLineDto[];
-}
-
 export interface CropBox {
   x: number;
   y: number;
@@ -259,10 +248,6 @@ export class PythonOcrClientService {
    *  OCR_PROVIDER env var decide. */
   detectAndRecognize(imageUrl: string, provider?: string): Promise<DetectAndRecognizeResult> {
     return this.post('/v1/detect-and-recognize', { imageUrl, provider: provider || undefined });
-  }
-
-  detectCandidates(blocks: OcrBlockDto[]): Promise<DetectCandidatesResult> {
-    return this.post('/v1/detect-candidates', { blocks });
   }
 
   /** CR-001 Sprint OCR-02 Extension — finds the probable prescription

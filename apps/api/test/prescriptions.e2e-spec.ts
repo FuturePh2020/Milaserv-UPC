@@ -28,14 +28,14 @@ const jpegBytes = (marker: string) =>
  * like Phase 10's IntegrationsService.processDue(), so tests poll DB state
  * via waitFor() instead.
  *
- * Out of scope here (no matching engine exists until Sprint OCR-05/06):
- * Arabic/English trade-name matching, scientific-name matching, spelling
- * error tolerance, OCR-character-mistake tolerance, strength/dosage-form
- * extraction accuracy, multiple-similar-medicines disambiguation, and the
- * pharmacist correction workflow. Every candidate this sprint's pipeline
- * creates is deliberately unmatched (matchedDrugId: null) and defaults to
- * NEEDS_PHARMACIST_REVIEW — that is Sprint OCR-01's safety contract, not a
- * gap, and is asserted directly below (PX-4).
+ * CR-001 Phase 5 added a real DrugMatchingEngine (design summary §20),
+ * which now runs as a separate async job once every page's OCR reaches
+ * a terminal state — PX-4 asserts the hand-off, not matching accuracy:
+ * this suite's isolated test data has no seeded DIC drugs, so every
+ * scenario here legitimately resolves UNRESOLVED/zero-candidates. Real
+ * candidate-generation/scoring/confidence-banding behavior against
+ * seeded DIC fixtures is covered by
+ * prescriptions-drug-matching.e2e-spec.ts instead.
  */
 describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
   let app: INestApplication;
@@ -190,6 +190,34 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
       if (Date.now() > deadline) {
         throw new Error(
           `Timed out waiting for prescription ${id} to reach ${statuses.join('|')}; last status=${rx.status}`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+  }
+
+  /** CR-001 Phase 5 — the real DrugMatchingEngine runs as a separate
+   *  async BullMQ job after finalizePrescriptionIfDone(), not inside the
+   *  OCR job itself — poll for its DB writes the same way. */
+  async function waitForMedicationLine(
+    prescriptionId: string,
+    timeoutMs = 10000,
+  ): Promise<{
+    rawText: string;
+    probableLineType: string;
+    matchingStatus: string;
+    reviewRequired: boolean;
+  }> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const line = await prisma.prescriptionMedicationLine.findFirst({
+        where: { prescriptionId },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (line) return line;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Timed out waiting for a medication line on prescription ${prescriptionId}`,
         );
       }
       await new Promise((r) => setTimeout(r, 150));
@@ -449,7 +477,7 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
       .expect(400);
   });
 
-  it('PX-4 happy path: pipeline persists text blocks and NEEDS_PHARMACIST_REVIEW candidates only (safety rule)', async () => {
+  it('PX-4 happy path: pipeline persists text blocks and hands off to the real drug-matching engine, which never fabricates a match (safety rule)', async () => {
     script = defaultScript();
     const { id } = await createSubmittedPrescription(agentToken);
 
@@ -466,19 +494,21 @@ describe('Prescriptions — CR-001 OCR-01 (e2e)', () => {
     expect(page.processingStatus).toBe('COMPLETED');
     expect(page.imageQualityScore).toBeCloseTo(0.9);
     expect(page.textBlocks).toHaveLength(2);
-    expect(page.textBlocks[0].isMedicineLine).toBe(true); // high-confidence block
-    expect(page.textBlocks[1].isMedicineLine).toBe(false); // low-confidence block, filtered
 
-    // Exactly one candidate — from the medicine line only — and it must
-    // never be auto-confirmed: no matching engine exists yet (Sprint
-    // OCR-05/06), so every candidate defaults to NEEDS_PHARMACIST_REVIEW
-    // with no matched drug and no confidence score.
-    expect(detail.body.drugCandidates).toHaveLength(1);
-    const candidate = detail.body.drugCandidates[0];
-    expect(candidate.extractedDrugText).toBe('panadol extra tab');
-    expect(candidate.status).toBe('NEEDS_PHARMACIST_REVIEW');
-    expect(candidate.matchedDrugId).toBeNull();
-    expect(candidate.matchConfidence).toBeNull();
+    // CR-001 Phase 5 — the real DrugMatchingEngine (design summary §20)
+    // now runs as a separate async job once OCR finishes, segmenting the
+    // page's blocks into logical lines. "Panadol Extra Tab" is a clean
+    // MEDICATION line (drug name + recognized dosage form "tab"), but no
+    // such drug exists in this isolated test's DIC data — the engine
+    // must never fabricate a match: zero candidates, and the line stays
+    // UNRESOLVED, always requiring pharmacist review (never silently
+    // confirmed).
+    const medicationLine = await waitForMedicationLine(id);
+    expect(medicationLine.rawText).toBe('Panadol Extra Tab');
+    expect(medicationLine.probableLineType).toBe('MEDICATION');
+    expect(medicationLine.matchingStatus).toBe('UNRESOLVED');
+    expect(medicationLine.reviewRequired).toBe(true);
+    expect(detail.body.drugCandidates).toHaveLength(0);
   });
 
   it('PX-5 duplicate content is flagged, never silently blocked', async () => {
