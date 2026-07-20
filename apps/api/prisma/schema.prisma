@@ -1,0 +1,742 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  AGENT
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  LOCKED
+}
+
+enum AgentStatus {
+  AVAILABLE
+  WORKING_ON_LEAD
+  ON_CALL
+  ON_BREAK
+  STANDBY
+  OFFLINE
+}
+
+/// Lead workflow status ONLY. Call status / business outcome / task completion
+/// are modeled separately per spec section 9 ("Do not store all of them in one field").
+enum LeadWorkflowStatus {
+  NEW
+  ASSIGNED
+  IN_PROGRESS
+  CONTACTED
+  CALLBACK_REQUIRED
+  INVALID_NUMBER
+  NOT_INTERESTED
+  INTERESTED
+  CONVERTED
+  COMPLETED
+  ESCALATED
+  UNREACHABLE
+  RETURNED_TO_POOL
+  DUPLICATE
+}
+
+enum BusinessOutcome {
+  NONE
+  INTERESTED
+  NOT_INTERESTED
+  CONVERTED
+  CALLBACK
+  LOST
+}
+
+enum TaskCompletionStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum AssignmentStatus {
+  UNASSIGNED
+  RESERVED
+  ASSIGNED
+  RETURNED
+  EXPIRED
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+/// Normalized internal call status. Provider raw statuses map into this
+/// through VoipStatusMapping (section 19/24 requirement).
+enum CallStatus {
+  RINGING
+  ANSWERED
+  CONNECTED
+  BUSY
+  NO_ANSWER
+  ABANDONED
+  FAILED
+  COMPLETED
+}
+
+enum DistributionStrategy {
+  FIFO
+  OLDEST_FIRST
+  HIGHEST_PRIORITY
+  ROUND_ROBIN
+  WEIGHTED
+  PARTNER_PRIORITY
+  TASK_PRIORITY
+  REGION_MATCH
+  CATEGORY_MATCH
+  MANUAL
+}
+
+enum StatusChangeSource {
+  AGENT
+  ADMIN
+  SYSTEM
+  VOIP
+}
+
+enum BreakRecordStatus {
+  ACTIVE
+  ENDED
+  INTERRUPTED
+}
+
+enum ImportBatchStatus {
+  PENDING
+  PREVIEWING
+  VALIDATING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum DuplicateHandling {
+  SKIP
+  IMPORT
+  MARK_FOR_REVIEW
+}
+
+enum AssignmentSource {
+  AUTO_DISTRIBUTION
+  MANUAL
+  REASSIGNMENT
+}
+
+// ─────────────────────────────────────────────────────────────
+// Identity & access
+// ─────────────────────────────────────────────────────────────
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+}
+
+model User {
+  id                String     @id @default(uuid())
+  username          String     @unique
+  email             String?    @unique
+  passwordHash      String
+  fullName          String
+  role              UserRole
+  status            UserStatus @default(ACTIVE)
+  teamId            String?
+  team              Team?      @relation(fields: [teamId], references: [id])
+  extension         String?
+
+  failedLoginCount  Int        @default(0)
+  lockedUntil       DateTime?
+  mustChangePassword Boolean   @default(false)
+
+  currentAgentStatus AgentStatus?  @default(OFFLINE)
+  lastActivityAt      DateTime?
+  lastHeartbeatAt      DateTime?
+
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  createdById       String?
+
+  refreshTokens      RefreshToken[]
+  agentTaskPermissions AgentTaskPermission[]
+  agentPartnerRestrictions AgentPartnerRestriction[]
+  agentCategoryRestrictions AgentCategoryRestriction[]
+  sessions            AgentSession[]
+  breakRecords        BreakRecord[]
+  leadAssignments     LeadAssignment[]  @relation("AssignedAgent")
+  leadStatusHistoryEntries LeadStatusHistory[] @relation("StatusChangedByUser")
+  callRecordsAsAgent  CallRecord[]      @relation("CallAgent")
+  taskAssignments     TaskAssignment[]  @relation("TaskAssignmentAgent")
+  auditLogs           AuditLog[]
+
+  @@index([role])
+  @@index([status])
+}
+
+model RefreshToken {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  replacedBy  String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Lead categories, partners, tasks
+// ─────────────────────────────────────────────────────────────
+
+/// Extensible on purpose (table, not enum) so new categories beyond
+/// Insurance/Cash never require a schema migration (spec section 5).
+model LeadCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  partners             PartnerLeadCategory[]
+  tasks                TaskLeadCategory[]
+  leads                Lead[]
+  agentRestrictions    AgentCategoryRestriction[]
+}
+
+model Partner {
+  id                    String   @id @default(uuid())
+  name                  String
+  code                  String   @unique
+  partnerType           String?
+  insuranceEnabled      Boolean  @default(false)
+  cashEnabled           Boolean  @default(false)
+  isActive              Boolean  @default(true)
+  logoUrl               String?
+  contactPerson         String?
+  email                 String?
+  phone                 String?
+  notes                 String?
+  priority              Int      @default(0)
+  defaultTaskId         String?
+  defaultTask           Task?    @relation("PartnerDefaultTask", fields: [defaultTaskId], references: [id])
+  customFieldDefs       Json     @default("[]")
+  requiredImportColumns Json     @default("[]")
+  duplicateRuleFields   Json     @default("[\"phone\"]")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  categories        PartnerLeadCategory[]
+  tasks             TaskPartnerRestriction[]
+  leads             Lead[]
+  importBatches     LeadImportBatch[]
+  columnMappings    PartnerColumnMapping[]
+  agentRestrictions AgentPartnerRestriction[]
+  leadAssignments   LeadAssignment[]
+}
+
+model PartnerLeadCategory {
+  partnerId  String
+  partner    Partner      @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   LeadCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([partnerId, categoryId])
+}
+
+model PartnerColumnMapping {
+  id         String   @id @default(uuid())
+  partnerId  String
+  partner    Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  name       String
+  mapping    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([partnerId, name])
+}
+
+model Task {
+  id                   String   @id @default(uuid())
+  name                 String
+  code                 String   @unique
+  description          String?
+  requiredQuantity     Int      @default(0)
+  dailyTarget          Int      @default(0)
+  priority             Int      @default(0)
+  isActive             Boolean  @default(true)
+  maxActiveAgents      Int      @default(0)
+  maxConcurrentBreaks  Int      @default(3)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  categories        TaskLeadCategory[]
+  partners          TaskPartnerRestriction[]
+  leads             Lead[]
+  agentPermissions  AgentTaskPermission[]
+  breakTypeLimits   BreakTypeTaskLimit[]
+  assignments       TaskAssignment[]
+  defaultForPartners Partner[] @relation("PartnerDefaultTask")
+  callRecords       CallRecord[]
+  leadAssignments   LeadAssignment[]
+}
+
+model TaskLeadCategory {
+  taskId     String
+  task       Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   LeadCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, categoryId])
+}
+
+model TaskPartnerRestriction {
+  taskId    String
+  task      Task    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  partnerId String
+  partner   Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, partnerId])
+}
+
+model AgentTaskPermission {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, taskId])
+}
+
+model AgentPartnerRestriction {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  partnerId String
+  partner   Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, partnerId])
+}
+
+model AgentCategoryRestriction {
+  id         String       @id @default(uuid())
+  userId     String
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   LeadCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+
+  @@unique([userId, categoryId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Lead import
+// ─────────────────────────────────────────────────────────────
+
+model LeadImportBatch {
+  id                String            @id @default(uuid())
+  partnerId         String
+  partner           Partner           @relation(fields: [partnerId], references: [id])
+  categoryId        String
+  taskId            String?
+  fileName          String
+  fileSize          Int
+  status            ImportBatchStatus @default(PENDING)
+  duplicateHandling DuplicateHandling @default(MARK_FOR_REVIEW)
+  columnMapping     Json
+  totalRows         Int               @default(0)
+  successRows       Int               @default(0)
+  failedRows        Int               @default(0)
+  duplicateRows      Int              @default(0)
+  uploadedById      String
+  errorSummary      String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  completedAt       DateTime?
+
+  leads        Lead[]
+  rejectedRows RejectedImportRow[]
+
+  @@index([partnerId])
+  @@index([status])
+}
+
+model RejectedImportRow {
+  id           String          @id @default(uuid())
+  batchId      String
+  batch        LeadImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber    Int
+  rawData      Json
+  reasons      Json
+  createdAt    DateTime        @default(now())
+
+  @@index([batchId])
+}
+
+model Lead {
+  id                 String             @id @default(uuid())
+  externalReference  String?
+  customerName       String
+  primaryPhone       String
+  primaryPhoneNorm   String
+  secondaryPhone     String?
+  nationalOrInsId    String?
+  city               String?
+  area               String?
+  address            String?
+  source             String?
+  notes              String?
+  customFields        Json              @default("{}")
+
+  categoryId         String
+  category           LeadCategory       @relation(fields: [categoryId], references: [id])
+  partnerId          String
+  partner            Partner            @relation(fields: [partnerId], references: [id])
+  taskId             String?
+  task               Task?              @relation(fields: [taskId], references: [id])
+  batchId            String
+  batch              LeadImportBatch    @relation(fields: [batchId], references: [id])
+
+  priority           Int                @default(0)
+  workflowStatus     LeadWorkflowStatus @default(NEW)
+  assignmentStatus   AssignmentStatus   @default(UNASSIGNED)
+  isDuplicate        Boolean            @default(false)
+  duplicateOfLeadId  String?
+
+  reservedAt         DateTime?
+  reservedUntil       DateTime?
+  assignedAgentId    String?
+
+  createdAt          DateTime           @default(now())
+  importedAt         DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  assignments        LeadAssignment[]
+  statusHistory       LeadStatusHistory[]
+  callRecords         CallRecord[]
+
+  @@index([partnerId, categoryId, assignmentStatus, workflowStatus])
+  @@index([primaryPhoneNorm])
+  @@index([batchId])
+  @@index([taskId])
+}
+
+model LeadAssignment {
+  id            String            @id @default(uuid())
+  leadId        String
+  lead          Lead              @relation(fields: [leadId], references: [id])
+  agentId       String
+  agent         User              @relation("AssignedAgent", fields: [agentId], references: [id])
+  taskId        String?
+  task          Task?             @relation(fields: [taskId], references: [id])
+  partnerId     String
+  partner       Partner           @relation(fields: [partnerId], references: [id])
+  source        AssignmentSource  @default(AUTO_DISTRIBUTION)
+  assignedAt    DateTime          @default(now())
+  releasedAt    DateTime?
+  releaseReason String?
+  taskCompletionStatus TaskCompletionStatus @default(PENDING)
+  businessOutcome      BusinessOutcome      @default(NONE)
+  callbackAt           DateTime?
+  lastActivityAt       DateTime?
+
+  @@index([leadId])
+  @@index([agentId])
+}
+
+model LeadStatusHistory {
+  id               String              @id @default(uuid())
+  leadId           String
+  lead             Lead                @relation(fields: [leadId], references: [id])
+  previousStatus   LeadWorkflowStatus?
+  newStatus        LeadWorkflowStatus
+  changedByUserId  String?
+  changedByUser    User?               @relation("StatusChangedByUser", fields: [changedByUserId], references: [id])
+  source           StatusChangeSource
+  notes            String?
+  createdAt        DateTime            @default(now())
+
+  @@index([leadId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Sessions, breaks, availability
+// ─────────────────────────────────────────────────────────────
+
+model AgentSession {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  startedAt       DateTime  @default(now())
+  endedAt         DateTime?
+  productiveSeconds Int     @default(0)
+  breakSeconds     Int      @default(0)
+  standbySeconds   Int      @default(0)
+  idleSeconds      Int      @default(0)
+  offlineSeconds   Int      @default(0)
+  leadsHandled     Int      @default(0)
+  callsMade        Int      @default(0)
+  callsAnswered    Int      @default(0)
+  tasksCompleted   Int      @default(0)
+  correctedReason  String?
+  correctedByUserId String?
+
+  breakRecords     BreakRecord[]
+
+  @@index([userId, endedAt])
+}
+
+model BreakType {
+  id                  String   @id @default(uuid())
+  name                String
+  code                String   @unique
+  maxDurationMinutes  Int
+  isPaid              Boolean  @default(true)
+  maxPerShift         Int      @default(0)
+  requiresApproval    Boolean  @default(false)
+  canResume           Boolean  @default(true)
+  isActive            Boolean  @default(true)
+  color               String   @default("#64748b")
+  maxConcurrentAgents Int      @default(3)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  taskLimits    BreakTypeTaskLimit[]
+  breakRecords  BreakRecord[]
+}
+
+/// Per-task override of the "max N agents of the same task on the same
+/// break type simultaneously" rule (spec section 13). Falls back to
+/// BreakType.maxConcurrentAgents when no row exists for a task.
+model BreakTypeTaskLimit {
+  id                  String   @id @default(uuid())
+  breakTypeId         String
+  breakType           BreakType @relation(fields: [breakTypeId], references: [id], onDelete: Cascade)
+  taskId              String
+  task                Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  maxConcurrentAgents Int
+
+  @@unique([breakTypeId, taskId])
+}
+
+model BreakRecord {
+  id                String            @id @default(uuid())
+  userId            String
+  user              User              @relation(fields: [userId], references: [id])
+  sessionId         String
+  session           AgentSession      @relation(fields: [sessionId], references: [id])
+  breakTypeId       String
+  breakType         BreakType         @relation(fields: [breakTypeId], references: [id])
+  status            BreakRecordStatus @default(ACTIVE)
+  startedAt         DateTime          @default(now())
+  endedAt           DateTime?
+  usedSeconds       Int               @default(0)
+  isAutomatic       Boolean           @default(false)
+  wasOverridden     Boolean           @default(false)
+  overrideReason    String?
+  overriddenByUserId String?
+  correctedReason   String?
+  correctedByUserId String?
+  source            StatusChangeSource @default(AGENT)
+  createdAt         DateTime          @default(now())
+
+  @@index([userId, status])
+  @@index([breakTypeId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Distribution & system settings
+// ─────────────────────────────────────────────────────────────
+
+model DistributionSettings {
+  id                       String               @id @default("default")
+  strategy                 DistributionStrategy @default(FIFO)
+  maxActiveLeadsPerAgent   Int                  @default(1)
+  allowNextBeforeCompletion Boolean             @default(false)
+  reservationTimeoutMinutes Int                 @default(30)
+  autoReturnUntouched      Boolean              @default(true)
+  maxLeadsPerHour          Int                  @default(0)
+  updatedAt                DateTime             @updatedAt
+}
+
+model InactivitySettings {
+  id                        String   @id @default("default")
+  enabled                   Boolean  @default(true)
+  inactivityThresholdMinutes Int     @default(10)
+  warningBeforeMinutes       Int     @default(2)
+  gracePeriodMinutes         Int     @default(2)
+  actionType                String   @default("STANDBY") // STANDBY | BREAK
+  autoBreakTypeId             String?
+  heartbeatIntervalSeconds    Int     @default(30)
+  heartbeatTimeoutSeconds     Int     @default(90)
+  resumePreviousStatusOnActivity Boolean @default(true)
+  updatedAt                   DateTime @updatedAt
+}
+
+model SecuritySettings {
+  id                        String   @id @default("default")
+  maxFailedLoginAttempts    Int      @default(5)
+  lockoutDurationMinutes    Int      @default(15)
+  accessTokenTtlMinutes     Int      @default(15)
+  refreshTokenTtlDays       Int      @default(7)
+  passwordMinLength         Int      @default(8)
+  passwordRequireUppercase  Boolean  @default(true)
+  passwordRequireNumber     Boolean  @default(true)
+  passwordRequireSymbol     Boolean  @default(false)
+  maxUploadSizeMb           Int      @default(20)
+  allowMultipleActiveSessions Boolean @default(false)
+  updatedAt                 DateTime @updatedAt
+}
+
+model BreakThresholdSettings {
+  id                  String   @id @default("default")
+  warningMinutes      Int      @default(60)
+  updatedAt           DateTime @updatedAt
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task allocation
+// ─────────────────────────────────────────────────────────────
+
+model TaskAssignment {
+  id             String   @id @default(uuid())
+  taskId         String
+  task           Task     @relation(fields: [taskId], references: [id])
+  agentId        String
+  agent          User     @relation("TaskAssignmentAgent", fields: [agentId], references: [id])
+  assignedById   String
+  startTime      DateTime @default(now())
+  endTime        DateTime?
+  allocationType String   @default("MANUAL") // MANUAL | AUTOMATIC
+  target         Int      @default(0)
+  actualCompleted Int     @default(0)
+  notes          String?
+
+  @@index([taskId])
+  @@index([agentId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// VoIP
+// ─────────────────────────────────────────────────────────────
+
+model VoipSettings {
+  id                  String   @id @default("default")
+  providerName        String   @default("mock")
+  apiBaseUrl          String?
+  apiKeyEncrypted      String?
+  apiSecretEncrypted   String?
+  usernameEncrypted    String?
+  passwordEncrypted    String?
+  webhookSecretEncrypted String?
+  extensionMapping     Json    @default("{}")
+  agentMapping         Json    @default("{}")
+  pollingIntervalSeconds Int   @default(30)
+  isActive             Boolean @default(false)
+  ahtFormula           String  @default("(talkTime + holdTime + wrapUpTime) / handledCalls")
+  updatedAt            DateTime @updatedAt
+}
+
+model VoipStatusMapping {
+  id             String     @id @default(uuid())
+  providerStatus String     @unique
+  internalStatus CallStatus
+  createdAt      DateTime   @default(now())
+}
+
+model VoipWebhookEvent {
+  id            String   @id @default(uuid())
+  externalEventId String @unique
+  rawPayload    Json
+  processedAt   DateTime?
+  processingError String?
+  receivedAt    DateTime @default(now())
+}
+
+model CallRecord {
+  id                String        @id @default(uuid())
+  externalCallId    String?       @unique
+  direction         CallDirection
+  agentId           String?
+  agent             User?         @relation("CallAgent", fields: [agentId], references: [id])
+  leadId            String?
+  lead              Lead?         @relation(fields: [leadId], references: [id])
+  partnerId         String?
+  taskId            String?
+  task              Task?         @relation(fields: [taskId], references: [id])
+  customerPhone     String
+  agentExtension    String?
+
+  startTime         DateTime?
+  ringTime          Int?
+  answerTime        DateTime?
+  endTime           DateTime?
+  talkTimeSeconds   Int           @default(0)
+  holdTimeSeconds   Int           @default(0)
+  wrapUpTimeSeconds Int           @default(0)
+  totalDurationSeconds Int        @default(0)
+
+  status            CallStatus    @default(RINGING)
+  disposition       String?
+  recordingUrl      String?
+  voipProvider      String?
+  rawMetadata       Json          @default("{}")
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([agentId])
+  @@index([leadId])
+  @@index([status])
+  @@index([direction])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Audit
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  entityType String?
+  entityId   String?
+  metadata   Json     @default("{}")
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([action])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
