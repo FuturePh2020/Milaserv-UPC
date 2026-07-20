@@ -8,18 +8,18 @@ export class CustomersService {
 
   async findOrCreate(params: { name: string; phone: string; alternatePhone?: string; source?: string }) {
     const phoneNorm = normalizePhone(params.phone) ?? params.phone.trim();
-    const existing = await this.prisma.customer.findFirst({ where: { phoneNorm } });
-    if (existing) {
-      return this.prisma.customer.update({
-        where: { id: existing.id },
-        data: {
-          name: params.name || existing.name,
-          alternatePhone: params.alternatePhone ?? existing.alternatePhone,
-        },
-      });
-    }
-    return this.prisma.customer.create({
-      data: {
+    // A real upsert (INSERT ... ON CONFLICT) is atomic at the DB level —
+    // unlike a findFirst-then-create/update check, two concurrent callers
+    // for the same phone (e.g. two agents creating orders for the same
+    // customer at once) can't both miss the "existing" check and create
+    // duplicate Customer rows.
+    return this.prisma.customer.upsert({
+      where: { phoneNorm },
+      update: {
+        name: params.name || undefined,
+        alternatePhone: params.alternatePhone,
+      },
+      create: {
         name: params.name,
         phone: params.phone,
         phoneNorm,

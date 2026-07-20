@@ -13,12 +13,23 @@ export class SessionsService {
 
   async start(userId: string) {
     const security = await this.settings.getSecuritySettings();
-    const existing = await this.prisma.agentSession.findFirst({ where: { userId, endedAt: null } });
-    if (existing && !security.allowMultipleActiveSessions) {
-      throw new BadRequestException("You already have an active session");
-    }
 
-    const session = await this.prisma.agentSession.create({ data: { userId } });
+    // Check-then-act: without a lock, two concurrent start() calls for the
+    // same user (double-click, two tabs) can both pass the "no active
+    // session" check before either create() commits, yielding two
+    // simultaneous active sessions even when allowMultipleActiveSessions is
+    // false. allowMultipleActiveSessions is a runtime setting, not a fixed
+    // invariant, so a schema-level unique constraint can't express it — an
+    // advisory lock scoped per-user (mirroring breaks.service.ts) can.
+    const session = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `session-start:${userId}`);
+      const existing = await tx.agentSession.findFirst({ where: { userId, endedAt: null } });
+      if (existing && !security.allowMultipleActiveSessions) {
+        throw new BadRequestException("You already have an active session");
+      }
+      return tx.agentSession.create({ data: { userId } });
+    });
+
     await this.prisma.user.update({ where: { id: userId }, data: { currentAgentStatus: "AVAILABLE", lastActivityAt: new Date(), lastHeartbeatAt: new Date() } });
     await this.audit.log({ action: "SESSION_START", userId, entityType: "AgentSession", entityId: session.id });
     return session;
