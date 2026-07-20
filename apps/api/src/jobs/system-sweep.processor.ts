@@ -43,10 +43,21 @@ export class SystemSweepProcessor extends WorkerHost {
       take: 200,
     });
 
+    let returned = 0;
     for (const lead of expired) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.lead.update({
-          where: { id: lead.id },
+      // The findMany read above and this write are not tied together — an
+      // agent can complete/reassign the lead between them (e.g. finishing
+      // the call right as the sweep picks it up). Scoping the update to the
+      // exact state read makes it a no-op instead of a lost update that
+      // silently reverts a just-completed lead back to the pool.
+      const wasReturned = await this.prisma.$transaction(async (tx) => {
+        const { count } = await tx.lead.updateMany({
+          where: {
+            id: lead.id,
+            assignmentStatus: AssignmentStatus.ASSIGNED,
+            workflowStatus: LeadWorkflowStatus.ASSIGNED,
+            reservedUntil: { lt: new Date() },
+          },
           data: {
             assignmentStatus: AssignmentStatus.UNASSIGNED,
             workflowStatus: LeadWorkflowStatus.RETURNED_TO_POOL,
@@ -55,6 +66,8 @@ export class SystemSweepProcessor extends WorkerHost {
             reservedUntil: null,
           },
         });
+        if (count === 0) return false;
+
         await tx.leadAssignment.updateMany({
           where: { leadId: lead.id, releasedAt: null },
           data: { releasedAt: new Date(), releaseReason: "Lead reservation timeout expired" },
@@ -68,17 +81,22 @@ export class SystemSweepProcessor extends WorkerHost {
             notes: "Automatic reservation timeout sweep",
           },
         });
+        return true;
       });
-      await this.audit.log({
-        action: "LEAD_RETURNED_TO_POOL",
-        entityType: "Lead",
-        entityId: lead.id,
-        metadata: { reason: "reservation_timeout" },
-      });
+
+      if (wasReturned) {
+        returned += 1;
+        await this.audit.log({
+          action: "LEAD_RETURNED_TO_POOL",
+          entityType: "Lead",
+          entityId: lead.id,
+          metadata: { reason: "reservation_timeout" },
+        });
+      }
     }
 
-    if (expired.length > 0) {
-      this.logger.log(`Reservation sweep returned ${expired.length} untouched lead(s) to pool`);
+    if (returned > 0) {
+      this.logger.log(`Reservation sweep returned ${returned} untouched lead(s) to pool`);
     }
   }
 
