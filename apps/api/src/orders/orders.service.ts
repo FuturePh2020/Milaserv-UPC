@@ -370,7 +370,19 @@ export class OrdersService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      const result = await tx.order.update({ where: { id: orderId }, data });
+      // Optimistic concurrency: only apply if the order's status is still
+      // what we read it as. Without this, two near-simultaneous status
+      // updates (e.g. one operator completing an order while another closes
+      // it) both read the same pre-transaction snapshot and both commit,
+      // silently losing one operator's action and recording the same stale
+      // previousStatus on both OrderStatusHistory rows.
+      const { count } = await tx.order.updateMany({ where: { id: orderId, status: order.status }, data });
+      if (count === 0) {
+        throw new ConflictException(
+          "This order was updated by someone else in the meantime. Refresh and try again.",
+        );
+      }
+      const result = await tx.order.findUniqueOrThrow({ where: { id: orderId } });
       await tx.orderStatusHistory.create({
         data: {
           orderId,

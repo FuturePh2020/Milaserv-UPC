@@ -170,6 +170,44 @@ describe("Orders workflow (e2e)", () => {
     );
   });
 
+  it("rejects a status update that races against another one instead of silently losing it", async () => {
+    const orderNumber = `${Date.now()}`.slice(-9) + "5";
+    const order = await ordersService.createManual(
+      {
+        externalOrderNumber: orderNumber,
+        customerName: "Race Test Customer",
+        customerPhone: "+201000008888",
+        orderType: "CASH",
+        source: "INBOUND_CALL",
+        responsibleUserId: agentId,
+      },
+      agentId,
+      meta,
+    );
+
+    // Two operators racing to move the same PENDING order: one to HOLDED,
+    // one to ON_THE_WAY. Both read the same pre-transaction snapshot; the
+    // optimistic-concurrency check (updateMany scoped to the status seen at
+    // read time) must let exactly one through and reject the other with a
+    // clean conflict rather than both silently committing.
+    const results = await Promise.allSettled([
+      ordersService.updateStatus(order.id, { status: "HOLDED" }, agentId, meta),
+      ordersService.updateStatus(order.id, { status: "ON_THE_WAY" }, agentId, meta),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect((rejected[0] as PromiseRejectedResult).reason.message).toMatch(/updated by someone else/i);
+
+    // One row from createManual's initial PENDING entry, plus exactly one
+    // more from whichever racer won — not two, which would mean both
+    // updates committed.
+    const history = await prisma.orderStatusHistory.findMany({ where: { orderId: order.id } });
+    expect(history).toHaveLength(2);
+  });
+
   it("records a TimelineEvent for order creation and status changes", async () => {
     const orderNumber = `${Date.now()}`.slice(-9) + "4";
     const order = await ordersService.createManual(
