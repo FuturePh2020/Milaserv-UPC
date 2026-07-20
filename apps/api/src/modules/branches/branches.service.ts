@@ -6,6 +6,7 @@ import { TimelineService } from '../timeline/timeline.service';
 import type { AuthUser } from '../auth/current-user.decorator';
 import { skipTake, toPage } from '../../core/pagination';
 import { SettingsService } from '../settings/settings.service';
+import { resolveBranchOpenStatus, type LegacyWorkingHours } from './branch-hours-resolver';
 import type {
   CreateBranchDto,
   ListBranchesQueryDto,
@@ -171,21 +172,49 @@ export class BranchesService {
       this.settings.resolve('branch.delivery.max_km').then(Number),
     ]);
 
-    const candidates = await this.prisma.branch.findMany({
-      where: {
-        deletedAt: null,
-        status: 'ACTIVE',
-        latitude: { not: null },
-        longitude: { not: null },
-      },
-      include: { branchType: true },
+    // Phase 6 §5 upgrade: a GiST-indexed earthdistance query narrows
+    // ~600+ branches down to `maxResults` inside Postgres — never a
+    // full-table scan pulled into Node. `earth_box(...) @>` is the
+    // documented index-accelerated pre-filter (bounding box wide enough
+    // to cover all of Saudi Arabia); the exact `earth_distance` then
+    // orders the pre-filtered set. Falls back to the old full-scan
+    // Haversine path if the extension isn't present (e.g. a fresh
+    // environment that hasn't run this phase's migration yet).
+    const KSA_BOUNDING_RADIUS_METERS = 2_000_000;
+    let candidateIdsInOrder: { id: string; distanceKm: number }[];
+    try {
+      candidateIdsInOrder = await this.prisma.$queryRaw<{ id: string; distanceKm: number }[]>`
+        SELECT id, earth_distance(ll_to_earth(${q.lat}, ${q.lng}), ll_to_earth(latitude, longitude)) / 1000.0 AS "distanceKm"
+        FROM "Branch"
+        WHERE "deletedAt" IS NULL
+          AND status = 'ACTIVE'
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND earth_box(ll_to_earth(${q.lat}, ${q.lng}), ${KSA_BOUNDING_RADIUS_METERS}) @> ll_to_earth(latitude, longitude)
+        ORDER BY "distanceKm" ASC
+        LIMIT ${maxResults}
+      `;
+    } catch {
+      const all = await this.prisma.branch.findMany({
+        where: { deletedAt: null, status: 'ACTIVE', latitude: { not: null }, longitude: { not: null } },
+        select: { id: true, latitude: true, longitude: true },
+      });
+      candidateIdsInOrder = all
+        .map((b) => ({ id: b.id, distanceKm: haversineKm(q.lat, q.lng, b.latitude!, b.longitude!) }))
+        .sort((a, b) => a.distanceKm - b.distanceKm)
+        .slice(0, maxResults);
+    }
+
+    const branchRows = await this.prisma.branch.findMany({
+      where: { id: { in: candidateIdsInOrder.map((c) => c.id) } },
+      include: { branchType: true, weeklyHours: { where: { active: true } }, specialHours: { where: { active: true } } },
     });
+    const branchById = new Map(branchRows.map((b) => [b.id, b]));
+    const top = candidateIdsInOrder
+      .map((c) => ({ branch: branchById.get(c.id)!, distanceKm: c.distanceKm }))
+      .filter((c) => c.branch);
 
     const now = new Date();
-    const top = candidates
-      .map((b) => ({ branch: b, distanceKm: haversineKm(q.lat, q.lng, b.latitude!, b.longitude!) }))
-      .sort((a, b) => a.distanceKm - b.distanceKm)
-      .slice(0, maxResults);
 
     // §21 Google Maps connector (integrations spec J6): driving distances
     // when configured; straight-line math is always the fallback.
@@ -199,7 +228,12 @@ export class BranchesService {
       })
       .sort((a, b) => a.distanceKm - b.distanceKm)
       .map(({ branch, distanceKm, driveMinutes }) => {
-        const open = isOpen(branch.workingHours, now);
+        const open = resolveBranchOpenStatus(
+          branch.workingHours as LegacyWorkingHours | null,
+          branch.weeklyHours,
+          branch.specialHours,
+          now,
+        );
         let deliveryEtaMinutes: number | null = null;
         let deliveryUnavailableReason: string | null = null;
         if (branch.deliveryCovered !== true) deliveryUnavailableReason = 'NOT_COVERED';
@@ -293,16 +327,3 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-/** Working hours { from, to } — absent = always open; overnight supported (G6). */
-function isOpen(workingHours: unknown, now: Date): boolean {
-  const wh = workingHours as { from?: string; to?: string } | null;
-  if (!wh?.from || !wh?.to) return true;
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  const parse = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
-    return (h ?? 0) * 60 + (m ?? 0);
-  };
-  const from = parse(wh.from);
-  const to = parse(wh.to);
-  return from <= to ? minutes >= from && minutes < to : minutes >= from || minutes < to;
-}

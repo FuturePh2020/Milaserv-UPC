@@ -16,7 +16,7 @@ import { seedTicketingCatalogs } from './ticketing';
 import { seedPerformanceCatalog } from './performance';
 import { seedCrmCatalogs } from './crm';
 import { seedOnlineCatalogs } from './online';
-import { seedBranchTypes } from './branches';
+import { seedBranchTypes, seedBranchCapabilities } from './branches';
 import { seedDicCatalogs } from './dic';
 import { seedDicReferenceData } from './dic-reference';
 import { seedLocationHierarchy } from './locations';
@@ -1123,6 +1123,7 @@ async function main() {
   await seedCrmCatalogs(prisma);
   await seedOnlineCatalogs(prisma);
   await seedBranchTypes(prisma);
+  await seedBranchCapabilities(prisma);
   await seedDicCatalogs(prisma);
   await seedDicReferenceData(prisma);
   await seedLocationHierarchy(prisma);

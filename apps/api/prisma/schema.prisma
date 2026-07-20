@@ -340,11 +340,24 @@ model Branch {
   locationDistrict    District?                 @relation(fields: [locationDistrictId], references: [id])
   locationMatchStatus BranchLocationMatchStatus @default(UNRESOLVED)
 
+  // ── Phase 6 §6/§19 — operational-eligibility flags the fulfillment
+  // engine's Stage 3 filter reads. Nullable/defaulted, additive.
+  pickupEnabled                  Boolean? @default(true)
+  prescriptionFulfillmentEnabled Boolean? @default(false)
+  temporarilyClosed              Boolean  @default(false)
+  temporarilyClosedReason        String?
+  maximumDailyOrders             Int?
+  preparationCapacityPerHour     Int?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tickets Ticket[]
+  tickets               Ticket[]
+  weeklyHours           BranchWorkingHours[]
+  specialHours          BranchSpecialHours[]
+  serviceAreas          BranchServiceArea[]
+  capabilityAssignments BranchCapabilityAssignment[]
 
   @@index([region, city])
   @@index([branchTypeKey])
@@ -398,8 +411,9 @@ model City {
   timezone         String?
   active           Boolean @default(true)
 
-  districts District[]
-  branches  Branch[]
+  districts    District[]
+  branches     Branch[]
+  serviceAreas BranchServiceArea[]
 
   @@index([regionId])
   @@index([normalizedNameEn])
@@ -421,7 +435,8 @@ model District {
   longitude        Float?
   active           Boolean @default(true)
 
-  branches Branch[]
+  branches     Branch[]
+  serviceAreas BranchServiceArea[]
 
   @@index([cityId])
   @@index([normalizedNameEn])
@@ -463,6 +478,124 @@ enum BranchLocationMatchStatus {
   AUTO_MATCHED
   NEEDS_REVIEW
   MANUALLY_CONFIRMED
+}
+
+// ── Phase 6 §7/§8/§10 — Branch operational hours, service areas, and
+// capabilities. Additive to Branch; the legacy Branch.workingHours JSON
+// field is untouched — these are richer, optional structured layers on
+// top of it that the fulfillment engine's Stage 3 (operational
+// eligibility) reads. ──
+
+model BranchWorkingHours {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  /// 0=Sunday .. 6=Saturday (matches JS Date#getDay()).
+  dayOfWeek           Int
+  opensAt             String?
+  closesAt            String?
+  secondShiftOpensAt  String?
+  secondShiftClosesAt String?
+  isClosed            Boolean   @default(false)
+  effectiveFrom       DateTime?
+  effectiveTo         DateTime?
+  active              Boolean   @default(true)
+
+  @@index([branchId, dayOfWeek])
+}
+
+/// One-off overrides — public holidays, Ramadan hours, emergency closures.
+model BranchSpecialHours {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  date     DateTime
+  opensAt  String?
+  closesAt String?
+  isClosed Boolean  @default(false)
+  reason   String?
+  active   Boolean  @default(true)
+
+  @@unique([branchId, date])
+  @@index([branchId])
+}
+
+enum ServiceAreaType {
+  CITY
+  DISTRICT
+  RADIUS
+  POLYGON
+  POSTAL_CODE
+  MANUAL_ZONE
+}
+
+/// A branch may have several service areas; serviceability is never
+/// distance-only — a physically close branch outside its own service
+/// area must still be excluded (Phase 6 §8).
+model BranchServiceArea {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  serviceAreaType ServiceAreaType
+  cityId          String?
+  city            City?           @relation(fields: [cityId], references: [id])
+  districtId      String?
+  district        District?       @relation(fields: [districtId], references: [id])
+  radiusKm        Float?
+  centerLatitude  Float?
+  centerLongitude Float?
+  /// Inert until PostGIS lands (Step 1 decision: earthdistance/cube now,
+  /// polygon support deferred) — stored so POLYGON rows aren't lost.
+  polygonGeoJson  Json?
+
+  priority                  Int       @default(0)
+  deliveryEnabled           Boolean   @default(true)
+  pickupEnabled             Boolean   @default(true)
+  minimumOrderValue         Float?
+  maximumDeliveryDistanceKm Float?
+  estimatedDeliveryMinutes  Int?
+  effectiveFrom             DateTime?
+  effectiveTo               DateTime?
+  active                    Boolean   @default(true)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  @@index([branchId])
+  @@index([cityId])
+  @@index([districtId])
+  @@index([serviceAreaType])
+}
+
+/// Controlled capability catalog (PRESCRIPTION_FULFILLMENT,
+/// COLD_CHAIN, …) — the fulfillment engine excludes a branch that
+/// cannot legally/operationally handle a required item.
+model BranchCapability {
+  id     String  @id @default(cuid())
+  code   String  @unique
+  nameEn String
+  nameAr String
+  active Boolean @default(true)
+
+  assignments BranchCapabilityAssignment[]
+}
+
+model BranchCapabilityAssignment {
+  id           String           @id @default(cuid())
+  branchId     String
+  branch       Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  capabilityId String
+  capability   BranchCapability @relation(fields: [capabilityId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime?
+  effectiveTo   DateTime?
+  active        Boolean   @default(true)
+
+  @@unique([branchId, capabilityId])
+  @@index([branchId])
+  @@index([capabilityId])
 }
 
 // ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
