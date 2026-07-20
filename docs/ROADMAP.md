@@ -60,3 +60,66 @@ additive follow-up work, not architectural rework.
 Everything above is a new module/page/query on top of the existing schema
 and service layer — grep the relevant `*.service.ts` for a TODO-shaped gap,
 or start from the Prisma model that already has the needed fields.
+
+---
+
+## Phase 2: Milaserv 360 rebrand + Orders/Retention/Products/Timeline
+
+The second pass added the Order/Retention/Product-catalog layer, the
+Milaserv 360 rebrand, and an automatic cross-entity Timeline, per a new
+40-section spec. As with Phase 1, everything described as "implemented" is
+real and tested — full dependent-dropdown Call Customer workflow, manual
+and lead-driven Order creation with item search, the Pending/Holded/On the
+Way/Picked Up/Completed/Closed status machine with live-aggregated (not
+cached) KPIs, My Orders/Team Orders with monthly-vs-filtered toggles,
+Retention Customers with due-date follow-up filtering, the full Product &
+Item Catalog (lookups, partner-specific pricing/availability, Excel
+import/export, price history), granular `orders.*`/`retention.*`/
+`products.*` permissions layered on top of Phase 1's role-based guard, and
+an append-only `TimelineEvent` feed wired into Orders/Products/Retention/
+Call Outcomes.
+
+A few items were explicitly scoped down this pass. None require schema
+changes — the tables/fields already exist — so they remain additive
+follow-up work:
+
+- **Realtime channel**: the spec asks for WebSocket/SSE "with polling as
+  fallback." This pass ships the polling side only (`useAutoRefresh`,
+  configurable interval, pause-while-editing, filters/pagination/search
+  preserved across refetch) on every page listed in spec §19. A true
+  push channel (a Nest gateway + client subscription model) is real new
+  infrastructure and is left as follow-up; the functional requirement
+  ("stay current without manual reload") is met by polling today.
+- **Per-user permission management UI**: `UserPermission` rows,
+  `PermissionsService.can()`, and `PermissionsGuard`/`@RequirePermission`
+  are all live and enforced on the new controllers, and `PUT
+  /users/:id/permissions` lets an admin toggle a user's overrides today.
+  There is no dedicated admin screen for browsing/editing those overrides
+  yet — it's an API-only capability this pass.
+- **Product test matrix (spec §39)**: the spec lists 20 specific test
+  cases. `products-availability.e2e-spec.ts` covers a representative
+  subset (~8) of the correctness-critical paths — duplicate item
+  code/barcode rejection, active/archived exclusion from agent search,
+  cash/insurance filtering, partner-specific availability exclusion. The
+  remaining cases in §39 are mechanical repetition of the same
+  create/search/assert pattern against different field combinations
+  (e.g. Arabic-name search, dosage-form filter, import-driven updates)
+  and are a good first task for anyone picking this up.
+- **Price history UI and "future-ready" fields**: `ProductPriceHistory`
+  records every price change and is queryable, but has no dedicated
+  timeline/chart view yet. Likewise VAT rate, insurance code, and
+  controlled-item flag exist as nullable fields on `Product` for future
+  regulatory needs, but neither has UI beyond a plain input.
+
+### How to pick this up
+
+- Realtime: start from `useAutoRefresh` (`apps/web/lib/use-auto-refresh.ts`)
+  for the contract each page already expects, then add a Nest
+  `@WebSocketGateway` that emits the same shape of event the polling
+  refetch currently pulls, with the hook falling back to polling if the
+  socket drops.
+- Permissions UI: `PermissionsController`/`PermissionsService` and `PUT
+  /users/:id/permissions` already define the full contract — it's a
+  settings-style admin page away.
+- Remaining product tests: follow the pattern in
+  `apps/api/test/products-availability.e2e-spec.ts`.

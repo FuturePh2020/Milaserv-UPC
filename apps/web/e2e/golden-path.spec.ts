@@ -7,7 +7,7 @@ const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, ".fixture.json")
   password: string;
 };
 
-test("agent golden path: login -> start session -> generate lead -> submit outcome", async ({ page }) => {
+test("agent golden path: login -> start session -> generate lead -> call customer -> log outcome", async ({ page }) => {
   await page.goto("/login");
   await page.getByLabel("Username").fill(fixture.username);
   await page.getByLabel("Password").fill(fixture.password);
@@ -23,10 +23,13 @@ test("agent golden path: login -> start session -> generate lead -> submit outco
   await page.getByRole("button", { name: "Generate Lead" }).click();
   await expect(page.getByText("Playwright Test Lead")).toBeVisible({ timeout: 10_000 });
 
-  await page.getByLabel("Notes").fill("Reached the customer, interested in the product.");
-  const outcomeSelect = page.locator("select").filter({ hasText: "CONTACTED" });
-  await outcomeSelect.selectOption("COMPLETED");
-  await page.getByRole("button", { name: "Submit" }).click();
+  await page.getByRole("button", { name: "Call Customer" }).click();
+  await expect(page.getByLabel("Call Result")).toBeVisible();
+
+  await page.getByLabel("Call Result").selectOption("ANSWERED");
+  await page.getByLabel("Outcome").selectOption("NOT_INTERESTED");
+  await page.getByLabel("Notes").fill("Customer said they are not interested at this time.");
+  await page.getByRole("button", { name: "Save Call Outcome" }).click();
 
   await expect(page.getByText("No lead currently assigned")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByText(/Completed Today/i).locator("..")).toContainText("1");

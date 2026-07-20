@@ -170,6 +170,142 @@ async function main() {
     }
   }
 
+  // ── Phase 2: CRM workflow, products, orders, retention ──────────────────
+
+  await prisma.crmWorkflowSettings.upsert({ where: { id: "default" }, update: {}, create: { id: "default" } });
+  await prisma.autoRefreshSettings.upsert({ where: { id: "default" }, update: {}, create: { id: "default" } });
+
+  const reasons: { category: string; code: string; label: string }[] = [
+    { category: "NOT_INTERESTED", code: "PRICE", label: "Price too high" },
+    { category: "NOT_INTERESTED", code: "NO_NEED", label: "No longer needs the product" },
+    { category: "NOT_INTERESTED", code: "COMPETITOR", label: "Went with a competitor" },
+    { category: "CANCELLATION", code: "CUSTOMER_CANCELLED", label: "Customer cancelled" },
+    { category: "CANCELLATION", code: "OUT_OF_STOCK", label: "Out of stock" },
+    { category: "CANCELLATION", code: "INSURANCE_REJECTION", label: "Insurance rejection" },
+    { category: "CANCELLATION", code: "DUPLICATE_ORDER", label: "Duplicate Order" },
+    { category: "CANCELLATION", code: "WRONG_ORDER", label: "Wrong Order" },
+    { category: "CANCELLATION", code: "UNABLE_TO_CONTACT", label: "Unable to contact" },
+    { category: "CANCELLATION", code: "DELIVERY_ISSUE", label: "Delivery issue" },
+    { category: "CANCELLATION", code: "PRICING_ISSUE", label: "Pricing issue" },
+    { category: "CANCELLATION", code: "OTHER", label: "Other" },
+    { category: "WRONG_LEAD", code: "WRONG_CUSTOMER", label: "Wrong customer" },
+    { category: "WRONG_LEAD", code: "WRONG_PHONE", label: "Wrong phone number" },
+    { category: "WRONG_LEAD", code: "DUPLICATE_LEAD", label: "Duplicate lead" },
+    { category: "WRONG_LEAD", code: "NOT_PARTNER_CUSTOMER", label: "Customer does not belong to Partner" },
+    { category: "WRONG_LEAD", code: "INVALID_INSURANCE", label: "Invalid insurance data" },
+    { category: "WRONG_LEAD", code: "OTHER", label: "Other" },
+  ];
+  for (const r of reasons) {
+    await prisma.configurableReason.upsert({
+      where: { category_code: { category: r.category, code: r.code } },
+      update: { label: r.label },
+      create: r,
+    });
+  }
+
+  const category = await prisma.productCategory.upsert({
+    where: { code: "PHARMA" },
+    update: {},
+    create: { name: "Pharmaceuticals", code: "PHARMA" },
+  });
+  const unit = await prisma.productUnit.upsert({ where: { code: "BOX" }, update: {}, create: { name: "Box", code: "BOX" } });
+  const dosageForm = await prisma.dosageForm.upsert({
+    where: { code: "TABLET" },
+    update: {},
+    create: { name: "Tablet", code: "TABLET" },
+  });
+  const manufacturer = await prisma.manufacturer.upsert({
+    where: { code: "GENERIC" },
+    update: {},
+    create: { name: "Generic Manufacturer", code: "GENERIC" },
+  });
+  await prisma.currency.upsert({ where: { code: "EGP" }, update: {}, create: { code: "EGP", name: "Egyptian Pound" } });
+
+  const sampleProducts = [
+    { itemCode: "MED-100", englishName: "Paracetamol 500mg", arabicName: "باراسيتامول", defaultPrice: 25 },
+    { itemCode: "MED-101", englishName: "Amoxicillin 500mg", arabicName: "أموكسيسيلين", defaultPrice: 60 },
+    { itemCode: "MED-102", englishName: "Vitamin D3", arabicName: "فيتامين د٣", defaultPrice: 90 },
+  ];
+  const products = [];
+  for (const p of sampleProducts) {
+    const product = await prisma.product.upsert({
+      where: { itemCode: p.itemCode },
+      update: {},
+      create: {
+        ...p,
+        categoryId: category.id,
+        unitId: unit.id,
+        dosageFormId: dosageForm.id,
+        manufacturerId: manufacturer.id,
+        cashAvailable: true,
+        insuranceAvailable: true,
+        createdById: admin.id,
+        updatedById: admin.id,
+      },
+    });
+    products.push(product);
+  }
+  await prisma.productPartner.upsert({
+    where: { productId_partnerId: { productId: products[0].id, partnerId: partner.id } },
+    update: {},
+    create: { productId: products[0].id, partnerId: partner.id, active: true, insuranceCovered: true },
+  });
+
+  await prisma.orderTarget.upsert({
+    where: { id: "seed-agent-target" },
+    update: {},
+    create: {
+      id: "seed-agent-target",
+      agentId: agent.id,
+      cashTarget: 20000,
+      insuranceTarget: 15000,
+      totalTarget: 35000,
+      effectiveMonth: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
+    },
+  });
+  await prisma.orderTarget.upsert({
+    where: { id: "seed-team-target" },
+    update: {},
+    create: {
+      id: "seed-team-target",
+      teamId: team.id,
+      cashTarget: 100000,
+      insuranceTarget: 80000,
+      totalTarget: 180000,
+      effectiveMonth: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
+    },
+  });
+
+  const retentionCustomer = await prisma.customer.upsert({
+    where: { id: "seed-retention-customer" },
+    update: {},
+    create: {
+      id: "seed-retention-customer",
+      name: "Fatma Al-Sayed",
+      phone: "+201004445566",
+      phoneNorm: "+201004445566",
+      source: "Completed Order",
+    },
+  });
+  await prisma.retentionCustomer.upsert({
+    where: { customerId: retentionCustomer.id },
+    update: {},
+    create: {
+      customerId: retentionCustomer.id,
+      name: retentionCustomer.name,
+      phone: retentionCustomer.phone,
+      partnerId: partner.id,
+      orderType: "CASH",
+      lastOrderNumber: "800001",
+      lastOrderDate: new Date(),
+      lastDispensingDate: new Date(),
+      lastItems: [{ name: "Paracetamol 500mg", quantity: 2 }],
+      nextRefillDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      responsibleAgentId: agent.id,
+      customerSource: "Completed Order",
+    },
+  });
+
   console.log("Seed complete.");
   console.log("Admin login: admin / Admin@12345");
   console.log("Agent login: agent1 / Agent@12345");
