@@ -150,60 +150,70 @@ model Team {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users User[]
+  users        User[]
+  orders       Order[]
+  orderTargets OrderTarget[]
 }
 
 model User {
-  id                String     @id @default(uuid())
-  username          String     @unique
-  email             String?    @unique
-  passwordHash      String
-  fullName          String
-  role              UserRole
-  status            UserStatus @default(ACTIVE)
-  teamId            String?
-  team              Team?      @relation(fields: [teamId], references: [id])
-  extension         String?
+  id           String     @id @default(uuid())
+  username     String     @unique
+  email        String?    @unique
+  passwordHash String
+  fullName     String
+  role         UserRole
+  status       UserStatus @default(ACTIVE)
+  teamId       String?
+  team         Team?      @relation(fields: [teamId], references: [id])
+  extension    String?
 
-  failedLoginCount  Int        @default(0)
-  lockedUntil       DateTime?
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
   mustChangePassword Boolean   @default(false)
 
-  currentAgentStatus AgentStatus?  @default(OFFLINE)
-  lastActivityAt      DateTime?
-  lastHeartbeatAt      DateTime?
+  currentAgentStatus AgentStatus? @default(OFFLINE)
+  lastActivityAt     DateTime?
+  lastHeartbeatAt    DateTime?
 
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
-  createdById       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
 
-  refreshTokens      RefreshToken[]
-  agentTaskPermissions AgentTaskPermission[]
-  agentPartnerRestrictions AgentPartnerRestriction[]
+  refreshTokens             RefreshToken[]
+  agentTaskPermissions      AgentTaskPermission[]
+  agentPartnerRestrictions  AgentPartnerRestriction[]
   agentCategoryRestrictions AgentCategoryRestriction[]
-  sessions            AgentSession[]
-  breakRecords        BreakRecord[]
-  leadAssignments     LeadAssignment[]  @relation("AssignedAgent")
-  leadStatusHistoryEntries LeadStatusHistory[] @relation("StatusChangedByUser")
-  callRecordsAsAgent  CallRecord[]      @relation("CallAgent")
-  taskAssignments     TaskAssignment[]  @relation("TaskAssignmentAgent")
-  auditLogs           AuditLog[]
+  sessions                  AgentSession[]
+  breakRecords              BreakRecord[]
+  leadAssignments           LeadAssignment[]           @relation("AssignedAgent")
+  leadStatusHistoryEntries  LeadStatusHistory[]        @relation("StatusChangedByUser")
+  callRecordsAsAgent        CallRecord[]               @relation("CallAgent")
+  taskAssignments           TaskAssignment[]           @relation("TaskAssignmentAgent")
+  auditLogs                 AuditLog[]
+
+  permissions         UserPermission[]
+  ordersResponsible   Order[]             @relation("OrderResponsibleUser")
+  leadCallOutcomes    LeadCallOutcome[]
+  followUps           FollowUp[]          @relation("FollowUpAgent")
+  orderTargetsAsAgent OrderTarget[]       @relation("OrderTargetAgent")
+  orderNotes          OrderNote[]
+  retentionCustomers  RetentionCustomer[]
 
   @@index([role])
   @@index([status])
 }
 
 model RefreshToken {
-  id          String   @id @default(uuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash   String   @unique
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  replacedBy  String?
-  ipAddress   String?
-  userAgent   String?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  replacedBy String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
 
   @@index([userId])
 }
@@ -223,10 +233,10 @@ model LeadCategory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  partners             PartnerLeadCategory[]
-  tasks                TaskLeadCategory[]
-  leads                Lead[]
-  agentRestrictions    AgentCategoryRestriction[]
+  partners          PartnerLeadCategory[]
+  tasks             TaskLeadCategory[]
+  leads             Lead[]
+  agentRestrictions AgentCategoryRestriction[]
 }
 
 model Partner {
@@ -251,13 +261,16 @@ model Partner {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  categories        PartnerLeadCategory[]
-  tasks             TaskPartnerRestriction[]
-  leads             Lead[]
-  importBatches     LeadImportBatch[]
-  columnMappings    PartnerColumnMapping[]
-  agentRestrictions AgentPartnerRestriction[]
-  leadAssignments   LeadAssignment[]
+  categories         PartnerLeadCategory[]
+  tasks              TaskPartnerRestriction[]
+  leads              Lead[]
+  importBatches      LeadImportBatch[]
+  columnMappings     PartnerColumnMapping[]
+  agentRestrictions  AgentPartnerRestriction[]
+  leadAssignments    LeadAssignment[]
+  productPartners    ProductPartner[]
+  orders             Order[]
+  retentionCustomers RetentionCustomer[]
 }
 
 model PartnerLeadCategory {
@@ -270,40 +283,40 @@ model PartnerLeadCategory {
 }
 
 model PartnerColumnMapping {
-  id         String   @id @default(uuid())
-  partnerId  String
-  partner    Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-  name       String
-  mapping    Json
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(uuid())
+  partnerId String
+  partner   Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  name      String
+  mapping   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([partnerId, name])
 }
 
 model Task {
-  id                   String   @id @default(uuid())
-  name                 String
-  code                 String   @unique
-  description          String?
-  requiredQuantity     Int      @default(0)
-  dailyTarget          Int      @default(0)
-  priority             Int      @default(0)
-  isActive             Boolean  @default(true)
-  maxActiveAgents      Int      @default(0)
-  maxConcurrentBreaks  Int      @default(3)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  id                  String   @id @default(uuid())
+  name                String
+  code                String   @unique
+  description         String?
+  requiredQuantity    Int      @default(0)
+  dailyTarget         Int      @default(0)
+  priority            Int      @default(0)
+  isActive            Boolean  @default(true)
+  maxActiveAgents     Int      @default(0)
+  maxConcurrentBreaks Int      @default(3)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  categories        TaskLeadCategory[]
-  partners          TaskPartnerRestriction[]
-  leads             Lead[]
-  agentPermissions  AgentTaskPermission[]
-  breakTypeLimits   BreakTypeTaskLimit[]
-  assignments       TaskAssignment[]
-  defaultForPartners Partner[] @relation("PartnerDefaultTask")
-  callRecords       CallRecord[]
-  leadAssignments   LeadAssignment[]
+  categories         TaskLeadCategory[]
+  partners           TaskPartnerRestriction[]
+  leads              Lead[]
+  agentPermissions   AgentTaskPermission[]
+  breakTypeLimits    BreakTypeTaskLimit[]
+  assignments        TaskAssignment[]
+  defaultForPartners Partner[]                @relation("PartnerDefaultTask")
+  callRecords        CallRecord[]
+  leadAssignments    LeadAssignment[]
 }
 
 model TaskLeadCategory {
@@ -375,7 +388,7 @@ model LeadImportBatch {
   totalRows         Int               @default(0)
   successRows       Int               @default(0)
   failedRows        Int               @default(0)
-  duplicateRows      Int              @default(0)
+  duplicateRows     Int               @default(0)
   uploadedById      String
   errorSummary      String?
   createdAt         DateTime          @default(now())
@@ -390,58 +403,61 @@ model LeadImportBatch {
 }
 
 model RejectedImportRow {
-  id           String          @id @default(uuid())
-  batchId      String
-  batch        LeadImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  rowNumber    Int
-  rawData      Json
-  reasons      Json
-  createdAt    DateTime        @default(now())
+  id        String          @id @default(uuid())
+  batchId   String
+  batch     LeadImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber Int
+  rawData   Json
+  reasons   Json
+  createdAt DateTime        @default(now())
 
   @@index([batchId])
 }
 
 model Lead {
-  id                 String             @id @default(uuid())
-  externalReference  String?
-  customerName       String
-  primaryPhone       String
-  primaryPhoneNorm   String
-  secondaryPhone     String?
-  nationalOrInsId    String?
-  city               String?
-  area               String?
-  address            String?
-  source             String?
-  notes              String?
-  customFields        Json              @default("{}")
+  id                String  @id @default(uuid())
+  externalReference String?
+  customerName      String
+  primaryPhone      String
+  primaryPhoneNorm  String
+  secondaryPhone    String?
+  nationalOrInsId   String?
+  city              String?
+  area              String?
+  address           String?
+  source            String?
+  notes             String?
+  customFields      Json    @default("{}")
 
-  categoryId         String
-  category           LeadCategory       @relation(fields: [categoryId], references: [id])
-  partnerId          String
-  partner            Partner            @relation(fields: [partnerId], references: [id])
-  taskId             String?
-  task               Task?              @relation(fields: [taskId], references: [id])
-  batchId            String
-  batch              LeadImportBatch    @relation(fields: [batchId], references: [id])
+  categoryId String
+  category   LeadCategory    @relation(fields: [categoryId], references: [id])
+  partnerId  String
+  partner    Partner         @relation(fields: [partnerId], references: [id])
+  taskId     String?
+  task       Task?           @relation(fields: [taskId], references: [id])
+  batchId    String
+  batch      LeadImportBatch @relation(fields: [batchId], references: [id])
 
-  priority           Int                @default(0)
-  workflowStatus     LeadWorkflowStatus @default(NEW)
-  assignmentStatus   AssignmentStatus   @default(UNASSIGNED)
-  isDuplicate        Boolean            @default(false)
-  duplicateOfLeadId  String?
+  priority          Int                @default(0)
+  workflowStatus    LeadWorkflowStatus @default(NEW)
+  assignmentStatus  AssignmentStatus   @default(UNASSIGNED)
+  isDuplicate       Boolean            @default(false)
+  duplicateOfLeadId String?
 
-  reservedAt         DateTime?
-  reservedUntil       DateTime?
-  assignedAgentId    String?
+  reservedAt      DateTime?
+  reservedUntil   DateTime?
+  assignedAgentId String?
 
-  createdAt          DateTime           @default(now())
-  importedAt         DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  createdAt  DateTime @default(now())
+  importedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  assignments        LeadAssignment[]
-  statusHistory       LeadStatusHistory[]
-  callRecords         CallRecord[]
+  assignments   LeadAssignment[]
+  statusHistory LeadStatusHistory[]
+  callRecords   CallRecord[]
+  callOutcomes  LeadCallOutcome[]
+  followUps     FollowUp[]
+  orders        Order[]
 
   @@index([partnerId, categoryId, assignmentStatus, workflowStatus])
   @@index([primaryPhoneNorm])
@@ -450,19 +466,19 @@ model Lead {
 }
 
 model LeadAssignment {
-  id            String            @id @default(uuid())
-  leadId        String
-  lead          Lead              @relation(fields: [leadId], references: [id])
-  agentId       String
-  agent         User              @relation("AssignedAgent", fields: [agentId], references: [id])
-  taskId        String?
-  task          Task?             @relation(fields: [taskId], references: [id])
-  partnerId     String
-  partner       Partner           @relation(fields: [partnerId], references: [id])
-  source        AssignmentSource  @default(AUTO_DISTRIBUTION)
-  assignedAt    DateTime          @default(now())
-  releasedAt    DateTime?
-  releaseReason String?
+  id                   String               @id @default(uuid())
+  leadId               String
+  lead                 Lead                 @relation(fields: [leadId], references: [id])
+  agentId              String
+  agent                User                 @relation("AssignedAgent", fields: [agentId], references: [id])
+  taskId               String?
+  task                 Task?                @relation(fields: [taskId], references: [id])
+  partnerId            String
+  partner              Partner              @relation(fields: [partnerId], references: [id])
+  source               AssignmentSource     @default(AUTO_DISTRIBUTION)
+  assignedAt           DateTime             @default(now())
+  releasedAt           DateTime?
+  releaseReason        String?
   taskCompletionStatus TaskCompletionStatus @default(PENDING)
   businessOutcome      BusinessOutcome      @default(NONE)
   callbackAt           DateTime?
@@ -473,16 +489,16 @@ model LeadAssignment {
 }
 
 model LeadStatusHistory {
-  id               String              @id @default(uuid())
-  leadId           String
-  lead             Lead                @relation(fields: [leadId], references: [id])
-  previousStatus   LeadWorkflowStatus?
-  newStatus        LeadWorkflowStatus
-  changedByUserId  String?
-  changedByUser    User?               @relation("StatusChangedByUser", fields: [changedByUserId], references: [id])
-  source           StatusChangeSource
-  notes            String?
-  createdAt        DateTime            @default(now())
+  id              String              @id @default(uuid())
+  leadId          String
+  lead            Lead                @relation(fields: [leadId], references: [id])
+  previousStatus  LeadWorkflowStatus?
+  newStatus       LeadWorkflowStatus
+  changedByUserId String?
+  changedByUser   User?               @relation("StatusChangedByUser", fields: [changedByUserId], references: [id])
+  source          StatusChangeSource
+  notes           String?
+  createdAt       DateTime            @default(now())
 
   @@index([leadId])
 }
@@ -492,24 +508,24 @@ model LeadStatusHistory {
 // ─────────────────────────────────────────────────────────────
 
 model AgentSession {
-  id              String    @id @default(uuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id])
-  startedAt       DateTime  @default(now())
-  endedAt         DateTime?
-  productiveSeconds Int     @default(0)
-  breakSeconds     Int      @default(0)
-  standbySeconds   Int      @default(0)
-  idleSeconds      Int      @default(0)
-  offlineSeconds   Int      @default(0)
-  leadsHandled     Int      @default(0)
-  callsMade        Int      @default(0)
-  callsAnswered    Int      @default(0)
-  tasksCompleted   Int      @default(0)
-  correctedReason  String?
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id])
+  startedAt         DateTime  @default(now())
+  endedAt           DateTime?
+  productiveSeconds Int       @default(0)
+  breakSeconds      Int       @default(0)
+  standbySeconds    Int       @default(0)
+  idleSeconds       Int       @default(0)
+  offlineSeconds    Int       @default(0)
+  leadsHandled      Int       @default(0)
+  callsMade         Int       @default(0)
+  callsAnswered     Int       @default(0)
+  tasksCompleted    Int       @default(0)
+  correctedReason   String?
   correctedByUserId String?
 
-  breakRecords     BreakRecord[]
+  breakRecords BreakRecord[]
 
   @@index([userId, endedAt])
 }
@@ -529,44 +545,44 @@ model BreakType {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
-  taskLimits    BreakTypeTaskLimit[]
-  breakRecords  BreakRecord[]
+  taskLimits   BreakTypeTaskLimit[]
+  breakRecords BreakRecord[]
 }
 
 /// Per-task override of the "max N agents of the same task on the same
 /// break type simultaneously" rule (spec section 13). Falls back to
 /// BreakType.maxConcurrentAgents when no row exists for a task.
 model BreakTypeTaskLimit {
-  id                  String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   breakTypeId         String
   breakType           BreakType @relation(fields: [breakTypeId], references: [id], onDelete: Cascade)
   taskId              String
-  task                Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task                Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
   maxConcurrentAgents Int
 
   @@unique([breakTypeId, taskId])
 }
 
 model BreakRecord {
-  id                String            @id @default(uuid())
-  userId            String
-  user              User              @relation(fields: [userId], references: [id])
-  sessionId         String
-  session           AgentSession      @relation(fields: [sessionId], references: [id])
-  breakTypeId       String
-  breakType         BreakType         @relation(fields: [breakTypeId], references: [id])
-  status            BreakRecordStatus @default(ACTIVE)
-  startedAt         DateTime          @default(now())
-  endedAt           DateTime?
-  usedSeconds       Int               @default(0)
-  isAutomatic       Boolean           @default(false)
-  wasOverridden     Boolean           @default(false)
-  overrideReason    String?
+  id                 String             @id @default(uuid())
+  userId             String
+  user               User               @relation(fields: [userId], references: [id])
+  sessionId          String
+  session            AgentSession       @relation(fields: [sessionId], references: [id])
+  breakTypeId        String
+  breakType          BreakType          @relation(fields: [breakTypeId], references: [id])
+  status             BreakRecordStatus  @default(ACTIVE)
+  startedAt          DateTime           @default(now())
+  endedAt            DateTime?
+  usedSeconds        Int                @default(0)
+  isAutomatic        Boolean            @default(false)
+  wasOverridden      Boolean            @default(false)
+  overrideReason     String?
   overriddenByUserId String?
-  correctedReason   String?
-  correctedByUserId String?
-  source            StatusChangeSource @default(AGENT)
-  createdAt         DateTime          @default(now())
+  correctedReason    String?
+  correctedByUserId  String?
+  source             StatusChangeSource @default(AGENT)
+  createdAt          DateTime           @default(now())
 
   @@index([userId, status])
   @@index([breakTypeId, status])
@@ -577,49 +593,49 @@ model BreakRecord {
 // ─────────────────────────────────────────────────────────────
 
 model DistributionSettings {
-  id                       String               @id @default("default")
-  strategy                 DistributionStrategy @default(FIFO)
-  maxActiveLeadsPerAgent   Int                  @default(1)
-  allowNextBeforeCompletion Boolean             @default(false)
-  reservationTimeoutMinutes Int                 @default(30)
-  autoReturnUntouched      Boolean              @default(true)
-  maxLeadsPerHour          Int                  @default(0)
-  updatedAt                DateTime             @updatedAt
+  id                        String               @id @default("default")
+  strategy                  DistributionStrategy @default(FIFO)
+  maxActiveLeadsPerAgent    Int                  @default(1)
+  allowNextBeforeCompletion Boolean              @default(false)
+  reservationTimeoutMinutes Int                  @default(30)
+  autoReturnUntouched       Boolean              @default(true)
+  maxLeadsPerHour           Int                  @default(0)
+  updatedAt                 DateTime             @updatedAt
 }
 
 model InactivitySettings {
-  id                        String   @id @default("default")
-  enabled                   Boolean  @default(true)
-  inactivityThresholdMinutes Int     @default(10)
-  warningBeforeMinutes       Int     @default(2)
-  gracePeriodMinutes         Int     @default(2)
-  actionType                String   @default("STANDBY") // STANDBY | BREAK
-  autoBreakTypeId             String?
-  heartbeatIntervalSeconds    Int     @default(30)
-  heartbeatTimeoutSeconds     Int     @default(90)
-  resumePreviousStatusOnActivity Boolean @default(true)
-  updatedAt                   DateTime @updatedAt
+  id                             String   @id @default("default")
+  enabled                        Boolean  @default(true)
+  inactivityThresholdMinutes     Int      @default(10)
+  warningBeforeMinutes           Int      @default(2)
+  gracePeriodMinutes             Int      @default(2)
+  actionType                     String   @default("STANDBY") // STANDBY | BREAK
+  autoBreakTypeId                String?
+  heartbeatIntervalSeconds       Int      @default(30)
+  heartbeatTimeoutSeconds        Int      @default(90)
+  resumePreviousStatusOnActivity Boolean  @default(true)
+  updatedAt                      DateTime @updatedAt
 }
 
 model SecuritySettings {
-  id                        String   @id @default("default")
-  maxFailedLoginAttempts    Int      @default(5)
-  lockoutDurationMinutes    Int      @default(15)
-  accessTokenTtlMinutes     Int      @default(15)
-  refreshTokenTtlDays       Int      @default(7)
-  passwordMinLength         Int      @default(8)
-  passwordRequireUppercase  Boolean  @default(true)
-  passwordRequireNumber     Boolean  @default(true)
-  passwordRequireSymbol     Boolean  @default(false)
-  maxUploadSizeMb           Int      @default(20)
-  allowMultipleActiveSessions Boolean @default(false)
-  updatedAt                 DateTime @updatedAt
+  id                          String   @id @default("default")
+  maxFailedLoginAttempts      Int      @default(5)
+  lockoutDurationMinutes      Int      @default(15)
+  accessTokenTtlMinutes       Int      @default(15)
+  refreshTokenTtlDays         Int      @default(7)
+  passwordMinLength           Int      @default(8)
+  passwordRequireUppercase    Boolean  @default(true)
+  passwordRequireNumber       Boolean  @default(true)
+  passwordRequireSymbol       Boolean  @default(false)
+  maxUploadSizeMb             Int      @default(20)
+  allowMultipleActiveSessions Boolean  @default(false)
+  updatedAt                   DateTime @updatedAt
 }
 
 model BreakThresholdSettings {
-  id                  String   @id @default("default")
-  warningMinutes      Int      @default(60)
-  updatedAt           DateTime @updatedAt
+  id             String   @id @default("default")
+  warningMinutes Int      @default(60)
+  updatedAt      DateTime @updatedAt
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -627,18 +643,18 @@ model BreakThresholdSettings {
 // ─────────────────────────────────────────────────────────────
 
 model TaskAssignment {
-  id             String   @id @default(uuid())
-  taskId         String
-  task           Task     @relation(fields: [taskId], references: [id])
-  agentId        String
-  agent          User     @relation("TaskAssignmentAgent", fields: [agentId], references: [id])
-  assignedById   String
-  startTime      DateTime @default(now())
-  endTime        DateTime?
-  allocationType String   @default("MANUAL") // MANUAL | AUTOMATIC
-  target         Int      @default(0)
-  actualCompleted Int     @default(0)
-  notes          String?
+  id              String    @id @default(uuid())
+  taskId          String
+  task            Task      @relation(fields: [taskId], references: [id])
+  agentId         String
+  agent           User      @relation("TaskAssignmentAgent", fields: [agentId], references: [id])
+  assignedById    String
+  startTime       DateTime  @default(now())
+  endTime         DateTime?
+  allocationType  String    @default("MANUAL") // MANUAL | AUTOMATIC
+  target          Int       @default(0)
+  actualCompleted Int       @default(0)
+  notes           String?
 
   @@index([taskId])
   @@index([agentId])
@@ -649,20 +665,20 @@ model TaskAssignment {
 // ─────────────────────────────────────────────────────────────
 
 model VoipSettings {
-  id                  String   @id @default("default")
-  providerName        String   @default("mock")
-  apiBaseUrl          String?
-  apiKeyEncrypted      String?
-  apiSecretEncrypted   String?
-  usernameEncrypted    String?
-  passwordEncrypted    String?
+  id                     String   @id @default("default")
+  providerName           String   @default("mock")
+  apiBaseUrl             String?
+  apiKeyEncrypted        String?
+  apiSecretEncrypted     String?
+  usernameEncrypted      String?
+  passwordEncrypted      String?
   webhookSecretEncrypted String?
-  extensionMapping     Json    @default("{}")
-  agentMapping         Json    @default("{}")
-  pollingIntervalSeconds Int   @default(30)
-  isActive             Boolean @default(false)
-  ahtFormula           String  @default("(talkTime + holdTime + wrapUpTime) / handledCalls")
-  updatedAt            DateTime @updatedAt
+  extensionMapping       Json     @default("{}")
+  agentMapping           Json     @default("{}")
+  pollingIntervalSeconds Int      @default(30)
+  isActive               Boolean  @default(false)
+  ahtFormula             String   @default("(talkTime + holdTime + wrapUpTime) / handledCalls")
+  updatedAt              DateTime @updatedAt
 }
 
 model VoipStatusMapping {
@@ -673,45 +689,48 @@ model VoipStatusMapping {
 }
 
 model VoipWebhookEvent {
-  id            String   @id @default(uuid())
-  externalEventId String @unique
-  rawPayload    Json
-  processedAt   DateTime?
+  id              String    @id @default(uuid())
+  externalEventId String    @unique
+  rawPayload      Json
+  processedAt     DateTime?
   processingError String?
-  receivedAt    DateTime @default(now())
+  receivedAt      DateTime  @default(now())
 }
 
 model CallRecord {
-  id                String        @id @default(uuid())
-  externalCallId    String?       @unique
-  direction         CallDirection
-  agentId           String?
-  agent             User?         @relation("CallAgent", fields: [agentId], references: [id])
-  leadId            String?
-  lead              Lead?         @relation(fields: [leadId], references: [id])
-  partnerId         String?
-  taskId            String?
-  task              Task?         @relation(fields: [taskId], references: [id])
-  customerPhone     String
-  agentExtension    String?
+  id             String        @id @default(uuid())
+  externalCallId String?       @unique
+  direction      CallDirection
+  agentId        String?
+  agent          User?         @relation("CallAgent", fields: [agentId], references: [id])
+  leadId         String?
+  lead           Lead?         @relation(fields: [leadId], references: [id])
+  partnerId      String?
+  taskId         String?
+  task           Task?         @relation(fields: [taskId], references: [id])
+  customerPhone  String
+  agentExtension String?
 
-  startTime         DateTime?
-  ringTime          Int?
-  answerTime        DateTime?
-  endTime           DateTime?
-  talkTimeSeconds   Int           @default(0)
-  holdTimeSeconds   Int           @default(0)
-  wrapUpTimeSeconds Int           @default(0)
-  totalDurationSeconds Int        @default(0)
+  startTime            DateTime?
+  ringTime             Int?
+  answerTime           DateTime?
+  endTime              DateTime?
+  talkTimeSeconds      Int       @default(0)
+  holdTimeSeconds      Int       @default(0)
+  wrapUpTimeSeconds    Int       @default(0)
+  totalDurationSeconds Int       @default(0)
 
-  status            CallStatus    @default(RINGING)
-  disposition       String?
-  recordingUrl      String?
-  voipProvider      String?
-  rawMetadata       Json          @default("{}")
+  status       CallStatus @default(RINGING)
+  disposition  String?
+  recordingUrl String?
+  voipProvider String?
+  rawMetadata  Json       @default("{}")
 
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leadCallOutcomes LeadCallOutcome[]
+  orders           Order[]
 
   @@index([agentId])
   @@index([leadId])
@@ -739,4 +758,626 @@ model AuditLog {
   @@index([userId])
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Phase 2: Customers, call outcomes, orders, retention, products, timeline
+// ─────────────────────────────────────────────────────────────
+
+enum CallResultType {
+  NO_ANSWER
+  ANSWERED
+}
+
+enum AnsweredOutcomeType {
+  ORDER_CREATED
+  NOT_INTERESTED
+  WRONG_TIME
+  RESCHEDULE_CALL
+  ALREADY_DISPENSED
+  INTERESTED_FOLLOWUP
+  WRONG_LEAD
+}
+
+enum ContactTimingType {
+  EXACT_TIME
+  MORNING
+  EVENING
+}
+
+enum FollowUpStatus {
+  PENDING
+  DONE
+  CANCELLED
+}
+
+enum FollowUpPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum OrderType {
+  INSURANCE
+  CASH
+}
+
+/// Display label for WHATSAPP must render exactly as "WhatsApp" (spec section 7).
+enum OrderSource {
+  INBOUND_CALL
+  LEADS
+  WHATSAPP
+  PARTNER
+  RETENTION_CUSTOMER
+}
+
+enum OrderStatus {
+  PENDING
+  HOLDED
+  ON_THE_WAY
+  PICKED_UP
+  COMPLETED
+  CLOSED
+}
+
+enum RefillMode {
+  NUMBER_OF_DAYS
+  EXACT_DATE
+}
+
+enum ProductImportBehavior {
+  CREATE_ONLY
+  UPDATE_BY_CODE
+  UPDATE_BY_BARCODE
+  CREATE_AND_UPDATE
+  SKIP_DUPLICATES
+  REJECT_DUPLICATES
+}
+
+/// Timeline/audit source. A superset of StatusChangeSource (adds IMPORT) kept
+/// as its own enum so Phase 1 call sites using StatusChangeSource are untouched.
+enum EventSource {
+  AGENT
+  ADMIN
+  SYSTEM
+  VOIP
+  IMPORT
+}
+
+model Customer {
+  id             String   @id @default(uuid())
+  name           String
+  phone          String
+  phoneNorm      String
+  alternatePhone String?
+  source         String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  orders            Order[]
+  followUps         FollowUp[]
+  retentionCustomer RetentionCustomer?
+
+  @@index([phoneNorm])
+}
+
+/// The CRM-side categorization of a call attempt (spec section 2-3),
+/// deliberately separate from CallRecord.status (the VoIP-side status) —
+/// consistent with the "4 separate concepts" rule in docs/ARCHITECTURE.md.
+model LeadCallOutcome {
+  id           String      @id @default(uuid())
+  leadId       String
+  lead         Lead        @relation(fields: [leadId], references: [id])
+  callRecordId String?
+  callRecord   CallRecord? @relation(fields: [callRecordId], references: [id])
+  agentId      String
+  agent        User        @relation(fields: [agentId], references: [id])
+
+  callResult      CallResultType
+  answeredOutcome AnsweredOutcomeType?
+  notes           String?
+
+  // No Answer
+  nextCallAt DateTime?
+
+  // Not Interested
+  notInterestedReason String?
+
+  // Wrong Time
+  preferredCallbackDate DateTime?
+  preferredCallbackTime String?
+
+  // Reschedule Call / Interested for Follow-up
+  followUpDate      DateTime?
+  contactTimingType ContactTimingType?
+  exactTime         String?
+  followUpPriority  FollowUpPriority?
+
+  // Already Dispensed
+  lastDispensingDate     DateTime?
+  expectedNextRefillDate DateTime?
+
+  // Wrong Lead
+  wrongLeadReason String?
+
+  orderId String?
+  order   Order?  @relation(fields: [orderId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([leadId])
+  @@index([agentId])
+}
+
+/// A scheduled future contact, created automatically by outcomes that imply
+/// a callback (No Answer w/ next-call date, Wrong Time, Reschedule Call,
+/// Interested for Follow-up). Drives the callback/retention queues.
+model FollowUp {
+  id         String    @id @default(uuid())
+  leadId     String?
+  lead       Lead?     @relation(fields: [leadId], references: [id])
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  agentId    String
+  agent      User      @relation("FollowUpAgent", fields: [agentId], references: [id])
+
+  followUpDate DateTime
+  timingType   ContactTimingType?
+  exactTime    String?
+  priority     FollowUpPriority?
+  reason       String?
+  status       FollowUpStatus     @default(PENDING)
+  notes        String?
+  source       EventSource        @default(AGENT)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([leadId])
+  @@index([agentId])
+  @@index([followUpDate, status])
+}
+
+model Order {
+  id                  String @id @default(uuid())
+  externalSystemId    String @default("DEFAULT")
+  externalOrderNumber String
+
+  customerId    String
+  customer      Customer @relation(fields: [customerId], references: [id])
+  customerName  String
+  customerPhone String
+
+  leadId       String?
+  lead         Lead?       @relation(fields: [leadId], references: [id])
+  callRecordId String?
+  callRecord   CallRecord? @relation(fields: [callRecordId], references: [id])
+
+  responsibleUserId String
+  responsibleUser   User     @relation("OrderResponsibleUser", fields: [responsibleUserId], references: [id])
+  teamId            String?
+  team              Team?    @relation(fields: [teamId], references: [id])
+  partnerId         String?
+  partner           Partner? @relation(fields: [partnerId], references: [id])
+
+  orderType OrderType
+  source    OrderSource
+  status    OrderStatus @default(PENDING)
+
+  expectedValue  Float?
+  completedValue Float?
+  currency       String @default("EGP")
+
+  cancellationReason String?
+  cancellationNotes  String?
+
+  nextRefillDate     DateTime?
+  refillIntervalDays Int?
+  refillMode         RefillMode?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+  closedAt    DateTime?
+
+  items         OrderItem[]
+  statusHistory OrderStatusHistory[]
+  orderNotes    OrderNote[]
+  callOutcomes  LeadCallOutcome[]
+
+  @@unique([externalSystemId, externalOrderNumber])
+  @@index([responsibleUserId])
+  @@index([teamId])
+  @@index([partnerId])
+  @@index([status])
+  @@index([orderType])
+  @@index([source])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id        String   @id @default(uuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+
+  itemCodeSnapshot    String?
+  arabicNameSnapshot  String?
+  englishNameSnapshot String?
+
+  quantity  Int     @default(1)
+  unitPrice Float?
+  lineValue Float?
+  discount  Float?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderStatusHistory {
+  id              String       @id @default(uuid())
+  orderId         String
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  previousStatus  OrderStatus?
+  newStatus       OrderStatus
+  changedByUserId String?
+  source          EventSource  @default(AGENT)
+  notes           String?
+  createdAt       DateTime     @default(now())
+
+  @@index([orderId])
+}
+
+/// Ad-hoc notes added to an Order after creation (the "Add Notes" action on
+/// My Orders / Team Orders). Every call outcome's own notes live directly on
+/// LeadCallOutcome.notes; this covers follow-on notes attached to an Order.
+model OrderNote {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User     @relation(fields: [authorId], references: [id])
+  authorRole String
+  text       String
+  visibility String   @default("INTERNAL")
+  createdAt  DateTime @default(now())
+
+  @@index([orderId])
+}
+
+model OrderTarget {
+  id              String   @id @default(uuid())
+  agentId         String?
+  agent           User?    @relation("OrderTargetAgent", fields: [agentId], references: [id])
+  teamId          String?
+  team            Team?    @relation(fields: [teamId], references: [id])
+  cashTarget      Float    @default(0)
+  insuranceTarget Float    @default(0)
+  totalTarget     Float    @default(0)
+  effectiveMonth  String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([agentId, effectiveMonth])
+  @@index([teamId, effectiveMonth])
+}
+
+model RetentionCustomer {
+  id                 String     @id @default(uuid())
+  customerId         String?    @unique
+  customer           Customer?  @relation(fields: [customerId], references: [id])
+  name               String
+  phone              String
+  alternatePhone     String?
+  partnerId          String?
+  partner            Partner?   @relation(fields: [partnerId], references: [id])
+  orderType          OrderType?
+  lastOrderNumber    String?
+  lastOrderDate      DateTime?
+  lastDispensingDate DateTime?
+  lastItems          Json       @default("[]")
+  nextRefillDate     DateTime?
+  responsibleAgentId String?
+  responsibleAgent   User?      @relation(fields: [responsibleAgentId], references: [id])
+  customerSource     String?
+  notes              String?
+  isActive           Boolean    @default(true)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  refillSchedules RefillSchedule[]
+
+  @@index([nextRefillDate])
+  @@index([responsibleAgentId])
+  @@index([partnerId])
+}
+
+model RefillSchedule {
+  id                  String            @id @default(uuid())
+  retentionCustomerId String
+  retentionCustomer   RetentionCustomer @relation(fields: [retentionCustomerId], references: [id], onDelete: Cascade)
+  orderId             String?
+  scheduledDate       DateTime
+  intervalDays        Int?
+  mode                RefillMode
+  status              String            @default("PENDING")
+  notes               String?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([retentionCustomerId])
+  @@index([scheduledDate, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Product catalog
+// ─────────────────────────────────────────────────────────────
+
+model ProductCategory {
+  id           String  @id @default(uuid())
+  name         String
+  arabicName   String?
+  code         String  @unique
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+
+  subcategories ProductSubcategory[]
+  products      Product[]
+}
+
+model ProductSubcategory {
+  id           String          @id @default(uuid())
+  categoryId   String
+  category     ProductCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name         String
+  arabicName   String?
+  code         String          @unique
+  isActive     Boolean         @default(true)
+  displayOrder Int             @default(0)
+
+  products Product[]
+}
+
+model DosageForm {
+  id           String  @id @default(uuid())
+  name         String
+  arabicName   String?
+  code         String  @unique
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+
+  products Product[]
+}
+
+model ProductUnit {
+  id           String  @id @default(uuid())
+  name         String
+  arabicName   String?
+  code         String  @unique
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+
+  products Product[]
+}
+
+model Manufacturer {
+  id           String  @id @default(uuid())
+  name         String
+  arabicName   String?
+  code         String  @unique
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+
+  products Product[]
+}
+
+model Currency {
+  id           String  @id @default(uuid())
+  code         String  @unique
+  name         String
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+}
+
+model Product {
+  id               String  @id @default(uuid())
+  itemCode         String  @unique
+  barcode          String? @unique
+  arabicName       String?
+  englishName      String?
+  scientificName   String?
+  activeIngredient String?
+
+  categoryId     String?
+  category       ProductCategory?    @relation(fields: [categoryId], references: [id])
+  subcategoryId  String?
+  subcategory    ProductSubcategory? @relation(fields: [subcategoryId], references: [id])
+  dosageFormId   String?
+  dosageForm     DosageForm?         @relation(fields: [dosageFormId], references: [id])
+  strength       String?
+  unitId         String?
+  unit           ProductUnit?        @relation(fields: [unitId], references: [id])
+  packSize       String?
+  manufacturerId String?
+  manufacturer   Manufacturer?       @relation(fields: [manufacturerId], references: [id])
+
+  defaultPrice       Float?
+  currency           String  @default("EGP")
+  insuranceAvailable Boolean @default(true)
+  cashAvailable      Boolean @default(true)
+
+  isActive   Boolean @default(true)
+  isArchived Boolean @default(false)
+  notes      String?
+
+  vatStatus            String?
+  insuranceCode        String?
+  sku                  String?
+  minQuantity          Int?
+  maxQuantity          Int?
+  refillEligible       Boolean @default(false)
+  requiresPrescription Boolean @default(false)
+  controlledItem       Boolean @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+  updatedById String?
+
+  partners     ProductPartner[]
+  orderItems   OrderItem[]
+  priceHistory ProductPriceHistory[]
+
+  @@index([arabicName])
+  @@index([englishName])
+  @@index([scientificName])
+  @@index([activeIngredient])
+  @@index([isActive])
+  @@index([isArchived])
+  @@index([categoryId])
+}
+
+model ProductPartner {
+  id               String   @id @default(uuid())
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  partnerId        String
+  partner          Partner  @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  partnerItemCode  String?
+  partnerPrice     Float?
+  insuranceCovered Boolean  @default(true)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([productId, partnerId])
+  @@index([partnerId])
+}
+
+model ProductImportBatch {
+  id           String                @id @default(uuid())
+  fileName     String
+  fileSize     Int
+  status       ImportBatchStatus     @default(PENDING)
+  behavior     ProductImportBehavior @default(CREATE_AND_UPDATE)
+  totalRows    Int                   @default(0)
+  createdRows  Int                   @default(0)
+  updatedRows  Int                   @default(0)
+  skippedRows  Int                   @default(0)
+  rejectedRows Int                   @default(0)
+  uploadedById String
+  errorSummary String?
+  createdAt    DateTime              @default(now())
+  completedAt  DateTime?
+
+  rowErrors ProductImportRowError[]
+}
+
+model ProductImportRowError {
+  id        String             @id @default(uuid())
+  batchId   String
+  batch     ProductImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber Int
+  rawData   Json
+  reasons   Json
+  createdAt DateTime           @default(now())
+
+  @@index([batchId])
+}
+
+model ProductPriceHistory {
+  id              String   @id @default(uuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  partnerId       String?
+  previousPrice   Float?
+  newPrice        Float
+  changedByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@index([productId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Timeline, permissions, configurable reasons, auto-refresh
+// ─────────────────────────────────────────────────────────────
+
+/// One generic, append-only event log surfaced as a human-readable timeline
+/// on Lead/Order/Customer/Agent/Call detail pages (spec section 18).
+/// Deliberately polymorphic (entityType/entityId are plain strings, no FK)
+/// since a single event stream spans many entity kinds; AuditLog remains the
+/// security/compliance log for sensitive actions (login, settings, VoIP).
+model TimelineEvent {
+  id            String      @id @default(uuid())
+  entityType    String
+  entityId      String
+  eventType     String
+  actorUserId   String?
+  actorRole     String?
+  previousValue Json?
+  newValue      Json?
+  source        EventSource @default(SYSTEM)
+  ipAddress     String?
+  notes         String?
+  metadata      Json        @default("{}")
+  createdAt     DateTime    @default(now())
+
+  @@index([entityType, entityId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+model UserPermission {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, permission])
+}
+
+/// Admin-configurable reason lists (not-interested reasons, cancellation
+/// reasons, wrong-lead reasons, ...) instead of hardcoding them (spec
+/// sections 3-4, 10).
+model ConfigurableReason {
+  id           String  @id @default(uuid())
+  category     String
+  code         String
+  label        String
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+
+  @@unique([category, code])
+}
+
+model CrmWorkflowSettings {
+  id                     String   @id @default("default")
+  orderNumberFormat      String   @default("DIGITS_ONLY")
+  mandatoryNotesOutcomes Json     @default("[]")
+  rescheduleMorningStart String   @default("09:00")
+  rescheduleMorningEnd   String   @default("13:00")
+  rescheduleEveningStart String   @default("16:00")
+  rescheduleEveningEnd   String   @default("21:00")
+  updatedAt              DateTime @updatedAt
+}
+
+model AutoRefreshSettings {
+  id                     String   @id @default("default")
+  enabled                Boolean  @default(true)
+  defaultIntervalSeconds Int      @default(30)
+  minIntervalSeconds     Int      @default(10)
+  maxIntervalSeconds     Int      @default(300)
+  pauseWhileEditing      Boolean  @default(true)
+  realtimeEnabled        Boolean  @default(false)
+  fallbackPollingEnabled Boolean  @default(true)
+  pageIntervals          Json     @default("{}")
+  updatedAt              DateTime @updatedAt
 }
