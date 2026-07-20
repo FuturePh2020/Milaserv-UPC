@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import * as argon2 from "argon2";
+import { Prisma } from "@prisma/client";
 import { UserStatus } from "@lcrm/shared";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -129,7 +130,19 @@ export class UsersService {
 
   async delete(id: string) {
     await this.ensureExists(id);
-    await this.prisma.user.delete({ where: { id } });
+    try {
+      await this.prisma.user.delete({ where: { id } });
+    } catch (err) {
+      // Nearly every table that references User (sessions, breaks, lead
+      // assignments, orders, call outcomes...) has an onDelete: RESTRICT
+      // foreign key, so any account with real activity can't be hard-deleted.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2003") {
+        throw new ConflictException(
+          "This user has related records (sessions, leads, orders, etc.) and can't be deleted. Suspend the account instead.",
+        );
+      }
+      throw err;
+    }
     return { success: true };
   }
 

@@ -195,6 +195,12 @@ export class VoipService {
 
     const data = {
       status: internalStatus as any,
+      // A call's first webhook event (e.g. "ringing") often arrives before
+      // the PBX has attached an agent extension; only mappedAgentId is set
+      // then. A later event supplies it — without this on the shared
+      // update-path `data`, that record could never get its agentId
+      // backfilled since the update branch below only ever used `data`.
+      agentId: mappedAgentId ?? existing?.agentId ?? undefined,
       talkTimeSeconds: payload.talkTimeSeconds ?? existing?.talkTimeSeconds ?? 0,
       holdTimeSeconds: payload.holdTimeSeconds ?? existing?.holdTimeSeconds ?? 0,
       wrapUpTimeSeconds: payload.wrapUpTimeSeconds ?? existing?.wrapUpTimeSeconds ?? 0,
@@ -212,7 +218,6 @@ export class VoipService {
         data: {
           externalCallId,
           direction: (payload.direction as any) ?? CallDirection.INBOUND,
-          agentId: mappedAgentId,
           customerPhone: payload.customerPhone ?? "unknown",
           agentExtension: payload.agentExtension,
           startTime: payload.startTime ? new Date(payload.startTime) : new Date(),

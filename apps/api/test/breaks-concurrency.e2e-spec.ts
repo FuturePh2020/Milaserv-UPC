@@ -85,6 +85,30 @@ describe("BreaksService concurrency limit (e2e)", () => {
     expect(activeCount).toBe(LIMIT);
   });
 
+  it("holds the limit under genuinely concurrent requests, not just sequential ones", async () => {
+    // The previous test calls start() one at a time (await inside a loop),
+    // which never exercises the check-then-act race between the
+    // concurrent-count read and the BreakRecord insert. Promise.allSettled
+    // fires all requests at once so any race would show up as more than
+    // LIMIT active records.
+    const concurrentBreakType = await prisma.breakType.create({
+      data: { name: "Concurrent Break Limit Type", code: `BRK-BT-C-${Date.now()}`, maxDurationMinutes: 30, maxConcurrentAgents: LIMIT },
+    });
+
+    const results = await Promise.allSettled(
+      agentIds.map((agentId) => breaksService.start({ userId: agentId, breakTypeId: concurrentBreakType.id, source: "AGENT" })),
+    );
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled").length;
+    expect(fulfilled).toBe(LIMIT);
+
+    const activeCount = await prisma.breakRecord.count({ where: { breakTypeId: concurrentBreakType.id, status: "ACTIVE" } });
+    expect(activeCount).toBe(LIMIT);
+
+    await prisma.breakRecord.deleteMany({ where: { breakTypeId: concurrentBreakType.id } });
+    await prisma.breakType.delete({ where: { id: concurrentBreakType.id } });
+  }, 20_000);
+
   it("allows an admin override past the limit and records it as overridden", async () => {
     const blockedAgentId = agentIds[LIMIT]; // one of the ones rejected above
 

@@ -57,15 +57,20 @@ export class BreaksService {
     return assignment?.taskId ?? null;
   }
 
-  private async concurrentCountForTask(breakTypeId: string, taskId: string | null, excludeUserId?: string) {
-    const activeBreaks = await this.prisma.breakRecord.findMany({
+  private async concurrentCountForTask(
+    client: Pick<PrismaService, "breakRecord" | "taskAssignment">,
+    breakTypeId: string,
+    taskId: string | null,
+    excludeUserId?: string,
+  ) {
+    const activeBreaks = await client.breakRecord.findMany({
       where: { breakTypeId, status: "ACTIVE", userId: excludeUserId ? { not: excludeUserId } : undefined },
       select: { userId: true },
     });
     if (activeBreaks.length === 0) return 0;
     if (!taskId) return activeBreaks.length;
 
-    const activeTaskAssignments = await this.prisma.taskAssignment.findMany({
+    const activeTaskAssignments = await client.taskAssignment.findMany({
       where: { agentId: { in: activeBreaks.map((b) => b.userId) }, taskId, endTime: null },
       select: { agentId: true },
     });
@@ -96,9 +101,6 @@ export class BreaksService {
     const session = await this.prisma.agentSession.findFirst({ where: { userId: params.userId, endedAt: null } });
     if (!session) throw new BadRequestException("An active work session is required to start a break");
 
-    const activeBreak = await this.prisma.breakRecord.findFirst({ where: { userId: params.userId, status: "ACTIVE" } });
-    if (activeBreak) throw new BadRequestException("You are already on a break");
-
     const breakType = await this.prisma.breakType.findUnique({ where: { id: params.breakTypeId }, include: { taskLimits: true } });
     if (!breakType || !breakType.isActive) throw new NotFoundException("Break type not found or inactive");
 
@@ -111,27 +113,45 @@ export class BreaksService {
     const limit = taskId
       ? breakType.taskLimits.find((l) => l.taskId === taskId)?.maxConcurrentAgents ?? breakType.maxConcurrentAgents
       : breakType.maxConcurrentAgents;
-    const concurrentCount = await this.concurrentCountForTask(params.breakTypeId, taskId);
 
-    const limitReached = concurrentCount >= limit;
-    if (limitReached && !params.overrideReason) {
-      throw new ForbiddenException(
-        `Maximum of ${limit} agents on "${breakType.name}" for this task already reached. An admin override with a reason is required.`,
+    // The "already on a break" and "concurrency limit" checks below are
+    // check-then-act: two concurrent start() calls (two different agents
+    // racing for the last slot, or one agent double-clicking) can both read
+    // a pre-insert count/state and both pass. Postgres advisory locks (held
+    // for the transaction's duration, scoped per-user and per task+breakType)
+    // serialize concurrent callers on the same key so the recheck inside the
+    // lock always sees the other transaction's committed write.
+    const record = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `break-user:${params.userId}`);
+      const activeBreak = await tx.breakRecord.findFirst({ where: { userId: params.userId, status: "ACTIVE" } });
+      if (activeBreak) throw new BadRequestException("You are already on a break");
+
+      await tx.$executeRawUnsafe(
+        `SELECT pg_advisory_xact_lock(hashtext($1))`,
+        `break-task:${params.breakTypeId}:${taskId ?? "none"}`,
       );
-    }
+      const concurrentCount = await this.concurrentCountForTask(tx, params.breakTypeId, taskId);
+      const limitReached = concurrentCount >= limit;
+      if (limitReached && !params.overrideReason) {
+        throw new ForbiddenException(
+          `Maximum of ${limit} agents on "${breakType.name}" for this task already reached. An admin override with a reason is required.`,
+        );
+      }
 
-    const record = await this.prisma.breakRecord.create({
-      data: {
-        userId: params.userId,
-        sessionId: session.id,
-        breakTypeId: params.breakTypeId,
-        isAutomatic: params.isAutomatic ?? false,
-        source: params.source ?? "AGENT",
-        wasOverridden: limitReached,
-        overrideReason: limitReached ? params.overrideReason : undefined,
-        overriddenByUserId: limitReached ? params.overriddenByUserId : undefined,
-      },
+      return tx.breakRecord.create({
+        data: {
+          userId: params.userId,
+          sessionId: session.id,
+          breakTypeId: params.breakTypeId,
+          isAutomatic: params.isAutomatic ?? false,
+          source: params.source ?? "AGENT",
+          wasOverridden: limitReached,
+          overrideReason: limitReached ? params.overrideReason : undefined,
+          overriddenByUserId: limitReached ? params.overriddenByUserId : undefined,
+        },
+      });
     });
+    const limitReached = record.wasOverridden;
 
     await this.prisma.user.update({ where: { id: params.userId }, data: { currentAgentStatus: "ON_BREAK" } });
 

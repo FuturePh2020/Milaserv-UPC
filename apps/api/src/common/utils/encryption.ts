@@ -1,7 +1,16 @@
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
 
 function getKey(): Buffer {
-  const raw = process.env.VOIP_ENCRYPTION_KEY || "dev-only-insecure-key-change-me!";
+  const raw = process.env.VOIP_ENCRYPTION_KEY;
+  if (!raw) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "VOIP_ENCRYPTION_KEY is not set. Refusing to encrypt/decrypt VoIP provider credentials with a " +
+          "publicly-known fallback key in production — set VOIP_ENCRYPTION_KEY before starting the API.",
+      );
+    }
+    return createHash("sha256").update("dev-only-insecure-key-change-me!").digest();
+  }
   // Accepts a 32-byte hex string, or derives a 32-byte key from any secret via SHA-256.
   if (/^[0-9a-fA-F]{64}$/.test(raw)) {
     return Buffer.from(raw, "hex");

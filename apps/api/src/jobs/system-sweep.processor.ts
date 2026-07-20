@@ -117,8 +117,9 @@ export class SystemSweepProcessor extends WorkerHost {
         await this.prisma.user.update({ where: { id: agent.id }, data: { currentAgentStatus: "STANDBY" } });
       }
 
+      const wentToBreak = inactivitySettings.actionType === "BREAK" && inactivitySettings.autoBreakTypeId;
       await this.audit.log({
-        action: "BREAK_START",
+        action: wentToBreak ? "BREAK_START" : "AGENT_AUTO_STANDBY",
         userId: agent.id,
         entityType: "User",
         entityId: agent.id,

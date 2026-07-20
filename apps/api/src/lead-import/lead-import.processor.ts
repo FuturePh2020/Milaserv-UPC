@@ -112,7 +112,13 @@ export class LeadImportProcessor extends WorkerHost {
           partnerId: batch.partnerId,
           taskId: batch.taskId,
           batchId: batch.id,
-          isDuplicate,
+          // isDuplicate also gates visibility to distribution/dashboard
+          // queries (both hard-filter isDuplicate=false) — a row imported
+          // with duplicateHandling=IMPORT ("import anyway") must stay
+          // eligible for normal distribution, so it can't carry the same
+          // flag a SKIP/MARK_FOR_REVIEW duplicate does even though it was
+          // detected as one.
+          isDuplicate: isDuplicate && batch.duplicateHandling !== DuplicateHandling.IMPORT,
           workflowStatus:
             isDuplicate && batch.duplicateHandling === DuplicateHandling.MARK_FOR_REVIEW
               ? LeadWorkflowStatus.DUPLICATE

@@ -80,6 +80,7 @@ export class VoipController {
 
   @Get("metrics")
   @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   metrics(@Query("agentId") agentId: string | undefined, @Query("from") from: string | undefined, @Query("to") to: string | undefined) {
     return this.voipService.metrics({ agentId, from: from ? new Date(from) : undefined, to: to ? new Date(to) : undefined });
   }

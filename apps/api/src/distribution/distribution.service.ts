@@ -154,9 +154,11 @@ export class DistributionService {
       const where = Prisma.join(whereFragments, " AND ");
       const order = orderByClause(distSettings.strategy);
 
-      const rows = await tx.$queryRaw<{ id: string; partnerId: string; taskId: string | null }[]>(
+      const rows = await tx.$queryRaw<
+        { id: string; partnerId: string; taskId: string | null; workflowStatus: string }[]
+      >(
         Prisma.sql`
-          SELECT l.id, l."partnerId", l."taskId"
+          SELECT l.id, l."partnerId", l."taskId", l."workflowStatus"
           FROM "Lead" l
           LEFT JOIN "Partner" p ON p.id = l."partnerId"
           LEFT JOIN "Task" t ON t.id = l."taskId"
@@ -196,7 +198,7 @@ export class DistributionService {
       await tx.leadStatusHistory.create({
         data: {
           leadId: picked.id,
-          previousStatus: LeadWorkflowStatus.NEW,
+          previousStatus: picked.workflowStatus as LeadWorkflowStatus,
           newStatus: LeadWorkflowStatus.ASSIGNED,
           changedByUserId: agentId,
           source: StatusChangeSource.SYSTEM,

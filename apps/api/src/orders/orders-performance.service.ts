@@ -71,7 +71,7 @@ export class OrdersPerformanceService {
 
     const cashTarget = target?.cashTarget ?? 0;
     const insuranceTarget = target?.insuranceTarget ?? 0;
-    const totalTarget = target?.totalTarget || cashTarget + insuranceTarget;
+    const totalTarget = target?.totalTarget ?? cashTarget + insuranceTarget;
 
     return {
       ...core,
@@ -121,7 +121,7 @@ export class OrdersPerformanceService {
 
     const cashTarget = target?.cashTarget ?? 0;
     const insuranceTarget = target?.insuranceTarget ?? 0;
-    const totalTarget = target?.totalTarget || cashTarget + insuranceTarget;
+    const totalTarget = target?.totalTarget ?? cashTarget + insuranceTarget;
 
     return {
       ...core,
@@ -149,26 +149,37 @@ export class OrdersPerformanceService {
     dto: { agentId?: string; teamId?: string; cashTarget: number; insuranceTarget: number; totalTarget?: number; effectiveMonth: string },
     actorId: string,
   ) {
-    const existing = await this.prisma.orderTarget.findFirst({
-      where: { agentId: dto.agentId ?? null, teamId: dto.teamId ?? null, effectiveMonth: dto.effectiveMonth },
-    });
-
     const totalTarget = dto.totalTarget ?? dto.cashTarget + dto.insuranceTarget;
-    const result = existing
-      ? await this.prisma.orderTarget.update({
-          where: { id: existing.id },
-          data: { cashTarget: dto.cashTarget, insuranceTarget: dto.insuranceTarget, totalTarget },
-        })
-      : await this.prisma.orderTarget.create({
-          data: {
-            agentId: dto.agentId,
-            teamId: dto.teamId,
-            cashTarget: dto.cashTarget,
-            insuranceTarget: dto.insuranceTarget,
-            totalTarget,
-            effectiveMonth: dto.effectiveMonth,
-          },
-        });
+
+    // agentId/teamId are nullable, so a plain @@unique wouldn't actually
+    // prevent duplicates here — Postgres never considers two NULLs equal
+    // for uniqueness purposes, so e.g. two agent-scoped rows (teamId always
+    // NULL) for the same agent+month wouldn't violate a
+    // (agentId, teamId, effectiveMonth) constraint. An advisory lock around
+    // the check-then-act closes the same race two admins hit setting the
+    // same agent's target for the same month concurrently.
+    const lockKey = `order-target:${dto.agentId ?? "none"}:${dto.teamId ?? "none"}:${dto.effectiveMonth}`;
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey);
+      const existing = await tx.orderTarget.findFirst({
+        where: { agentId: dto.agentId ?? null, teamId: dto.teamId ?? null, effectiveMonth: dto.effectiveMonth },
+      });
+      return existing
+        ? tx.orderTarget.update({
+            where: { id: existing.id },
+            data: { cashTarget: dto.cashTarget, insuranceTarget: dto.insuranceTarget, totalTarget },
+          })
+        : tx.orderTarget.create({
+            data: {
+              agentId: dto.agentId,
+              teamId: dto.teamId,
+              cashTarget: dto.cashTarget,
+              insuranceTarget: dto.insuranceTarget,
+              totalTarget,
+              effectiveMonth: dto.effectiveMonth,
+            },
+          });
+    });
 
     await this.audit.log({
       action: "ORDER_UPDATE",
