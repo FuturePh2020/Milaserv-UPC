@@ -331,6 +331,15 @@ model Branch {
   dutyPharmacist      String?
   districtManagerName String?
 
+  // ── Phase 6 — Location-Aware Branch Inventory & Fulfillment: structured
+  // hierarchy pointers, additive alongside the free-text city/district/region
+  // above (never removed — the backfill only ever fills these when confident).
+  locationCityId      String?
+  locationCity        City?                     @relation(fields: [locationCityId], references: [id])
+  locationDistrictId  String?
+  locationDistrict    District?                 @relation(fields: [locationDistrictId], references: [id])
+  locationMatchStatus BranchLocationMatchStatus @default(UNRESOLVED)
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
@@ -339,6 +348,8 @@ model Branch {
 
   @@index([region, city])
   @@index([branchTypeKey])
+  @@index([locationCityId])
+  @@index([locationDistrictId])
 }
 
 /// §16.2 — branch type catalog, seeded verbatim (editable).
@@ -350,6 +361,108 @@ model BranchType {
   active Boolean @default(true)
 
   branches Branch[]
+}
+
+// ── Phase 6 — Location Hierarchy (Location-Aware Branch Inventory &
+// Fulfillment Engine). Single-country deployment (Saudi Arabia) — no
+// Country model: over-building a multi-country table with one seeded
+// row is not justified by the actual requirement. Region is the top of
+// the hierarchy (KSA's administrative regions). ──
+
+model Region {
+  id     String  @id @default(cuid())
+  code   String  @unique
+  nameEn String
+  nameAr String
+  active Boolean @default(true)
+
+  cities City[]
+
+  @@index([active])
+}
+
+model City {
+  id       String @id @default(cuid())
+  regionId String
+  region   Region @relation(fields: [regionId], references: [id])
+
+  code             String  @unique
+  nameEn           String
+  nameAr           String
+  /// English normalization (normalizeEnglish) for alias/dedupe matching.
+  normalizedNameEn String
+  /// Arabic normalization (normalizeArabic) for alias/dedupe matching.
+  normalizedNameAr String
+  latitude         Float?
+  longitude        Float?
+  timezone         String?
+  active           Boolean @default(true)
+
+  districts District[]
+  branches  Branch[]
+
+  @@index([regionId])
+  @@index([normalizedNameEn])
+  @@index([normalizedNameAr])
+  @@index([active])
+}
+
+model District {
+  id     String @id @default(cuid())
+  cityId String
+  city   City   @relation(fields: [cityId], references: [id])
+
+  code             String  @unique
+  nameEn           String
+  nameAr           String
+  normalizedNameEn String
+  normalizedNameAr String
+  latitude         Float?
+  longitude        Float?
+  active           Boolean @default(true)
+
+  branches Branch[]
+
+  @@index([cityId])
+  @@index([normalizedNameEn])
+  @@index([normalizedNameAr])
+  @@index([active])
+}
+
+enum LocationAliasEntityType {
+  CITY
+  DISTRICT
+}
+
+/// Arabic/English spelling variants (transliteration, spacing, common
+/// abbreviations) for a City or District — polymorphic on
+/// (entityType, entityId), same shape as the spec's own design. Lighter
+/// governance than DrugAlias (no propose/approve workflow): this is
+/// operational geography metadata, not a patient-safety surface, so
+/// location.manage alone is sufficient to add one.
+model LocationAlias {
+  id              String                  @id @default(cuid())
+  entityType      LocationAliasEntityType
+  entityId        String
+  alias           String
+  normalizedAlias String
+  language        String
+  active          Boolean                 @default(true)
+  createdAt       DateTime                @default(now())
+
+  @@unique([entityType, entityId, normalizedAlias, language])
+  @@index([normalizedAlias])
+  @@index([entityType, entityId])
+}
+
+/// How confidently a Branch's free-text city/district was matched onto
+/// the structured hierarchy above. NEEDS_REVIEW is never auto-cleared —
+/// only an explicit reference-data edit moves it to MANUALLY_CONFIRMED.
+enum BranchLocationMatchStatus {
+  UNRESOLVED
+  AUTO_MATCHED
+  NEEDS_REVIEW
+  MANUALLY_CONFIRMED
 }
 
 // ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──

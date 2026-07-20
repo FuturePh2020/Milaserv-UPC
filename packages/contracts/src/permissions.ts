@@ -290,6 +290,21 @@ export const PERMISSIONS = [
     module: 'ocr',
     label: { en: 'Review & confirm OCR results', ar: 'مراجعة واعتماد نتائج التعرف الضوئي' },
   },
+
+  // locations (Phase 6 — Location-Aware Branch Inventory & Fulfillment)
+  {
+    key: 'location.view',
+    module: 'locations',
+    label: { en: 'View location hierarchy', ar: 'عرض التسلسل الجغرافي' },
+  },
+  {
+    key: 'location.manage',
+    module: 'locations',
+    label: {
+      en: 'Manage regions, cities, districts & aliases',
+      ar: 'إدارة المناطق والمدن والأحياء والأسماء البديلة',
+    },
+  },
 ] as const satisfies readonly PermissionDef[];
 
 export type PermissionKey = (typeof PERMISSIONS)[number]['key'];

@@ -19,6 +19,7 @@ import { seedOnlineCatalogs } from './online';
 import { seedBranchTypes } from './branches';
 import { seedDicCatalogs } from './dic';
 import { seedDicReferenceData } from './dic-reference';
+import { seedLocationHierarchy } from './locations';
 
 const prisma = new PrismaClient();
 
@@ -74,6 +75,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.escalate', DataScope.DEPARTMENT],
     ['ticket.export', DataScope.DEPARTMENT],
     ['branch.view', DataScope.DEPARTMENT],
+    ['location.view', DataScope.DEPARTMENT],
     ['kb.view', DataScope.DEPARTMENT],
     ['kb.assign', DataScope.DEPARTMENT],
     ['break.track', DataScope.MY_RECORDS],
@@ -107,6 +109,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.resolve', DataScope.MY_TEAM],
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
+    ['location.view', DataScope.MY_TEAM],
     ['kb.view', DataScope.MY_TEAM],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
@@ -127,6 +130,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.resolve', DataScope.MY_TEAM],
     ['ticket.escalate', DataScope.MY_TEAM],
     ['branch.view', DataScope.MY_TEAM],
+    ['location.view', DataScope.MY_TEAM],
     ['kb.view', DataScope.MY_TEAM],
     ['break.track', DataScope.MY_RECORDS],
     ['break.viewTeam', DataScope.MY_TEAM],
@@ -144,6 +148,7 @@ const ROLE_GRANTS: Record<SystemRoleKey, [PermissionKey, DataScope][]> = {
     ['ticket.take_responsibility', DataScope.MY_RECORDS],
     ['ticket.update_add', DataScope.MY_RECORDS],
     ['branch.view', DataScope.MY_RECORDS],
+    ['location.view', DataScope.MY_RECORDS],
     ['kb.view', DataScope.MY_RECORDS],
     ['break.track', DataScope.MY_RECORDS],
     ['performance.view', DataScope.MY_RECORDS],
@@ -1120,6 +1125,7 @@ async function main() {
   await seedBranchTypes(prisma);
   await seedDicCatalogs(prisma);
   await seedDicReferenceData(prisma);
+  await seedLocationHierarchy(prisma);
   await seedSuperAdmin();
 }
 
