@@ -1,0 +1,24 @@
+{
+  "name": "leads-distributor-crm",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Leads Distributor & CRM Performance System",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @lcrm/api dev",
+    "dev:web": "pnpm --filter @lcrm/web dev",
+    "build": "pnpm --filter @lcrm/shared build && pnpm --filter @lcrm/ui build && pnpm --filter @lcrm/api build && pnpm --filter @lcrm/web build",
+    "test": "pnpm --filter @lcrm/api test",
+    "test:e2e": "pnpm --filter @lcrm/api test:e2e",
+    "lint": "pnpm -r lint",
+    "prisma:generate": "pnpm --filter @lcrm/api prisma:generate",
+    "prisma:migrate": "pnpm --filter @lcrm/api prisma:migrate",
+    "seed": "pnpm --filter @lcrm/api seed"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}
