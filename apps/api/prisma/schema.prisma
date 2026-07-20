@@ -353,12 +353,13 @@ model Branch {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
-  tickets               Ticket[]
-  weeklyHours           BranchWorkingHours[]
-  specialHours          BranchSpecialHours[]
-  serviceAreas          BranchServiceArea[]
-  capabilityAssignments BranchCapabilityAssignment[]
-  branchInventories     BranchInventory[]
+  tickets                 Ticket[]
+  weeklyHours             BranchWorkingHours[]
+  specialHours            BranchSpecialHours[]
+  serviceAreas            BranchServiceArea[]
+  capabilityAssignments   BranchCapabilityAssignment[]
+  branchInventories       BranchInventory[]
+  fulfillmentPlanBranches FulfillmentPlanBranch[]
 
   @@index([region, city])
   @@index([branchTypeKey])
@@ -412,9 +413,10 @@ model City {
   timezone         String?
   active           Boolean @default(true)
 
-  districts    District[]
-  branches     Branch[]
-  serviceAreas BranchServiceArea[]
+  districts       District[]
+  branches        Branch[]
+  serviceAreas    BranchServiceArea[]
+  searchLocations SearchLocation[]
 
   @@index([regionId])
   @@index([normalizedNameEn])
@@ -436,8 +438,9 @@ model District {
   longitude        Float?
   active           Boolean @default(true)
 
-  branches     Branch[]
-  serviceAreas BranchServiceArea[]
+  branches        Branch[]
+  serviceAreas    BranchServiceArea[]
+  searchLocations SearchLocation[]
 
   @@index([cityId])
   @@index([normalizedNameEn])
@@ -662,6 +665,213 @@ model BranchInventory {
   @@index([drugId])
   @@index([sapMaterialNumber])
   @@index([inventoryStatus])
+}
+
+// ── Phase 6 §16-§27 — Fulfillment Engine. Only consumes pharmacist-
+// confirmed medication lines (matchingStatus CONFIRMED/MANUALLY_SELECTED
+// with a non-null selectedDrugId); never touches raw/unconfirmed
+// candidates. No Customer or Partner master exists in this platform yet
+// (Step 1 research finding — DataScope.PARTNER is reserved but
+// inactive) so FulfillmentRequest deliberately carries no customerId/
+// partnerId fields — the linked Prescription already carries its own
+// optional customerId. City/districtId are read via searchLocation's
+// own relation, not duplicated onto FulfillmentRequest. ──
+
+enum SearchLocationSourceType {
+  MANUAL_CITY
+  MANUAL_DISTRICT
+  FREE_TEXT_ADDRESS
+  MAP_PIN
+  DEVICE_GEOLOCATION
+  SAVED_ADDRESS
+  PARTNER_API
+  IMPORTED
+  UNKNOWN
+}
+
+/// A normalized, provenance-tracked customer/search location — never
+/// silently trusted when confidence is low (Phase 6 §4).
+model SearchLocation {
+  id         String    @id @default(cuid())
+  cityId     String?
+  city       City?     @relation(fields: [cityId], references: [id])
+  districtId String?
+  district   District? @relation(fields: [districtId], references: [id])
+  latitude   Float?
+  longitude  Float?
+
+  addressText           String?
+  normalizedAddressText String?
+  postalCode            String?
+  sourceType            SearchLocationSourceType
+  geocodingStatus       String?
+  geocodingConfidence   Float?
+  userConfirmed         Boolean                  @default(false)
+  createdById           String?
+  createdAt             DateTime                 @default(now())
+
+  fulfillmentRequests FulfillmentRequest[]
+
+  @@index([cityId])
+  @@index([districtId])
+}
+
+enum FulfillmentMode {
+  DELIVERY
+  PICKUP
+  EITHER
+  INTERNAL_TRANSFER
+  UNKNOWN
+}
+
+enum FulfillmentRequestStatus {
+  DRAFT
+  LOCATION_REQUIRED
+  SEARCH_QUEUED
+  SEARCHING
+  OPTIONS_FOUND
+  PARTIAL_OPTIONS_FOUND
+  NO_OPTIONS_FOUND
+  REVIEW_REQUIRED
+  PLAN_SELECTED
+  EXPIRED
+  FAILED
+}
+
+model FulfillmentRequest {
+  id                           String                   @id @default(cuid())
+  prescriptionId               String
+  prescription                 Prescription             @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  searchLocationId             String?
+  searchLocation               SearchLocation?          @relation(fields: [searchLocationId], references: [id])
+  requestedFulfillmentMode     FulfillmentMode          @default(UNKNOWN)
+  requestedDeliveryWindowStart DateTime?
+  requestedDeliveryWindowEnd   DateTime?
+  status                       FulfillmentRequestStatus @default(DRAFT)
+  initiatedById                String?
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime                 @updatedAt
+
+  items FulfillmentRequestItem[]
+  plans FulfillmentPlan[]
+
+  @@index([prescriptionId])
+  @@index([status])
+}
+
+/// Only pharmacist-confirmed drug matches may be included (Phase 6 §17)
+/// — never an unconfirmed OCR candidate.
+model FulfillmentRequestItem {
+  id                   String                     @id @default(cuid())
+  fulfillmentRequestId String
+  fulfillmentRequest   FulfillmentRequest         @relation(fields: [fulfillmentRequestId], references: [id], onDelete: Cascade)
+  medicationLineId     String
+  medicationLine       PrescriptionMedicationLine @relation(fields: [medicationLineId], references: [id])
+  drugId               String
+  drug                 Drug                       @relation(fields: [drugId], references: [id])
+
+  requiredQuantity        Float?
+  quantityUnit            String?
+  quantityConfirmed       Boolean @default(false)
+  specialHandlingRequired Boolean @default(false)
+  coldChainRequired       Boolean @default(false)
+  controlledDrug          Boolean @default(false)
+  substitutionAllowed     Boolean @default(false)
+  active                  Boolean @default(true)
+
+  planItems FulfillmentPlanItem[]
+
+  @@index([fulfillmentRequestId])
+  @@index([medicationLineId])
+  @@index([drugId])
+}
+
+enum FulfillmentPlanType {
+  SINGLE_BRANCH
+  SPLIT_BRANCH
+  PICKUP
+  DELIVERY
+  MIXED_MODE
+  NO_SAFE_PLAN
+}
+
+/// One ranked candidate plan per FulfillmentRequest — the engine never
+/// auto-selects one; `selected` is only ever set by an explicit
+/// authorized action (Phase 6 §2 "never silently confirm").
+model FulfillmentPlan {
+  id                   String             @id @default(cuid())
+  fulfillmentRequestId String
+  fulfillmentRequest   FulfillmentRequest @relation(fields: [fulfillmentRequestId], references: [id], onDelete: Cascade)
+
+  planType                    FulfillmentPlanType
+  rank                        Int
+  totalScore                  Float
+  branchCount                 Int
+  completeCoverage            Boolean
+  totalDistanceKm             Float?
+  estimatedPreparationMinutes Int?
+  estimatedDeliveryMinutes    Int?
+  stockFreshnessStatus        String?
+  explanationJson             Json?
+  conflictsJson               Json?
+  selected                    Boolean             @default(false)
+  createdAt                   DateTime            @default(now())
+
+  branches FulfillmentPlanBranch[]
+
+  @@index([fulfillmentRequestId])
+  @@index([rank])
+}
+
+model FulfillmentPlanBranch {
+  id                String          @id @default(cuid())
+  fulfillmentPlanId String
+  fulfillmentPlan   FulfillmentPlan @relation(fields: [fulfillmentPlanId], references: [id], onDelete: Cascade)
+  branchId          String
+  branch            Branch          @relation(fields: [branchId], references: [id])
+
+  sequence                    Int
+  distanceKm                  Float?
+  estimatedTravelMinutes      Int?
+  estimatedPreparationMinutes Int?
+  operatingStatus             String?
+  serviceabilityStatus        String?
+  stockVerificationStatus     String?
+  score                       Float?
+  explanationJson             Json?
+
+  items FulfillmentPlanItem[]
+
+  @@index([fulfillmentPlanId])
+  @@index([branchId])
+}
+
+enum PlanItemAvailabilityStatus {
+  AVAILABLE
+  PARTIAL
+  UNAVAILABLE
+  UNKNOWN
+}
+
+model FulfillmentPlanItem {
+  id                       String                 @id @default(cuid())
+  fulfillmentPlanBranchId  String
+  fulfillmentPlanBranch    FulfillmentPlanBranch  @relation(fields: [fulfillmentPlanBranchId], references: [id], onDelete: Cascade)
+  fulfillmentRequestItemId String
+  fulfillmentRequestItem   FulfillmentRequestItem @relation(fields: [fulfillmentRequestItemId], references: [id])
+  drugId                   String
+  drug                     Drug                   @relation(fields: [drugId], references: [id])
+
+  requestedQuantity  Float?
+  availableQuantity  Float?
+  allocatedQuantity  Float?
+  availabilityStatus PlanItemAvailabilityStatus @default(UNKNOWN)
+  freshnessStatus    String?
+  sourceTimestamp    DateTime?
+
+  @@index([fulfillmentPlanBranchId])
+  @@index([fulfillmentRequestItemId])
+  @@index([drugId])
 }
 
 // ── Ticketing configuration catalogs (spec §3 — data, not enums; ADR-008) ──
@@ -1567,7 +1777,10 @@ model Drug {
   importRows           DrugImportRow[]
 
   /// Phase 6 §11 — per-branch stock snapshot rows.
-  branchInventory BranchInventory[]
+  branchInventory         BranchInventory[]
+  /// Phase 6 §17/§20 — fulfillment request/plan line items.
+  fulfillmentRequestItems FulfillmentRequestItem[]
+  fulfillmentPlanItems    FulfillmentPlanItem[]
 
   @@index([nameEn])
   @@index([nameAr])
@@ -2110,6 +2323,9 @@ model Prescription {
   /// CR-001 Phase 5 — Intelligent OCR-to-Drug Matching Engine.
   medicationLines PrescriptionMedicationLine[]
   matchRuns       DrugMatchRun[]
+
+  /// Phase 6 — Location-Aware Branch Inventory & Fulfillment.
+  fulfillmentRequests FulfillmentRequest[]
 
   @@index([status, createdAt])
   @@index([uploadedById])
@@ -2683,6 +2899,9 @@ model PrescriptionMedicationLine {
 
   candidates PrescriptionDrugCandidate[] @relation("LineCandidates")
   decisions  DrugMatchDecision[]
+
+  /// Phase 6 — Location-Aware Branch Inventory & Fulfillment.
+  fulfillmentRequestItems FulfillmentRequestItem[]
 
   @@unique([matchRunId, lineIndex])
   @@index([prescriptionId])

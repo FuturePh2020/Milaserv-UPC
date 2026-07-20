@@ -29,6 +29,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { PrescriptionsModule } from './modules/prescriptions/prescriptions.module';
 import { LocationsModule } from './modules/locations/locations.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 
 @Module({
   imports: [
@@ -62,6 +63,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     PrescriptionsModule,
     LocationsModule,
     InventoryModule,
+    FulfillmentModule,
   ],
   controllers: [HealthController],
 })
