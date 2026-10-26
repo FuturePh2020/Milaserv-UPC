@@ -1,0 +1,140 @@
+{
+  "icon": "https://api.iconify.design/lucide:flag.svg",
+  "label": "Bazaar Pop: شريط الدول",
+  "section_schema": [
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "طعم من كل حتة في العالم"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English)",
+      "default": ""
+    },
+    {
+      "name": "countries",
+      "type": "object_array",
+      "description": "الدول (البلاط يبقى قابل للضغط فقط لو حطيت رابط أو قسم)",
+      "fields": [
+        {
+          "name": "label",
+          "type": "string",
+          "description": "اسم الدولة",
+          "default": "كوريا"
+        },
+        {
+          "name": "label_en",
+          "type": "string",
+          "description": "Name (English)",
+          "default": ""
+        },
+        {
+          "name": "flag",
+          "type": "image",
+          "description": "صورة العلم (اختياري)",
+          "default": ""
+        },
+        {
+          "name": "emoji",
+          "type": "string",
+          "description": "إيموجي العلم لو مفيش صورة",
+          "default": "🇰🇷"
+        },
+        {
+          "name": "link_url",
+          "type": "string",
+          "description": "رابط مكتوب (اختياري، له الأولوية)",
+          "default": ""
+        },
+        {
+          "name": "category_id",
+          "type": "category_single_select",
+          "description": "أو اختار قسم"
+        }
+      ]
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "yellow",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

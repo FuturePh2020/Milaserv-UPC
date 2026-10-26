@@ -1,0 +1,8 @@
+{% comment %}
+  Shows the merchant-written stock text only when the merchant explicitly
+  enables it in theme settings (show_platform_urgency_widgets). No animated
+  or invented bar is drawn.
+{% endcomment %}
+{% if theme_data.show_platform_urgency_widgets and text and text != "" %}
+  <p class="bp-theme bp-sticker bp-sticker--pink" style="--bp-tilt:0deg;white-space:normal;margin:8px 0">{{ text }}</p>
+{% endif %}

@@ -1,0 +1,33 @@
+{% assign hs_key = "moods" %}{% assign hs_default_surface = "cream" %}{% assign hs_class = "bp-moods" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if sd.cards and sd.cards.size > 0 %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container">
+    <div class="bp-section-head">
+{% comment %}@include hs-heading{% endcomment %}
+    </div>
+    <ul class="bp-moods__grid bp-moods__grid--{{ sd.columns | default: '6' }}" role="list" style="list-style:none;margin:0;padding:0">
+      {% for tile in sd.cards %}
+        {% if is_en and tile.label_en != blank %}{% assign m_label = tile.label_en %}{% else %}{% assign m_label = tile.label %}{% endif %}
+        {% case tile.color %}
+          {% when "pink" %}{% assign m_bg = "var(--bp-pink)" %}
+          {% when "mint" %}{% assign m_bg = "var(--bp-mint)" %}
+          {% when "sky" %}{% assign m_bg = "var(--bp-sky)" %}
+          {% when "orange" %}{% assign m_bg = "#FFB86B" %}
+          {% when "white" %}{% assign m_bg = "#FFFFFF" %}
+          {% else %}{% assign m_bg = "var(--bp-yellow)" %}
+        {% endcase %}
+        <li>
+          {% assign tile_class = "bp-mood" %}{% assign tile_style = "--bp-mood-bg:" | append: m_bg %}
+{% comment %}@include hs-tile-open{% endcomment %}
+            <span class="bp-mood__label">{{ m_label }}</span>
+            {% if tile.sub != blank %}<span class="bp-mood__sub">{{ tile.sub }}</span>{% endif %}
+            {% if tile.image != blank %}<img class="bp-mood__img" src="{{ tile.image }}" alt="" width="200" height="200" loading="lazy">{% else %}<span class="bp-mood__emoji" aria-hidden="true">{{ tile.emoji }}</span>{% endif %}
+            {% if t_tag == "a" %}<span class="bp-mood__go" aria-hidden="true"><svg class="bp-flip-rtl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span>{% endif %}
+          </{{ t_tag }}>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

@@ -1,0 +1,12 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+<nav class="bp-theme bp-container bp-breadcrumbs" aria-label="{% if is_en %}Breadcrumb{% else %}مسار التصفح{% endif %}">
+  <ol>
+    <li><a href="/">{{ home_text | default: "الرئيسية" }}</a></li>
+    {% for crumb in categories %}
+      <li class="bp-breadcrumbs__sep" aria-hidden="true">/</li>
+      <li><a href="/collections/{{ crumb.slug }}">{{ crumb.name }}</a></li>
+    {% endfor %}
+    <li class="bp-breadcrumbs__sep" aria-hidden="true">/</li>
+    <li><span aria-current="page">{{ product_name }}</span></li>
+  </ol>
+</nav>

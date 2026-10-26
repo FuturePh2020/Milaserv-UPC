@@ -1,0 +1,37 @@
+{% assign hs_key = "wholesale" %}{% assign hs_default_surface = "blue" %}{% assign hs_class = "bp-wholesale" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if hs_title != blank %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container">
+    <div class="bp-section-head">
+{% comment %}@include hs-heading{% endcomment %}
+    </div>
+    {% assign n_tiers = 0 %}{% for tier in sd.tiers %}{% if tier.name != blank or tier.quantity != blank %}{% assign n_tiers = n_tiers | plus: 1 %}{% endif %}{% endfor %}
+    {% if n_tiers > 0 %}
+      <ul class="bp-tiers" role="list">
+        {% for tier in sd.tiers %}
+          {% if tier.name != blank or tier.quantity != blank %}
+            <li class="bp-tier{% if tier.highlight %} bp-tier--highlight{% endif %}">
+              {% if tier.badge != blank %}<span class="bp-sticker bp-sticker--pink">{{ tier.badge }}</span>{% endif %}
+              {% if tier.name != blank %}<h3 class="bp-tier__name">{{ tier.name }}</h3>{% endif %}
+              {% if tier.quantity != blank %}<p class="bp-tier__qty">{{ tier.quantity }}</p>{% endif %}
+              {% if tier.unit_note != blank %}<p class="bp-tier__note">📦 {{ tier.unit_note }}</p>{% endif %}
+              {% if tier.price_note != blank %}<p class="bp-tier__note">{{ tier.price_note }}</p>{% endif %}
+            </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if sd.carton_info != blank %}<p class="bp-lead">{{ sd.carton_info }}</p>{% endif %}
+    {% if sd.disclaimer != blank %}<p class="bp-note"><span aria-hidden="true">ℹ️</span><span>{{ sd.disclaimer }}</span></p>{% endif %}
+    <div class="bp-wholesale__ctas">
+      {% assign lk = "cta" %}{% assign lk_class = "bp-btn" %}
+{% comment %}@include hs-link{% endcomment %}
+      {% assign wa = theme_data.whatsapp_number | strip | remove: "+" | remove: " " %}
+      {% if sd.show_whatsapp != false and wa != "" %}
+        <a class="bp-btn bp-btn--whatsapp" href="https://wa.me/{{ wa }}?text={{ sd.whatsapp_message | default: 'أهلاً، عايز أسأل عن أسعار الجملة' | url_encode }}" target="_blank" rel="noopener noreferrer">{% if is_en %}Ask about wholesale on WhatsApp{% else %}اسأل عن الجملة على واتساب{% endif %}</a>
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}

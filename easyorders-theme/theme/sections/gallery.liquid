@@ -1,0 +1,46 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+{% assign main_src = mainImage | default: images[0] %}
+<div class="bp-theme bp-gallery" role="region" aria-label="{% if is_en %}Product images: {% else %}صور المنتج: {% endif %}{{ product_name }}" data-alt="{{ product_name }}">
+  <div class="bp-gallery__main">
+    {% if main_src and main_src != "" %}
+      {% if main_src contains ".mp4" or main_src contains ".webm" %}
+        <video src="{{ main_src }}" controls playsinline muted preload="metadata"></video>
+      {% else %}
+        <img id="gallery-main-image" src="{{ main_src }}" alt="{{ product_name }}" width="800" height="800" fetchpriority="high" decoding="async">
+      {% endif %}
+    {% else %}
+      <span class="bp-card__media--empty" aria-hidden="true">🛍️</span>
+    {% endif %}
+  </div>
+  {% unless main_src contains ".mp4" %}
+    {% if main_src and main_src != "" %}
+      <button type="button" class="bp-icon-btn bp-gallery__zoom" data-src="{{ main_src }}" aria-label="{% if is_en %}Zoom image{% else %}تكبير الصورة{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5M11 8v6M8 11h6"/></svg>
+      </button>
+    {% endif %}
+  {% endunless %}
+  {% if images.size > 1 %}
+    <ul class="bp-gallery__thumbs" aria-label="{% if is_en %}More images{% else %}صور أكثر{% endif %}">
+      {% for image in images %}
+        <li>
+          <button type="button" class="bp-gallery__thumb" data-src="{{ image }}" aria-current="{% if image == main_src %}true{% else %}false{% endif %}" aria-label="{% if is_en %}Show image {{ forloop.index }} of {{ images.size }}{% else %}عرض الصورة {{ forloop.index }} من {{ images.size }}{% endif %}">
+            {% if image contains ".mp4" or image contains ".webm" %}
+              <video src="{{ image }}" muted playsinline preload="metadata" aria-hidden="true"></video>
+              <span class="bp-gallery__thumb-play" aria-hidden="true">▶</span>
+            {% else %}
+              <img src="{{ image }}" alt="" loading="lazy" decoding="async" width="72" height="72">
+            {% endif %}
+          </button>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  <dialog class="bp-lightbox" aria-label="{{ product_name }}">
+    <div class="bp-lightbox__inner">
+      <button type="button" class="bp-icon-btn bp-lightbox__close" data-bp-lightbox-close aria-label="{% if is_en %}Close{% else %}إغلاق{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <img src="" alt="" decoding="async">
+    </div>
+  </dialog>
+</div>

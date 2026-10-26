@@ -1,0 +1,278 @@
+{% comment %}
+  Bazaar Pop — header
+  Platform hooks kept exactly as documented: .cart-btn + cart-click,
+  #header-cart-count, .lang-btn + lang-click (#header-lang-btn / #header-lang-mobile),
+  .register-btn + register-click (only when is_register_active),
+  #header-wishlist-count inside <a href="/wishlist">, compare-click + #header-compare-count.
+{% endcomment %}
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+{% assign fd = theme_data.font_display | default: "baloo" %}
+{% assign fb = theme_data.font_body | default: "cairo" %}
+{% assign font_q = "" %}
+{% case fd %}
+  {% when "baloo" %}{% assign font_q = font_q | append: "&family=Baloo+Bhaijaan+2:wght@500;700;800" %}{% assign fd_stack = '"Baloo Bhaijaan 2"' %}
+  {% when "lalezar" %}{% assign font_q = font_q | append: "&family=Lalezar" %}{% assign fd_stack = '"Lalezar"' %}
+  {% when "lemonada" %}{% assign font_q = font_q | append: "&family=Lemonada:wght@500;700" %}{% assign fd_stack = '"Lemonada"' %}
+  {% else %}{% assign fd_stack = '"Segoe UI"' %}
+{% endcase %}
+{% case fb %}
+  {% when "cairo" %}{% assign font_q = font_q | append: "&family=Cairo:wght@400;600;700;800" %}{% assign fb_stack = '"Cairo"' %}
+  {% when "ibm" %}{% assign font_q = font_q | append: "&family=IBM+Plex+Sans+Arabic:wght@400;500;700" %}{% assign fb_stack = '"IBM Plex Sans Arabic"' %}
+  {% when "tajawal" %}{% assign font_q = font_q | append: "&family=Tajawal:wght@400;500;700;800" %}{% assign fb_stack = '"Tajawal"' %}
+  {% else %}{% assign fb_stack = '"Segoe UI"' %}
+{% endcase %}
+{% if font_q != "" %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap{{ font_q }}">
+{% endif %}
+<style>
+  :root {
+    --bp-blue: {{ theme_data.color_primary | default: "#214BD9" }};
+    --bp-yellow: {{ theme_data.color_accent | default: "#FFDE00" }};
+    --bp-cream: {{ theme_data.color_cream | default: "#FAF6EA" }};
+    --bp-ink: {{ theme_data.color_ink | default: "#0C1423" }};
+    --bp-pink: {{ theme_data.color_pink | default: "#FF9EC4" }};
+    --bp-mint: {{ theme_data.color_mint | default: "#7FE3C4" }};
+    --bp-red: {{ theme_data.color_red | default: "#F2452E" }};
+    --bp-sky: {{ theme_data.color_sky | default: "#A9D6FF" }};
+    --bp-line: {{ theme_data.outline_width | default: 3 }}px;
+    --bp-shadow: {{ theme_data.shadow_offset | default: 4 }}px;
+    --bp-radius: {{ theme_data.radius | default: 22 }}px;
+    --bp-card-media-bg: {{ theme_data.card_media_bg | default: "#FFFFFF" }};
+    --bp-font-display: {{ fd_stack }}, "Cairo", "Segoe UI", Tahoma, system-ui, sans-serif;
+    --bp-font-body: {{ fb_stack }}, "Segoe UI", Tahoma, system-ui, sans-serif;
+    --bp-logo-h-desktop: {{ theme_data.logo_height_desktop | default: 52 }}px;
+    --bp-logo-h-mobile: {{ theme_data.logo_height_mobile | default: 38 }}px;
+    {% if theme_data.use_store_palette %}
+    --bp-header-bg: var(--hd-bg, {{ theme_data.color_primary | default: "#214BD9" }});
+    --bp-header-text: var(--hd-text, #ffffff);
+    --bp-ann-bg: var(--ann-bg, {{ theme_data.color_ink | default: "#0C1423" }});
+    --bp-ann-text: var(--ann-text, #ffffff);
+    --bp-footer-bg: var(--ft-bg, {{ theme_data.color_ink | default: "#0C1423" }});
+    --bp-footer-text: var(--ft-text, #ffffff);
+    --bp-body-bg: var(--body-bg, {{ theme_data.color_cream | default: "#FAF6EA" }});
+    {% endif %}
+  }
+</style>
+
+<div class="bp-theme bp-header-wrap">
+  {% assign ann_sep = theme_data.announcement_separator | default: "✦" %}
+  {% if announcement_config and announcement_config.text.size > 0 %}
+    {% assign ann_type = announcement_config.type | default: "simple" %}
+    <div class="bp-announce bp-announce--{{ ann_type }}" role="region" aria-label="{% if is_en %}Announcements{% else %}إعلانات المتجر{% endif %}">
+      {% if ann_type == "marquee" %}
+        <div class="bp-announce__inner">
+          <div class="bp-marquee" data-speed="{{ theme_data.announcement_speed | default: 40 }}">
+            <div class="bp-marquee__group">
+              {% for item in announcement_config.text %}
+                <span>{{ item }}</span><span class="bp-announce__sep" aria-hidden="true">{{ ann_sep }}</span>
+              {% endfor %}
+            </div>
+            <div class="bp-marquee__group" aria-hidden="true">
+              {% for item in announcement_config.text %}
+                <span>{{ item }}</span><span class="bp-announce__sep">{{ ann_sep }}</span>
+              {% endfor %}
+            </div>
+          </div>
+          <button type="button" class="bp-announce__toggle" data-bp-marquee-toggle aria-pressed="false" aria-label="{% if is_en %}Pause announcements{% else %}إيقاف حركة الإعلانات{% endif %}">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+          </button>
+        </div>
+      {% elsif ann_type == "slider" %}
+        <div class="bp-container bp-announce__inner">
+          <div class="bp-slides" data-bp-rotator aria-live="off">
+            {% for item in announcement_config.text %}
+              <span class="{% if forloop.first %}is-active{% endif %}">{{ item }}</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% else %}
+        <div class="bp-container bp-announce__inner">
+          {% for item in announcement_config.text %}
+            <span>{{ item }}</span>
+            {% unless forloop.last %}<span class="bp-announce__sep" aria-hidden="true">{{ ann_sep }}</span>{% endunless %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+  {% elsif announcement_text and announcement_text != "" %}
+    <div class="bp-announce" role="region" aria-label="{% if is_en %}Announcements{% else %}إعلانات المتجر{% endif %}">
+      <div class="bp-container bp-announce__inner"><span>{{ announcement_text }}</span></div>
+    </div>
+  {% endif %}
+
+  <header id="eo-header" class="bp-header{% if theme_data.header_sticky != false %} bp-header--sticky{% endif %}">
+    <div class="bp-container bp-header__bar">
+      <div class="bp-header__brand">
+        <button type="button" class="bp-icon-btn bp-menu-btn" data-bp-menu-open aria-controls="bp-mobile-menu" aria-expanded="false" aria-label="{% if is_en %}Open menu{% else %}فتح القائمة{% endif %}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        </button>
+        <a href="/" class="bp-logo" aria-label="{{ store_name }}{% if is_en %} - home{% else %} - الرئيسية{% endif %}">
+          {% if logo and logo != "" %}
+            <img src="{{ logo }}" alt="{{ store_name }}" height="{{ theme_data.logo_height_desktop | default: 52 }}" decoding="async">
+          {% else %}
+            <span class="bp-logo__text">{{ store_name }}</span>
+          {% endif %}
+        </a>
+      </div>
+
+      {% if is_en %}
+        {% assign search_ph = theme_data.header_search_placeholder_en | default: "Search the store…" %}
+      {% else %}
+        {% assign search_ph = theme_data.header_search_placeholder | default: "دوّر على منتج…" %}
+      {% endif %}
+      <a href="/search" class="bp-search search-btn" role="search" aria-label="{% if is_en %}Search the store{% else %}ابحث في المتجر{% endif %}">
+        <span class="bp-search__text">{{ search_ph }}</span>
+        <span class="bp-search__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        </span>
+      </a>
+
+      <div class="bp-header__actions">
+        {% if is_en %}{% assign delivery_val = theme_data.header_delivery_value_en | default: theme_data.header_delivery_value %}{% else %}{% assign delivery_val = theme_data.header_delivery_value %}{% endif %}
+        {% if delivery_val and delivery_val != "" %}
+          <div class="bp-header__delivery">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+            <span>{% if is_en %}Delivering to{% else %}{{ theme_data.header_delivery_label | default: "التوصيل لـ" }}{% endif %}<strong>{{ delivery_val }}</strong></span>
+          </div>
+        {% endif %}
+
+        <button type="button" id="header-lang-btn" class="bp-icon-btn lang-btn bp-hide-mobile" hidden aria-label="{% if is_en %}Change language{% else %}تغيير اللغة{% endif %}" onclick="this.dispatchEvent(new CustomEvent('lang-click',{bubbles:true,detail:{anchor:this}}))">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>
+          <span>{% if is_en %}ع{% else %}EN{% endif %}</span>
+        </button>
+
+        {% if is_register_active %}
+          <button type="button" id="header-register" class="bp-icon-btn register-btn bp-hide-mobile" aria-label="{% if is_en %}Create account{% else %}إنشاء حساب{% endif %}" onclick="this.dispatchEvent(new CustomEvent('register-click',{bubbles:true}))">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>
+          </button>
+        {% endif %}
+
+        {% if theme_data.header_show_compare %}
+          <button type="button" class="bp-icon-btn compare-btn bp-hide-mobile" aria-label="{% if is_en %}Compare{% else %}المقارنة{% endif %}" onclick="this.dispatchEvent(new CustomEvent('compare-click',{bubbles:true}))">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3l5 5-5 5M21 8H9M8 21l-5-5 5-5M3 16h12"/></svg>
+            <span id="header-compare-count" class="bp-badge-count" {% if compare_count == 0 or compare_count == blank %}hidden{% endif %}>{{ compare_count }}</span>
+          </button>
+        {% endif %}
+
+        {% if theme_data.header_show_wishlist != false %}
+          <a href="/wishlist" class="bp-icon-btn wishlist-btn bp-hide-mobile" aria-label="{% if is_en %}Wishlist{% else %}المفضلة{% endif %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+            <span id="header-wishlist-count" class="bp-badge-count" {% if wishlist_count == 0 or wishlist_count == blank %}hidden{% endif %}>{{ wishlist_count }}</span>
+          </a>
+        {% endif %}
+
+        <button type="button" class="bp-icon-btn cart-btn" aria-label="{% if is_en %}Open cart{% else %}فتح السلة{% endif %}" onclick="this.dispatchEvent(new CustomEvent('cart-click',{bubbles:true}))">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20.5" r="1.4"/><circle cx="17" cy="20.5" r="1.4"/></svg>
+          <span id="header-cart-count" class="bp-badge-count" {% if cart_count == 0 or cart_count == blank %}hidden{% endif %}>{{ cart_count }}</span>
+        </button>
+      </div>
+    </div>
+
+    {% assign has_extra = false %}{% if theme_data.header_extra_links and theme_data.header_extra_links.size > 0 %}{% assign has_extra = true %}{% endif %}
+    {% if categories.size > 0 or has_extra %}
+      <nav class="bp-catnav" aria-label="{% if is_en %}Shop categories{% else %}أقسام المتجر{% endif %}">
+        <div class="bp-container">
+          <ul class="bp-catnav__list">
+            {% for x in theme_data.header_extra_links %}
+              {% if x.position == "start" and x.url != blank %}
+                {% if is_en and x.label_en != blank %}{% assign xl = x.label_en %}{% else %}{% assign xl = x.label %}{% endif %}
+                <li class="bp-catnav__item"><a class="bp-catnav__link bp-catnav__link--extra" href="{{ x.url }}">{% if x.emoji != blank %}<span aria-hidden="true">{{ x.emoji }}</span>{% endif %}{{ xl }}</a></li>
+              {% endif %}
+            {% endfor %}
+            {% for category in categories %}
+              {% if category.children.size > 0 %}
+                <li class="bp-catnav__item">
+                  <a class="bp-catnav__link" href="{{ category.url }}">{{ category.name }}</a>
+                  <button type="button" class="bp-catnav__link bp-catnav__toggle" aria-expanded="false" aria-controls="bp-catnav-panel-{{ forloop.index }}" aria-label="{% if is_en %}Show subcategories: {% else %}الأقسام الفرعية: {% endif %}{{ category.name }}" style="padding-inline:10px;margin-inline-start:-4px">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                  </button>
+                  <div class="bp-catnav__panel" id="bp-catnav-panel-{{ forloop.index }}">
+                    {% for child in category.children %}
+                      <a href="{{ child.url }}">{{ child.name }}</a>
+                    {% endfor %}
+                  </div>
+                </li>
+              {% else %}
+                <li class="bp-catnav__item"><a class="bp-catnav__link" href="{{ category.url }}">{{ category.name }}</a></li>
+              {% endif %}
+            {% endfor %}
+            {% for x in theme_data.header_extra_links %}
+              {% if x.position != "start" and x.url != blank %}
+                {% if is_en and x.label_en != blank %}{% assign xl = x.label_en %}{% else %}{% assign xl = x.label %}{% endif %}
+                <li class="bp-catnav__item"><a class="bp-catnav__link bp-catnav__link--extra" href="{{ x.url }}">{% if x.emoji != blank %}<span aria-hidden="true">{{ x.emoji }}</span>{% endif %}{{ xl }}</a></li>
+              {% endif %}
+            {% endfor %}
+          </ul>
+        </div>
+      </nav>
+    {% endif %}
+  </header>
+
+  <div id="bp-drawer-overlay" class="bp-drawer-overlay" aria-hidden="true"></div>
+  <div id="bp-mobile-menu" class="bp-mobile-menu" role="dialog" aria-modal="true" aria-hidden="true" aria-label="{% if is_en %}Menu{% else %}القائمة{% endif %}">
+    <div class="bp-mobile-menu__head">
+      <a href="/" class="bp-logo">
+        {% if logo and logo != "" %}<img src="{{ logo }}" alt="{{ store_name }}" decoding="async">{% else %}<span class="bp-logo__text">{{ store_name }}</span>{% endif %}
+      </a>
+      <button type="button" class="bp-icon-btn" data-bp-menu-close aria-label="{% if is_en %}Close menu{% else %}إغلاق القائمة{% endif %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="bp-mobile-menu__body">
+      <ul class="bp-mobile-nav">
+        {% for x in theme_data.header_extra_links %}
+          {% if x.url != blank %}
+            {% if is_en and x.label_en != blank %}{% assign xl = x.label_en %}{% else %}{% assign xl = x.label %}{% endif %}
+            <li><a href="{{ x.url }}" style="background:var(--bp-pink)"><span>{% if x.emoji != blank %}<span aria-hidden="true">{{ x.emoji }}</span> {% endif %}{{ xl }}</span></a></li>
+          {% endif %}
+        {% endfor %}
+        {% for category in categories %}
+          {% if category.children.size > 0 %}
+            <li>
+              <button type="button" class="bp-mobile-nav__toggle" data-bp-subtoggle aria-expanded="false" aria-controls="bp-msub-{{ forloop.index }}">
+                <span>{{ category.name }}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <ul class="bp-mobile-nav__sub" id="bp-msub-{{ forloop.index }}" hidden>
+                <li><a href="{{ category.url }}">{% if is_en %}All {{ category.name }}{% else %}كل {{ category.name }}{% endif %}</a></li>
+                {% for child in category.children %}
+                  <li><a href="{{ child.url }}">{{ child.name }}</a></li>
+                {% endfor %}
+              </ul>
+            </li>
+          {% else %}
+            <li><a href="{{ category.url }}"><span>{{ category.name }}</span></a></li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+
+      <div class="bp-mobile-menu__foot">
+        {% if theme_data.header_show_wishlist != false %}
+          <a class="bp-btn bp-btn--white bp-btn--block" href="/wishlist">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+            {% if is_en %}Wishlist{% else %}المفضلة{% endif %}
+          </a>
+        {% endif %}
+        {% if is_register_active %}
+          <button type="button" id="header-register-mobile" class="bp-btn bp-btn--white bp-btn--block register-btn" onclick="this.dispatchEvent(new CustomEvent('register-click',{bubbles:true}))">
+            {% if is_en %}Create account{% else %}إنشاء حساب{% endif %}
+          </button>
+        {% endif %}
+        <button type="button" id="header-lang-mobile" class="bp-btn bp-btn--white bp-btn--block lang-btn" hidden onclick="this.dispatchEvent(new CustomEvent('lang-click',{bubbles:true,detail:{anchor:this}}));return false;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/></svg>
+          {% if is_en %}العربية{% else %}English{% endif %}
+        </button>
+        {% if theme_data.whatsapp_number != blank %}
+          <a class="bp-btn bp-btn--whatsapp bp-btn--block" href="https://wa.me/{{ theme_data.whatsapp_number | strip | remove: '+' | remove: ' ' }}" target="_blank" rel="noopener noreferrer">
+            {% if is_en %}Chat on WhatsApp{% else %}كلمنا واتساب{% endif %}
+          </a>
+        {% endif %}
+        {% if delivery_val and delivery_val != "" %}
+          <p style="margin:0;font-weight:700">📍 {% if is_en %}Delivering to{% else %}{{ theme_data.header_delivery_label | default: "التوصيل لـ" }}{% endif %} {{ delivery_val }}</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>

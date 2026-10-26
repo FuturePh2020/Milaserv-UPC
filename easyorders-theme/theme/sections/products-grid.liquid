@@ -1,0 +1,140 @@
+{% comment %} GENERATED from tools/src-sections/products-grid.liquid by tools/build-sections.py - edit the source, not this file. {% endcomment %}
+{%- assign is_en = false -%}{%- if lang == "en" -%}{%- assign is_en = true -%}{%- endif -%}
+{%- assign cur = currency -%}
+{%- if is_en and theme_data.currency_display_en != blank -%}{%- assign cur = theme_data.currency_display_en -%}{%- elsif is_en == false and theme_data.currency_display != blank -%}{%- assign cur = theme_data.currency_display -%}{%- endif -%}
+{%- assign oos_label = theme_data.out_of_stock_label | default: "نفدت الكمية" -%}
+{%- if is_en -%}{%- assign oos_label = "Out of stock" -%}{%- endif -%}
+{%- assign card_box = false -%}
+{% comment %}
+  Used by the storefront for BOTH collection pages (category set) and the
+  search page (category null, section_title = query). The storefront renders
+  its own "load more" button outside this template and re-renders it with the
+  accumulated list, so the count below is "products shown", not a total.
+{% endcomment %}
+{% assign is_search = true %}{% if category %}{% assign is_search = false %}{% endif %}
+<section class="bp-theme bp-collection" aria-labelledby="bp-collection-title" data-bp-currency="{{ cur }}">
+  <div class="bp-container">
+    <nav class="bp-breadcrumbs" aria-label="{% if is_en %}Breadcrumb{% else %}مسار التصفح{% endif %}">
+      <ol>
+        <li><a href="/">{% if is_en %}Home{% else %}الرئيسية{% endif %}</a></li>
+        <li class="bp-breadcrumbs__sep" aria-hidden="true">/</li>
+        {% if is_search %}
+          <li><span aria-current="page">{% if is_en %}Search{% else %}البحث{% endif %}</span></li>
+        {% else %}
+          <li><span aria-current="page">{{ category.name }}</span></li>
+        {% endif %}
+      </ol>
+    </nav>
+
+    <div class="bp-collection-head">
+      <div class="bp-collection-head__title">
+        {% if is_search == false and category.thumb and category.thumb != "" %}
+          <img class="bp-collection-head__thumb" src="{{ category.thumb }}" alt="" width="120" height="120" decoding="async">
+        {% endif %}
+        <div>
+          {% if is_search %}
+            <p class="bp-kicker">{% if is_en %}Search results{% else %}نتايج البحث{% endif %}</p>
+            <h1 class="bp-h1" id="bp-collection-title">{% if section_title and section_title != "" %}“{{ section_title }}”{% else %}{% if is_en %}Search{% else %}البحث{% endif %}{% endif %}</h1>
+          {% else %}
+            <h1 class="bp-h1" id="bp-collection-title">{{ category.name | default: section_title }}</h1>
+          {% endif %}
+        </div>
+      </div>
+      {% if products.size > 0 %}
+        <div class="bp-collection-head__meta">
+          <span class="bp-sticker bp-sticker--ink" role="status">{% if is_en %}Showing {{ products.size }} products{% else %}معروض {{ products.size }} منتج{% endif %}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if products.size > 0 %}
+      <ul class="bp-grid bp-grid--cols-{{ theme_data.grid_columns_desktop | default: '5' }}" role="list" style="list-style:none;margin:0;padding:0 0 24px">
+        {% for product in products %}
+          <li>
+{%- comment -%} product card partial — expects: product, cur, is_en, card_box, oos_label {%- endcomment -%}
+{%- assign c_sale = false -%}
+{%- if product.sale_price and product.sale_price > 0 and product.sale_price < product.price -%}{%- assign c_sale = true -%}{%- endif -%}
+{%- assign c_badge = "" -%}{%- assign c_badge_color = "pink" -%}{%- assign c_brand = "" -%}
+{%- if product.product_theme_data -%}
+  {%- assign c_badge = product.product_theme_data.custom_badge_title | strip -%}
+  {%- assign c_badge_color = product.product_theme_data.custom_badge_color | default: "pink" -%}
+  {%- assign c_brand = product.product_theme_data.brand | strip -%}
+{%- endif -%}
+{%- assign c_variants = false -%}{%- if product.variations and product.variations.size > 0 -%}{%- assign c_variants = true -%}{%- endif -%}
+{%- assign c_dis = product.disable_orders_for_no_stock | append: "" | downcase | strip -%}
+{%- assign c_oos = false -%}
+{%- if c_dis == "true" or c_dis == "1" -%}
+  {%- if product.in_stock == false or product.available == false -%}{%- assign c_oos = true -%}
+  {%- elsif c_variants == false and product.quantity != nil and product.quantity <= 0 -%}{%- assign c_oos = true -%}{%- endif -%}
+{%- endif -%}
+{%- assign c_show_sale = false -%}{%- if c_sale and theme_data.show_sale_badge != false -%}{%- assign c_show_sale = true -%}{%- endif -%}
+<article class="bp-card{% if card_box %} bp-card--box{% endif %}{% if c_oos %} bp-card--oos{% endif %}">
+  <a class="bp-card__link" href="/products/{{ product.slug }}">
+    <div class="bp-card__media">
+      {%- if c_show_sale or c_badge != "" or c_oos -%}
+        <div class="bp-card__badges">
+          {%- if c_show_sale -%}
+            {%- assign c_pct = product.price | minus: product.sale_price | times: 100 | divided_by: product.price | floor -%}
+            {%- if c_pct > 0 -%}<span class="bp-sticker bp-sticker--red">-{{ c_pct }}%</span>{%- endif -%}
+          {%- endif -%}
+          {%- if c_badge != "" -%}<span class="bp-sticker bp-sticker--{{ c_badge_color }}">{{ c_badge }}</span>{%- endif -%}
+          {%- if c_oos -%}<span class="bp-sticker bp-sticker--muted">{{ oos_label }}</span>{%- endif -%}
+        </div>
+      {%- endif -%}
+      {%- if product.thumb and product.thumb != "" -%}
+        <img class="bp-card__img-main" src="{{ product.thumb }}" alt="{{ product.name }}" loading="lazy" decoding="async" width="400" height="400">
+        {%- if product.images[0] and product.images[0] != product.thumb -%}<img class="bp-card__img-hover" src="{{ product.images[0] }}" alt="" loading="lazy" decoding="async" width="400" height="400">{%- endif -%}
+      {%- else -%}
+        <span class="bp-card__media--empty" aria-hidden="true">🛍️</span>
+      {%- endif -%}
+    </div>
+    <div class="bp-card__body">
+      {%- if c_brand != "" -%}<p class="bp-card__brand">{{ c_brand }}</p>{%- endif -%}
+      <h3 class="bp-card__name">{{ product.name }}</h3>
+      <div class="bp-price">
+        {%- if c_sale -%}
+          <span class="bp-price__now bp-price__now--sale"><span class="bp-money">{{ product.sale_price }}</span> {{ cur }}</span>
+          <span class="bp-price__old"><span class="bp-visually-hidden">{% if is_en %}was{% else %}بدلاً من{% endif %} </span><span class="bp-money">{{ product.price }}</span> {{ cur }}</span>
+        {%- else -%}
+          <span class="bp-price__now"><span class="bp-money">{{ product.price }}</span> {{ cur }}</span>
+        {%- endif -%}
+      </div>
+    </div>
+  </a>
+  <div class="bp-card__actions">
+    {%- if c_oos -%}
+      <span class="bp-card__oos">{{ oos_label }}</span>
+    {%- elsif theme_data.show_quick_add != false -%}
+      {%- if c_variants -%}
+        <button type="button" class="bp-btn bp-btn--white bp-card__add" aria-label="{% if is_en %}Choose options{% else %}اختار المواصفات{% endif %} - {{ product.name }}" onclick="event.preventDefault();event.stopPropagation();this.dispatchEvent(new CustomEvent('quick-view',{bubbles:true,detail:{productId:'{{ product.id }}'}}));">{% if is_en %}Choose{% else %}اختار{% endif %}</button>
+      {%- else -%}
+        <button type="button" class="bp-btn bp-card__add" aria-label="{{ add | default: 'أضف' }} - {{ product.name }}" onclick="event.preventDefault();event.stopPropagation();this.dispatchEvent(new CustomEvent('quick-add',{bubbles:true,detail:{productId:'{{ product.id }}'}}));"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>{{ add | default: "أضف" }}</span></button>
+      {%- endif -%}
+    {%- endif -%}
+    {%- if theme_data.show_card_wishlist != false -%}
+      <button type="button" class="bp-icon-btn" aria-label="{% if is_en %}Add to or remove from wishlist{% else %}إضافة أو إزالة من المفضلة{% endif %} - {{ product.name }}" onclick="event.preventDefault();event.stopPropagation();this.dispatchEvent(new CustomEvent('toggle-wishlist',{bubbles:true,detail:{productId:'{{ product.id }}'}}));"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg></button>
+    {%- endif -%}
+  </div>
+</article>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="bp-state" role="status">
+        {% if theme_data.empty_state_image != blank %}
+          <img class="bp-state__img" src="{{ theme_data.empty_state_image }}" alt="" width="180" height="180" loading="lazy">
+        {% else %}
+          <span class="bp-state__icon" aria-hidden="true">{% if is_search %}🔍{% else %}🧺{% endif %}</span>
+        {% endif %}
+        {% if is_search %}
+          <h2 class="bp-h3">{% if is_en %}No results found{% else %}{{ theme_data.search_empty_title | default: "مالقيناش نتايج" }}{% endif %}</h2>
+          <p>{% if is_en %}Try another word, a brand name or a product type.{% else %}{{ theme_data.search_empty_text | default: "جرّب كلمة تانية." }}{% endif %}</p>
+        {% else %}
+          <h2 class="bp-h3">{% if is_en %}This category is empty for now{% else %}{{ theme_data.collection_empty_title | default: "القسم ده لسه فاضي" }}{% endif %}</h2>
+          <p>{% if is_en %}New products are on the way — browse our other categories meanwhile.{% else %}{{ theme_data.collection_empty_text }}{% endif %}</p>
+        {% endif %}
+        <a class="bp-btn" href="/">{% if is_en %}Back to home{% else %}ارجع للرئيسية{% endif %}</a>
+      </div>
+    {% endif %}
+  </div>
+</section>

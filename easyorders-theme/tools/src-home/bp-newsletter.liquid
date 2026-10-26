@@ -1,0 +1,25 @@
+{% assign hs_key = "news" %}{% assign hs_default_surface = "yellow" %}{% assign hs_class = "bp-news" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if hs_title != blank %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container">
+    <div class="bp-panel bp-news__box" style="color:var(--bp-ink)">
+      <div>
+{% comment %}@include hs-heading{% endcomment %}
+        {% if sd.image != blank %}<img src="{{ sd.image }}" alt="" width="200" height="160" loading="lazy" style="max-height:160px;width:auto;margin-top:12px">{% endif %}
+      </div>
+      <div>
+        <form class="bp-newsletter-form" novalidate
+          data-err="{% if is_en %}Please enter a valid email address.{% else %}اكتب إيميل صحيح من فضلك.{% endif %}"
+          onsubmit="event.preventDefault();var f=this,i=f.elements.email,m=f.querySelector('.bp-form-msg'),v=i&&i.value?String(i.value).trim():'';if(!i||!v||!i.checkValidity()){if(i){i.setAttribute('aria-invalid','true');i.focus();}if(m){m.textContent=f.getAttribute('data-err');m.className='bp-form-msg bp-form-msg--error';}return;}i.removeAttribute('aria-invalid');if(m){m.textContent='';m.className='bp-form-msg';}f.dispatchEvent(new CustomEvent('footer-subscribe',{bubbles:true,detail:{email:v}}));f.reset();">
+          <label class="bp-visually-hidden" for="bp-news-{{ sid }}">{% if is_en %}Email address{% else %}البريد الإلكتروني{% endif %}</label>
+          <input id="bp-news-{{ sid }}" class="bp-input" type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" pattern="[^@\s]+@[^@\s]+\.[^@\s]+" required aria-required="true" aria-describedby="bp-news-msg-{{ sid }}" placeholder="{{ sd.placeholder | default: 'name@example.com' }}" dir="ltr" oninput="this.removeAttribute('aria-invalid')">
+          <button type="submit" class="bp-btn bp-btn--blue">{% if is_en %}{{ sd.button_label_en | default: "Subscribe" }}{% else %}{{ sd.button_label | default: "اشترك" }}{% endif %}</button>
+          <p id="bp-news-msg-{{ sid }}" class="bp-form-msg" aria-live="polite"></p>
+        </form>
+        {% if sd.footnote != blank %}<p class="bp-news__fine">{{ sd.footnote }}</p>{% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}

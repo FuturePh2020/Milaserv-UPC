@@ -1,0 +1,34 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+<div class="bp-theme bp-accordion">
+  {% if description and description != "" %}
+    <div class="bp-acc">
+      <button type="button" class="bp-acc__btn" data-bp-acc aria-expanded="true" aria-controls="bp-acc-desc" id="bp-acc-desc-btn">
+        <span>{{ description_label | default: "الوصف" }}</span>
+        <span class="bp-acc__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+      </button>
+      <div class="bp-acc__panel bp-rich" id="bp-acc-desc" role="region" aria-labelledby="bp-acc-desc-btn">
+        <div class="ql-editor" dir="auto" style="text-align:start;padding:0">{{ description | raw }}</div>
+      </div>
+    </div>
+  {% endif %}
+  {% for tab in product_theme_data.desc %}
+    {% if tab.title_headline != blank and tab.title_desc != blank %}
+      <div class="bp-acc">
+        <button type="button" class="bp-acc__btn" data-bp-acc aria-expanded="false" aria-controls="bp-acc-tab-{{ forloop.index }}" id="bp-acc-tab-{{ forloop.index }}-btn">
+          <span>{{ tab.title_headline }}</span>
+          <span class="bp-acc__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+        </button>
+        <div class="bp-acc__panel" id="bp-acc-tab-{{ forloop.index }}" role="region" aria-labelledby="bp-acc-tab-{{ forloop.index }}-btn" hidden>{{ tab.title_desc }}</div>
+      </div>
+    {% endif %}
+  {% endfor %}
+  {% for policy in policies %}
+    <div class="bp-acc">
+      <button type="button" class="bp-acc__btn" data-bp-acc aria-expanded="false" aria-controls="bp-acc-pol-{{ forloop.index }}" id="bp-acc-pol-{{ forloop.index }}-btn">
+        <span>{% if policy.icon and policy.icon != "" %}<img src="{{ policy.icon }}" alt="" width="22" height="22" style="vertical-align:middle;margin-inline-end:8px">{% endif %}{{ policy.title }}</span>
+        <span class="bp-acc__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>
+      </button>
+      <div class="bp-acc__panel bp-rich" id="bp-acc-pol-{{ forloop.index }}" role="region" aria-labelledby="bp-acc-pol-{{ forloop.index }}-btn" hidden>{{ policy.content | raw }}</div>
+    </div>
+  {% endfor %}
+</div>

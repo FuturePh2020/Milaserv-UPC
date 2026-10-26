@@ -1,0 +1,35 @@
+{% assign hs_key = "feature" %}{% assign hs_default_surface = "pink" %}{% assign hs_class = "bp-feature" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if hs_title != blank or sd.product_ids.size > 0 %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container bp-feature__grid">
+    <div class="bp-panel bp-feature__intro">
+{% comment %}@include hs-heading{% endcomment %}
+      {% if sd.image != blank %}<img class="bp-feature__intro-img" src="{{ sd.image }}" alt="" width="400" height="260" loading="lazy">{% endif %}
+      {% if sd.chips and sd.chips.size > 0 %}
+        <div class="bp-feature__chips">
+          {% for tile in sd.chips %}
+            {% if tile.label != blank %}
+              {% assign tile_class = "bp-chip" %}{% assign tile_style = "" %}
+{% comment %}@include hs-tile-open{% endcomment %}{{ tile.label }}</{{ t_tag }}>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+      <div>
+        {% assign lk = "cta" %}{% assign lk_class = "bp-btn bp-btn--ink" %}
+{% comment %}@include hs-link{% endcomment %}
+      </div>
+    </div>
+    {% if sd.product_ids and sd.product_ids.size > 0 %}
+      <div class="bp-rail" data-bp-rail-scope>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+{% comment %}@include rail-nav{% endcomment %}
+        </div>
+        {% assign pm_ids = sd.product_ids %}{% assign pm_class = "bp-rail__track" %}{% assign pm_card = "" %}{% assign pm_limit = 16 %}
+{% comment %}@include hs-products{% endcomment %}
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}

@@ -1,0 +1,28 @@
+{% comment %}@include listing-setup{% endcomment %}
+{% if products.size > 0 %}
+<section class="bp-theme bp-section bp-list" aria-labelledby="bp-lp-{{ category.slug | default: 'x' }}-title" data-bp-currency="{{ cur }}">
+  <div class="bp-container bp-rail" data-bp-rail-scope>
+    <div class="bp-section-head">
+      <div class="bp-section-head__text">
+        <h2 class="bp-h2" id="bp-lp-{{ category.slug | default: 'x' }}-title"><span class="bp-squiggle">{{ section_title | default: category.name }}</span></h2>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        {% if category and category.slug and hide_view_all != true %}
+          <a class="bp-link-arrow" href="/collections/{{ category.slug }}">{{ shop_now }}</a>
+        {% endif %}
+        <div class="bp-rail__nav" hidden>
+          <button type="button" class="bp-icon-btn bp-rail__btn" data-bp-rail="prev" aria-label="{% if is_en %}Previous{% else %}السابق{% endif %}"><svg class="bp-flip-rtl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+          <button type="button" class="bp-icon-btn bp-rail__btn" data-bp-rail="next" aria-label="{% if is_en %}Next{% else %}التالي{% endif %}"><svg class="bp-flip-rtl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <ul class="bp-rail__track" role="list" style="list-style:none;margin-block:0">
+      {% for product in products %}
+        <li>
+{% comment %}@include product-card{% endcomment %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

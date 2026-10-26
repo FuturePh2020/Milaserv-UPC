@@ -1,0 +1,55 @@
+<div class="bp-theme bp-container bp-invoice">
+  <div style="display:flex;justify-content:flex-end">
+    <button type="button" class="bp-btn bp-btn--white bp-btn--sm" title="{{ tracking_link }}" onclick="this.dispatchEvent(new CustomEvent('copy-tracking-link',{bubbles:true,detail:{link:this.getAttribute('data-link')}}));" data-link="{{ tracking_link }}">{{ t_copy_tracking_link }}</button>
+  </div>
+
+  <div class="bp-panel bp-invoice__card">
+    <ul class="bp-invoice__timeline">
+      <li><span>{{ t_order_created }}</span><span class="bp-invoice__date" dir="ltr">{{ order.created_at }}</span></li>
+      {% for note in order_notes %}
+        <li><span>{{ note.note }}</span><span class="bp-invoice__date" dir="ltr">{{ note.created_at }}</span></li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="bp-panel bp-invoice__card">
+    {% for item in order.cart_items %}
+      <div class="bp-invoice__item">
+        {% if item.thumb and item.thumb != "" %}<img src="{{ item.thumb }}" alt="" loading="lazy" width="64" height="64">{% else %}<span></span>{% endif %}
+        <div>
+          <h4>{{ item.name }}</h4>
+          {% if item.variants and item.variants != "" %}<p>{{ item.variants }}</p>{% endif %}
+          <p>{{ t_items_count }}: {{ item.quantity }} · {{ t_piece_price }}: <span class="bp-money">{{ item.price }}</span> {{ currency }}</p>
+          {% if item.metadata.size > 0 %}
+            {% for entry in item.metadata %}
+              <p>{{ entry.key }}: {% if entry.is_image %}<img src="{{ entry.value }}" alt="{{ entry.key }}" style="max-width:100px;max-height:100px;border-radius:8px">{% else %}{{ entry.value }}{% endif %}</p>
+            {% endfor %}
+          {% endif %}
+          <p><strong>{{ t_total }} <span class="bp-money">{{ item.total }}</span> {{ currency }}</strong></p>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div class="bp-panel bp-invoice__card">
+    <h3 class="bp-h3" style="margin-bottom:12px">{{ t_shipping_details }}</h3>
+    <dl class="bp-dl">
+      <div><dt>{{ t_name }}</dt><dd>{{ order.full_name }}</dd></div>
+      <div><dt>{{ t_phone }}</dt><dd dir="ltr">{{ order.phone }}</dd></div>
+      {% if order.email and order.email != "" %}<div><dt>{{ t_email }}</dt><dd dir="ltr">{{ order.email }}</dd></div>{% endif %}
+      <div><dt>{{ t_address }}</dt><dd>{{ order.address }}</dd></div>
+      <div><dt>{{ t_payment_details }}</dt><dd>{{ order.payment_method }}</dd></div>
+    </dl>
+  </div>
+
+  <div class="bp-panel bp-invoice__card">
+    <dl class="bp-dl">
+      <div><dt>{{ t_product_total }}</dt><dd><span class="bp-money">{{ order.cost }}</span> {{ currency }}</dd></div>
+      {% unless order.is_digital %}
+        <div><dt>{{ t_shipping_cost }}</dt><dd>{% if order.shipping_cost %}<span class="bp-money">{{ order.shipping_cost }}</span> {{ currency }}{% else %}{{ t_free_shipping }}{% endif %}</dd></div>
+      {% endunless %}
+      <div class="bp-dl__total"><dt>{{ t_total }}</dt><dd><span class="bp-money">{{ order.total_cost }}</span> {{ currency }}</dd></div>
+      <div><dt>{{ t_order_status }}</dt><dd><span class="bp-sticker bp-sticker--mint" style="--bp-tilt:0deg">{{ order.status_label }}</span></dd></div>
+    </dl>
+  </div>
+</div>

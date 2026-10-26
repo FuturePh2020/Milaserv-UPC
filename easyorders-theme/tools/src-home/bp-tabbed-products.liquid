@@ -1,0 +1,45 @@
+{% assign hs_key = "tabs" %}{% assign hs_default_surface = "sky" %}{% assign hs_class = "bp-pets" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% assign n_tabs = 0 %}{% for tab in section_data.tabs %}{% if tab.label != blank and tab.product_ids.size > 0 %}{% assign n_tabs = n_tabs | plus: 1 %}{% endif %}{% endfor %}
+{% if n_tabs > 0 %}
+{% comment %}@include hs-open{% endcomment %}
+  {% if sd.mascot != blank %}<img class="bp-pets__mascot" src="{{ sd.mascot }}" alt="" width="150" height="150" loading="lazy">{% endif %}
+  <div class="bp-container" data-bp-rail-scope>
+    <div class="bp-section-head">
+{% comment %}@include hs-heading{% endcomment %}
+{% comment %}@include rail-nav{% endcomment %}
+    </div>
+    {% if n_tabs > 1 %}
+      <div class="bp-tabs__list" role="tablist" aria-label="{{ hs_title }}">
+        {% assign shown = 0 %}
+        {% for tab in sd.tabs %}
+          {% if tab.label != blank and tab.product_ids.size > 0 %}
+            {% assign shown = shown | plus: 1 %}
+            {% if is_en and tab.label_en != blank %}{% assign tl = tab.label_en %}{% else %}{% assign tl = tab.label %}{% endif %}
+            <button type="button" class="bp-tab" role="tab" id="bp-tab-{{ sid }}-{{ forloop.index }}" aria-controls="bp-tp-{{ sid }}-{{ forloop.index }}" aria-selected="{% if shown == 1 %}true{% else %}false{% endif %}" tabindex="{% if shown == 1 %}0{% else %}-1{% endif %}">{{ tl }}</button>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+    {% assign shown = 0 %}
+    {% for tab in sd.tabs %}
+      {% if tab.label != blank and tab.product_ids.size > 0 %}
+        {% assign shown = shown | plus: 1 %}
+        <div class="bp-tabpanel" {% if n_tabs > 1 %}role="tabpanel" id="bp-tp-{{ sid }}-{{ forloop.index }}" aria-labelledby="bp-tab-{{ sid }}-{{ forloop.index }}" tabindex="0"{% endif %} {% if shown > 1 %}hidden{% endif %}>
+          <div class="bp-rail">
+            {% assign pm_ids = tab.product_ids %}{% assign pm_class = "bp-rail__track" %}{% assign pm_card = "" %}{% assign pm_limit = 16 %}
+{% comment %}@include hs-products{% endcomment %}
+          </div>
+          {% assign tile = tab %}
+          {% if tab.link_url != blank or tab.category_id != blank %}
+            <p style="margin:6px 0 0">
+              {% assign tile_class = "bp-btn bp-btn--white bp-btn--sm" %}{% assign tile_style = "" %}
+{% comment %}@include hs-tile-open{% endcomment %}{% if is_en %}View all{% else %}شوف الكل{% endif %}</{{ t_tag }}>
+            </p>
+          {% endif %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}

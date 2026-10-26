@@ -1,0 +1,77 @@
+{
+  "header": {
+    "logo": "",
+    "links": [
+      {
+        "id": "ADD_CATEGORY_ID_HERE",
+        "type": "category"
+      },
+      {
+        "id": "ADD_PAGE_ID_HERE",
+        "type": "page"
+      }
+    ],
+    "is_use_config": true
+  },
+  "footer": {
+    "logo": "",
+    "pages": [
+      {
+        "id": "ADD_PAGE_ID_HERE"
+      }
+    ],
+    "social": [
+      {
+        "url": "https://facebook.com",
+        "type": "facebook"
+      },
+      {
+        "url": "https://instagram.com",
+        "type": "instagram"
+      },
+      {
+        "url": "https://tiktok.com",
+        "type": "tiktok"
+      }
+    ],
+    "categories": [
+      {
+        "id": "ADD_CATEGORY_ID_HERE"
+      }
+    ],
+    "payment_img": "",
+    "is_use_config": true
+  },
+  "palette": {
+    "hd_bg": "#214BD9",
+    "hd_text": "#FFFFFF",
+    "ann_bg": "#0C1423",
+    "ann_text": "#FFFFFF",
+    "ft_bg": "#0C1423",
+    "ft_text": "#FFFFFF",
+    "buy_btn_bg": "#FFDE00",
+    "buy_btn_text": "#0C1423",
+    "buy_btn_border": "#0C1423",
+    "crt_btn_bg": "#214BD9",
+    "crt_btn_text": "#FFFFFF",
+    "crt_btn_border": "#0C1423",
+    "product_name_text": "#0C1423",
+    "product_price_text": "#0C1423",
+    "product_sale_price_text": "#F2452E",
+    "body_bg": "#FAF6EA",
+    "body_text": "#0C1423",
+    "input_border": "#0C1423",
+    "input_bg": "#FFFFFF",
+    "input_text": "#0C1423",
+    "checkout_form_bg": "#FFFFFF",
+    "checkout_heading_text": "#0C1423"
+  },
+  "announcement_bar": {
+    "text": [
+      "اكتب هنا إعلانك الأول",
+      "إعلان تاني حقيقي عن متجرك"
+    ],
+    "type": "marquee",
+    "is_use_config": true
+  }
+}

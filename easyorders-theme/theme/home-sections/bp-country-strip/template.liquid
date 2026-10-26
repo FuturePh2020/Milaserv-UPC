@@ -1,0 +1,40 @@
+{% comment %} GENERATED from tools/src-home/bp-country-strip.liquid by tools/build-sections.py - edit the source, not this file. {% endcomment %}
+{% assign hs_key = "countries" %}{% assign hs_default_surface = "yellow" %}{% assign hs_class = "bp-countries" %}{% assign hs_style = "" %}
+{%- assign is_en = false -%}{%- if lang == "en" -%}{%- assign is_en = true -%}{%- endif -%}
+{%- assign sd = section_data -%}
+{%- assign sid = section_id | default: hs_key -%}
+{%- assign surface = sd.surface | default: hs_default_surface -%}
+{%- assign cur = currency -%}
+{%- if is_en and theme_data.currency_display_en != blank -%}{%- assign cur = theme_data.currency_display_en -%}{%- elsif is_en == false and theme_data.currency_display != blank -%}{%- assign cur = theme_data.currency_display -%}{%- endif -%}
+{%- assign oos_label = theme_data.out_of_stock_label | default: "نفدت الكمية" -%}
+{%- assign anchor = sd.anchor_id | default: "" | strip | remove: "#" | replace: " ", "-" -%}
+{%- assign hs_title = sd.title -%}{%- assign hs_sub = sd.subtitle -%}{%- assign hs_hl = sd.title_highlight | strip -%}
+{%- if is_en -%}
+  {%- if sd.title_en != blank -%}{%- assign hs_title = sd.title_en -%}{%- assign hs_hl = "" -%}{%- endif -%}
+  {%- if sd.subtitle_en != blank -%}{%- assign hs_sub = sd.subtitle_en -%}{%- endif -%}
+{%- endif -%}
+{% if sd.countries and sd.countries.size > 0 %}
+<section class="bp-theme bp-section bp-surface--{{ surface }} {{ hs_class }}{% if sd.wave_top %} bp-has-wave{% endif %}{% if sd.hide_on_mobile %} bp-hide-sm{% endif %}"{% if anchor != "" %} id="{{ anchor }}"{% endif %}{% if hs_title != blank %} aria-labelledby="bp-h-{{ sid }}"{% endif %} data-bp-currency="{{ cur }}" style="{% if surface == 'custom' %}--bp-surface-bg: {{ sd.bg_custom | default: '#ffffff' }};{% if sd.text_light %}--bp-surface-fg: #ffffff;{% endif %}{% endif %}{{ hs_style }}">
+  {%- if sd.wave_top -%}<svg class="bp-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 40V22c80-14 160-20 240-8s160 20 240 8 160-24 240-14 160 26 240 16 160-24 240-16 160 20 240 12v22z"/></svg>{%- endif -%}
+  <div class="bp-container bp-countries__row">
+    {% if hs_title != blank %}<h2 class="bp-countries__title" id="bp-h-{{ sid }}">{{ hs_title }}</h2>{% endif %}
+    <ul class="bp-countries__list" role="list">
+      {% for tile in sd.countries %}
+        {% if is_en and tile.label_en != blank %}{% assign c_name = tile.label_en %}{% else %}{% assign c_name = tile.label %}{% endif %}
+        {% if c_name != blank %}
+          <li>
+            {% assign tile_class = "bp-country" %}{% assign tile_style = "" %}
+{%- assign t_href = tile.link_url | default: "" | strip -%}
+{%- if t_href != "" -%}{%- assign t_tag = "a" -%}<a class="{{ tile_class }}" href="{{ t_href }}" style="{{ tile_style }}">
+{%- elsif tile.category_id != blank -%}{%- assign t_tag = "a" -%}<a class="{{ tile_class }}" data-bp-link-entity="categories" data-bp-link-id="{{ tile.category_id }}" style="{{ tile_style }}">
+{%- else -%}{%- assign t_tag = "div" -%}<div class="{{ tile_class }}" style="{{ tile_style }}">{%- endif -%}
+              {% if tile.flag != blank %}<img class="bp-country__flag" src="{{ tile.flag }}" alt="" width="40" height="30" loading="lazy">{% else %}<span class="bp-country__flag" aria-hidden="true">{{ tile.emoji | default: "🏳️" }}</span>{% endif %}
+              <span>{{ c_name }}</span>
+            </{{ t_tag }}>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

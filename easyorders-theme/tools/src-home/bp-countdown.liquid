@@ -1,0 +1,35 @@
+{% assign hs_key = "countdown" %}{% assign hs_default_surface = "ink" %}{% assign hs_class = "bp-countdown" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% assign target = sd.target_datetime | default: "" | strip %}
+{% if target != "" and hs_title != blank %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container" data-bp-countdown-section>
+    <div class="bp-panel bp-countdown__box" style="color:var(--bp-ink)" data-bp-countdown data-target="{{ target }}" data-tz="{{ sd.timezone | default: 'Africa/Cairo' }}" data-expired="{{ sd.expired_behavior | default: 'message' }}">
+      <div>
+{% comment %}@include hs-heading{% endcomment %}
+        {% if sd.date_label != blank %}<p class="bp-countdown__date">📅 {{ sd.date_label }}</p>{% endif %}
+        <p class="bp-lead" data-bp-expired-msg hidden><strong>{{ sd.expired_message }}</strong></p>
+        <div class="bp-hero__ctas">
+          {% assign lk = "cta" %}{% assign lk_class = "bp-btn" %}
+{% comment %}@include hs-link{% endcomment %}
+        </div>
+      </div>
+      <div class="bp-timer" role="timer" aria-label="{% if is_en %}Time remaining{% else %}الوقت المتبقي{% endif %}">
+        <div class="bp-timer__unit"><span class="bp-timer__num" data-unit="days">--</span><span class="bp-timer__label">{% if is_en %}Days{% else %}يوم{% endif %}</span></div>
+        <div class="bp-timer__unit"><span class="bp-timer__num" data-unit="hours">--</span><span class="bp-timer__label">{% if is_en %}Hours{% else %}ساعة{% endif %}</span></div>
+        <div class="bp-timer__unit"><span class="bp-timer__num" data-unit="minutes">--</span><span class="bp-timer__label">{% if is_en %}Min{% else %}دقيقة{% endif %}</span></div>
+        <div class="bp-timer__unit" aria-hidden="true"><span class="bp-timer__num" data-unit="seconds">--</span><span class="bp-timer__label">{% if is_en %}Sec{% else %}ثانية{% endif %}</span></div>
+      </div>
+    </div>
+    {% if sd.product_ids and sd.product_ids.size > 0 %}
+      <div class="bp-rail" data-bp-rail-scope style="margin-top:28px">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+{% comment %}@include rail-nav{% endcomment %}
+        </div>
+        {% assign pm_ids = sd.product_ids %}{% assign pm_class = "bp-rail__track" %}{% assign pm_card = "" %}{% assign pm_limit = 12 %}
+{% comment %}@include hs-products{% endcomment %}
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}

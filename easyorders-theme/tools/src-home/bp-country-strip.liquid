@@ -1,0 +1,23 @@
+{% assign hs_key = "countries" %}{% assign hs_default_surface = "yellow" %}{% assign hs_class = "bp-countries" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if sd.countries and sd.countries.size > 0 %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container bp-countries__row">
+    {% if hs_title != blank %}<h2 class="bp-countries__title" id="bp-h-{{ sid }}">{{ hs_title }}</h2>{% endif %}
+    <ul class="bp-countries__list" role="list">
+      {% for tile in sd.countries %}
+        {% if is_en and tile.label_en != blank %}{% assign c_name = tile.label_en %}{% else %}{% assign c_name = tile.label %}{% endif %}
+        {% if c_name != blank %}
+          <li>
+            {% assign tile_class = "bp-country" %}{% assign tile_style = "" %}
+{% comment %}@include hs-tile-open{% endcomment %}
+              {% if tile.flag != blank %}<img class="bp-country__flag" src="{{ tile.flag }}" alt="" width="40" height="30" loading="lazy">{% else %}<span class="bp-country__flag" aria-hidden="true">{{ tile.emoji | default: "🏳️" }}</span>{% endif %}
+              <span>{{ c_name }}</span>
+            </{{ t_tag }}>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

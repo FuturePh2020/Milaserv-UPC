@@ -1,0 +1,65 @@
+[
+  {
+    "name": "brand",
+    "type": "string",
+    "default": "",
+    "description": "البراند (Brand) — يظهر فوق اسم المنتج"
+  },
+  {
+    "name": "origin_country",
+    "type": "string",
+    "default": "",
+    "description": "بلد المنشأ، مثال: كوريا (يظهر كستيكر فقط لو مكتوب)"
+  },
+  {
+    "name": "origin_flag",
+    "type": "image",
+    "default": "",
+    "description": "صورة علم بلد المنشأ (اختياري)"
+  },
+  {
+    "name": "weight",
+    "type": "string",
+    "default": "",
+    "description": "الوزن/الحجم، مثال: 250 جم"
+  },
+  {
+    "name": "sku",
+    "type": "string",
+    "default": "",
+    "description": "كود المنتج SKU (اختياري)"
+  },
+  {
+    "name": "expiry_note",
+    "type": "string",
+    "default": "",
+    "description": "معلومة الصلاحية كما هي على العبوة (اختياري — اكتبها لكل دفعة بدقة)"
+  },
+  {
+    "name": "custom_badge_title",
+    "type": "string",
+    "default": "",
+    "description": "ستيكر مخصص على الكارت، مثال: جديد"
+  },
+  {
+    "name": "custom_badge_color",
+    "type": "select",
+    "default": "pink",
+    "description": "لون الستيكر المخصص",
+    "options": [
+      { "label": "وردي", "value": "pink" },
+      { "label": "نعناعي", "value": "mint" },
+      { "label": "أصفر", "value": "yellow" },
+      { "label": "سماوي", "value": "sky" }
+    ]
+  },
+  {
+    "name": "desc",
+    "type": "object_array",
+    "description": "تبويبات إضافية في وصف المنتج (المكونات، طريقة الاستخدام…)",
+    "fields": [
+      { "name": "title_headline", "type": "string", "default": "", "description": "العنوان" },
+      { "name": "title_desc", "type": "string", "default": "", "description": "المحتوى" }
+    ]
+  }
+]

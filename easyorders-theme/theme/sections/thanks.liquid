@@ -1,0 +1,17 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+<div class="bp-theme bp-container">
+  <div class="bp-panel bp-thanks">
+    {% if content and content != "" %}
+      <div class="bp-rich">{{ content | raw }}</div>
+    {% else %}
+      <div class="bp-thanks__icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+      <h1 class="bp-h2">{{ thanks_title }}</h1>
+      <p>{{ thanks_message }}</p>
+      {% if phone_message and phone_message != "" %}<p><strong>{{ phone_message }}</strong></p>{% endif %}
+    {% endif %}
+    {% if show_home_button %}
+      <button type="button" class="bp-btn" onclick="this.dispatchEvent(new CustomEvent('go-home',{bubbles:true}));">{{ go_home_text }}</button>
+    {% endif %}
+    {% if offers_text and offers_text != "" %}<p class="bp-sticker bp-sticker--mint" style="white-space:normal">{{ offers_text }}</p>{% endif %}
+  </div>
+</div>

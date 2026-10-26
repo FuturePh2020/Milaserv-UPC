@@ -1,0 +1,35 @@
+{% assign hs_key = "videos" %}{% assign hs_default_surface = "cream" %}{% assign hs_class = "bp-videos" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% assign n_v = 0 %}{% for v in section_data.videos %}{% if v.video != blank %}{% assign n_v = n_v | plus: 1 %}{% endif %}{% endfor %}
+{% if n_v > 0 %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container bp-rail" data-bp-rail-scope>
+    <div class="bp-section-head">
+{% comment %}@include hs-heading{% endcomment %}
+{% comment %}@include rail-nav{% endcomment %}
+    </div>
+    <ul class="bp-rail__track bp-videos__track" role="list" style="list-style:none;margin-block:0">
+      {% for v in sd.videos %}
+        {% if v.video != blank %}
+          <li class="bp-vcard" data-autoplay-muted="{% if sd.autoplay_muted %}true{% else %}false{% endif %}">
+            <div class="bp-vcard__frame">
+              {% if v.poster != blank %}<img class="bp-vcard__poster" src="{{ v.poster }}" alt="" width="360" height="640" loading="lazy">{% endif %}
+              <video data-src="{{ v.video }}" {% if v.poster != blank %}poster="{{ v.poster }}"{% endif %} playsinline loop preload="none" muted aria-label="{{ v.caption | default: hs_title }}"></video>
+              {% if v.caption != blank %}<p class="bp-vcard__caption">{{ v.caption }}</p>{% endif %}
+              <button type="button" class="bp-vcard__play" aria-pressed="false" aria-label="{% if is_en %}Play video{% else %}شغّل الفيديو{% endif %}{% if v.caption != blank %}: {{ v.caption }}{% endif %}">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
+              </button>
+              <button type="button" class="bp-icon-btn bp-vcard__pause" aria-label="{% if is_en %}Pause video{% else %}وقّف الفيديو{% endif %}">
+                <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+              </button>
+            </div>
+            {% if v.product_id != blank %}
+              <div class="bp-vcard__product" data-bp-product-chip="{{ v.product_id }}" data-bp-currency="{{ cur }}" hidden></div>
+            {% endif %}
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

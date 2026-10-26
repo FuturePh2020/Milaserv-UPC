@@ -1,0 +1,70 @@
+{% comment %}@include listing-setup{% endcomment %}
+{% comment %}
+  Used by the storefront for BOTH collection pages (category set) and the
+  search page (category null, section_title = query). The storefront renders
+  its own "load more" button outside this template and re-renders it with the
+  accumulated list, so the count below is "products shown", not a total.
+{% endcomment %}
+{% assign is_search = true %}{% if category %}{% assign is_search = false %}{% endif %}
+<section class="bp-theme bp-collection" aria-labelledby="bp-collection-title" data-bp-currency="{{ cur }}">
+  <div class="bp-container">
+    <nav class="bp-breadcrumbs" aria-label="{% if is_en %}Breadcrumb{% else %}مسار التصفح{% endif %}">
+      <ol>
+        <li><a href="/">{% if is_en %}Home{% else %}الرئيسية{% endif %}</a></li>
+        <li class="bp-breadcrumbs__sep" aria-hidden="true">/</li>
+        {% if is_search %}
+          <li><span aria-current="page">{% if is_en %}Search{% else %}البحث{% endif %}</span></li>
+        {% else %}
+          <li><span aria-current="page">{{ category.name }}</span></li>
+        {% endif %}
+      </ol>
+    </nav>
+
+    <div class="bp-collection-head">
+      <div class="bp-collection-head__title">
+        {% if is_search == false and category.thumb and category.thumb != "" %}
+          <img class="bp-collection-head__thumb" src="{{ category.thumb }}" alt="" width="120" height="120" decoding="async">
+        {% endif %}
+        <div>
+          {% if is_search %}
+            <p class="bp-kicker">{% if is_en %}Search results{% else %}نتايج البحث{% endif %}</p>
+            <h1 class="bp-h1" id="bp-collection-title">{% if section_title and section_title != "" %}“{{ section_title }}”{% else %}{% if is_en %}Search{% else %}البحث{% endif %}{% endif %}</h1>
+          {% else %}
+            <h1 class="bp-h1" id="bp-collection-title">{{ category.name | default: section_title }}</h1>
+          {% endif %}
+        </div>
+      </div>
+      {% if products.size > 0 %}
+        <div class="bp-collection-head__meta">
+          <span class="bp-sticker bp-sticker--ink" role="status">{% if is_en %}Showing {{ products.size }} products{% else %}معروض {{ products.size }} منتج{% endif %}</span>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if products.size > 0 %}
+      <ul class="bp-grid bp-grid--cols-{{ theme_data.grid_columns_desktop | default: '5' }}" role="list" style="list-style:none;margin:0;padding:0 0 24px">
+        {% for product in products %}
+          <li>
+{% comment %}@include product-card{% endcomment %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="bp-state" role="status">
+        {% if theme_data.empty_state_image != blank %}
+          <img class="bp-state__img" src="{{ theme_data.empty_state_image }}" alt="" width="180" height="180" loading="lazy">
+        {% else %}
+          <span class="bp-state__icon" aria-hidden="true">{% if is_search %}🔍{% else %}🧺{% endif %}</span>
+        {% endif %}
+        {% if is_search %}
+          <h2 class="bp-h3">{% if is_en %}No results found{% else %}{{ theme_data.search_empty_title | default: "مالقيناش نتايج" }}{% endif %}</h2>
+          <p>{% if is_en %}Try another word, a brand name or a product type.{% else %}{{ theme_data.search_empty_text | default: "جرّب كلمة تانية." }}{% endif %}</p>
+        {% else %}
+          <h2 class="bp-h3">{% if is_en %}This category is empty for now{% else %}{{ theme_data.collection_empty_title | default: "القسم ده لسه فاضي" }}{% endif %}</h2>
+          <p>{% if is_en %}New products are on the way — browse our other categories meanwhile.{% else %}{{ theme_data.collection_empty_text }}{% endif %}</p>
+        {% endif %}
+        <a class="bp-btn" href="/">{% if is_en %}Back to home{% else %}ارجع للرئيسية{% endif %}</a>
+      </div>
+    {% endif %}
+  </div>
+</section>

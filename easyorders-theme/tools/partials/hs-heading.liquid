@@ -1,0 +1,12 @@
+<div class="bp-section-head__text">
+  {%- if sd.kicker != blank -%}<p class="bp-kicker">{{ sd.kicker }}</p>{%- endif -%}
+  {%- if hs_title != blank -%}
+    <h2 class="bp-h2" id="bp-h-{{ sid }}">
+      {%- if hs_hl != "" and hs_title contains hs_hl -%}
+        {%- assign hl_html = '<span class="bp-hl">' | append: hs_hl | append: '</span>' -%}
+        {{ hs_title | replace_first: hs_hl, hl_html }}
+      {%- else -%}{{ hs_title }}{%- endif -%}
+    </h2>
+  {%- endif -%}
+  {%- if hs_sub != blank -%}<p class="bp-lead">{{ hs_sub }}</p>{%- endif -%}
+</div>

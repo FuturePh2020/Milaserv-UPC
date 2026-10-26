@@ -1,0 +1,171 @@
+{
+  "icon": "https://api.iconify.design/lucide:paw-print.svg",
+  "label": "Bazaar Pop: منتجات بتبويبات (الحيوانات الأليفة)",
+  "section_schema": [
+    {
+      "name": "kicker",
+      "type": "string",
+      "description": "سطر صغير فوق العنوان (اختياري)",
+      "default": "🐾 الحيوانات الأليفة",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "لأصحابنا الصغيرين",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_highlight",
+      "type": "string",
+      "description": "جزء من العنوان يتلوّن بالماركر (لازم يكون موجود في العنوان بالظبط)",
+      "default": "الصغيرين",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "description": "وصف قصير",
+      "default": "أكل وألعاب ومستلزمات للقطط والكلاب.",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle_en",
+      "type": "string",
+      "description": "Subtitle (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "mascot",
+      "type": "image",
+      "description": "رسمة/ماسكوت (اختياري)",
+      "default": "",
+      "group": "المحتوى (Content)"
+    },
+    {
+      "name": "tabs",
+      "type": "object_array",
+      "description": "التبويبات",
+      "group": "المحتوى (Content)",
+      "fields": [
+        {
+          "name": "label",
+          "type": "string",
+          "description": "اسم التبويب",
+          "default": "قطط"
+        },
+        {
+          "name": "label_en",
+          "type": "string",
+          "description": "Tab (English)",
+          "default": ""
+        },
+        {
+          "name": "product_ids",
+          "type": "product_multi_select",
+          "description": "منتجات التبويب"
+        },
+        {
+          "name": "link_url",
+          "type": "string",
+          "description": "رابط شوف الكل (اختياري)",
+          "default": ""
+        },
+        {
+          "name": "category_id",
+          "type": "category_single_select",
+          "description": "أو قسم شوف الكل"
+        }
+      ]
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "sky",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": true,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

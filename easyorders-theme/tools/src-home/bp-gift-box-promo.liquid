@@ -1,0 +1,36 @@
+{% assign hs_key = "giftpromo" %}{% assign hs_default_surface = "mint" %}{% assign hs_class = "bp-giftpromo" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if hs_title != blank %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container bp-giftpromo__grid">
+    <div>
+{% comment %}@include hs-heading{% endcomment %}
+      <ol class="bp-giftpromo__steps">
+        {% assign n_steps = 0 %}
+        {% for st in sd.steps %}{% if st.text != blank %}{% assign n_steps = n_steps | plus: 1 %}<li>{{ st.text }}</li>{% endif %}{% endfor %}
+        {% if n_steps == 0 %}
+          {% if is_en %}
+            <li>Pick the items you love</li><li>Choose your packaging</li><li>Add the whole box to your cart</li>
+          {% else %}
+            <li>اختار الحاجات اللي بتحبها</li><li>اختار شكل التغليف</li><li>ضيف البوكس كله للسلة مرة واحدة</li>
+          {% endif %}
+        {% endif %}
+      </ol>
+      <div class="bp-hero__ctas">
+        {% assign lk = "cta" %}{% assign lk_class = "bp-btn bp-btn--ink" %}
+{% comment %}@include hs-link{% endcomment %}
+      </div>
+    </div>
+    <div class="bp-giftpromo__art" aria-hidden="true">
+      {% if sd.box_image != blank %}
+        <img src="{{ sd.box_image }}" alt="" width="560" height="480" loading="lazy" style="width:100%;height:100%;object-fit:contain">
+      {% else %}
+        <div class="bp-giftpromo__box"></div>
+        {% if sd.image_1 != blank %}<img class="bp-giftpromo__img" src="{{ sd.image_1 }}" alt="" width="200" height="200" loading="lazy">{% endif %}
+        {% if sd.image_2 != blank %}<img class="bp-giftpromo__img" src="{{ sd.image_2 }}" alt="" width="200" height="200" loading="lazy">{% endif %}
+        {% if sd.image_3 != blank %}<img class="bp-giftpromo__img" src="{{ sd.image_3 }}" alt="" width="200" height="200" loading="lazy">{% endif %}
+      {% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}

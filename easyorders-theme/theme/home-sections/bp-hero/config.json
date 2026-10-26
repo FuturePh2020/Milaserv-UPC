@@ -1,0 +1,355 @@
+{
+  "icon": "https://api.iconify.design/lucide:sparkles.svg",
+  "label": "Bazaar Pop: الهيرو الرئيسي",
+  "section_schema": [
+    {
+      "name": "kicker",
+      "type": "string",
+      "description": "سطر صغير فوق العنوان (اختياري)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "كل السناكس اللي بتحبها في مكان واحد",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_highlight",
+      "type": "string",
+      "description": "جزء من العنوان يتلوّن بالماركر (لازم يكون موجود في العنوان بالظبط)",
+      "default": "السناكس",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "description": "وصف قصير",
+      "default": "مستورد ومحلي، مشروبات وحلويات وعناية — كله بيوصلك لحد البيت.",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle_en",
+      "type": "string",
+      "description": "Subtitle (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "primary_label",
+      "type": "string",
+      "description": "نص الزرار (فاضي = بدون زرار)",
+      "default": "تسوّق دلوقتي",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "primary_label_en",
+      "type": "string",
+      "description": "Button label (English)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "primary_link_type",
+      "type": "select",
+      "description": "الزرار يودّي على",
+      "default": "category",
+      "options": [
+        {
+          "label": "قسم",
+          "value": "category"
+        },
+        {
+          "label": "منتج",
+          "value": "product"
+        },
+        {
+          "label": "صفحة",
+          "value": "page"
+        },
+        {
+          "label": "رابط مكتوب",
+          "value": "url"
+        }
+      ],
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "primary_category_id",
+      "type": "category_single_select",
+      "description": "القسم",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "primary_product_id",
+      "type": "product_single_select",
+      "description": "المنتج",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "primary_page_id",
+      "type": "page_single_select",
+      "description": "الصفحة",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "primary_url",
+      "type": "string",
+      "description": "الرابط المكتوب (مثال: /collections/snacks أو /#gift-box)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "secondary_label",
+      "type": "string",
+      "description": "نص الزرار (فاضي = بدون زرار)",
+      "default": "",
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "secondary_label_en",
+      "type": "string",
+      "description": "Button label (English)",
+      "default": "",
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "secondary_link_type",
+      "type": "select",
+      "description": "الزرار يودّي على",
+      "default": "url",
+      "options": [
+        {
+          "label": "قسم",
+          "value": "category"
+        },
+        {
+          "label": "منتج",
+          "value": "product"
+        },
+        {
+          "label": "صفحة",
+          "value": "page"
+        },
+        {
+          "label": "رابط مكتوب",
+          "value": "url"
+        }
+      ],
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "secondary_category_id",
+      "type": "category_single_select",
+      "description": "القسم",
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "secondary_product_id",
+      "type": "product_single_select",
+      "description": "المنتج",
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "secondary_page_id",
+      "type": "page_single_select",
+      "description": "الصفحة",
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "secondary_url",
+      "type": "string",
+      "description": "الرابط المكتوب (مثال: /collections/snacks أو /#gift-box)",
+      "default": "",
+      "group": "الزرار الثانوي"
+    },
+    {
+      "name": "image_1",
+      "type": "image",
+      "description": "صورة الكولاج 1 (الكبيرة)",
+      "default": "",
+      "group": "الكولاج (Collage)"
+    },
+    {
+      "name": "image_2",
+      "type": "image",
+      "description": "صورة الكولاج 2",
+      "default": "",
+      "group": "الكولاج (Collage)"
+    },
+    {
+      "name": "image_3",
+      "type": "image",
+      "description": "صورة الكولاج 3",
+      "default": "",
+      "group": "الكولاج (Collage)"
+    },
+    {
+      "name": "image_4",
+      "type": "image",
+      "description": "صورة الكولاج 4",
+      "default": "",
+      "group": "الكولاج (Collage)"
+    },
+    {
+      "name": "image_fit",
+      "type": "select",
+      "description": "طريقة عرض الصور",
+      "default": "contain",
+      "options": [
+        {
+          "label": "منتج مقصوص (contain)",
+          "value": "contain"
+        },
+        {
+          "label": "صورة كاملة (cover)",
+          "value": "cover"
+        }
+      ],
+      "group": "الكولاج (Collage)"
+    },
+    {
+      "name": "collage_bg",
+      "type": "color",
+      "description": "خلفية الكولاج",
+      "default": "#A9D6FF",
+      "group": "الكولاج (Collage)"
+    },
+    {
+      "name": "sticker_1",
+      "type": "string",
+      "description": "ستيكر 1 (اكتب معلومة حقيقية فقط، مثال: أسعار تبدأ من 25 ج)",
+      "default": "",
+      "group": "الستيكرز (Stickers)"
+    },
+    {
+      "name": "sticker_2",
+      "type": "string",
+      "description": "ستيكر 2",
+      "default": "",
+      "group": "الستيكرز (Stickers)"
+    },
+    {
+      "name": "sticker_3",
+      "type": "string",
+      "description": "ستيكر 3",
+      "default": "",
+      "group": "الستيكرز (Stickers)"
+    },
+    {
+      "name": "show_doodles",
+      "type": "boolean",
+      "description": "رسومات وأسهم ديكور",
+      "default": true,
+      "group": "الستيكرز (Stickers)"
+    },
+    {
+      "name": "trust_items",
+      "type": "object_array",
+      "description": "نقاط ثقة تحت الأزرار (اكتب سياسات متجرك الحقيقية فقط)",
+      "fields": [
+        {
+          "name": "icon",
+          "type": "string",
+          "description": "إيموجي",
+          "default": "🚚"
+        },
+        {
+          "name": "text",
+          "type": "string",
+          "description": "النص",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "cream",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

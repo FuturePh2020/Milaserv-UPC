@@ -1,0 +1,7 @@
+{%- comment -%} expects pm_ids (array), pm_class, pm_card, pm_limit {%- endcomment -%}
+{%- assign pm_count = pm_ids.size -%}
+{%- if pm_limit > 0 and pm_count > pm_limit -%}{%- assign pm_count = pm_limit -%}{%- endif -%}
+{%- if pm_count > 5 -%}{%- assign pm_sk = 5 -%}{%- else -%}{%- assign pm_sk = pm_count -%}{%- endif -%}
+<ul class="{{ pm_class }}" role="list" style="list-style:none;margin-block:0" data-bp-products="{{ pm_ids | join: ',' }}" data-bp-card="{{ pm_card }}" data-bp-limit="{{ pm_limit }}" data-bp-quick-add="{{ theme_data.show_quick_add }}" data-bp-wishlist="{{ theme_data.show_card_wishlist }}" data-bp-sale="{{ theme_data.show_sale_badge }}" data-bp-oos-label="{{ oos_label }}" data-bp-currency="{{ cur }}">
+  {%- if pm_sk > 0 -%}{%- for i in (1..pm_sk) -%}<li><div class="bp-skeleton" aria-hidden="true"></div></li>{%- endfor -%}{%- endif -%}
+</ul>

@@ -1,0 +1,24 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+{% if categories.size > 0 %}
+<section class="bp-theme bp-section bp-section--tight bp-cats" aria-labelledby="bp-cats-title">
+  <div class="bp-container">
+    <div class="bp-section-head">
+      <div class="bp-section-head__text">
+        <h2 class="bp-h2" id="bp-cats-title">{% if section_title and section_title != "" %}{{ section_title }}{% else %}{% if is_en %}Shop by category{% else %}<span class="bp-hl">تسوّق</span> حسب القسم{% endif %}{% endif %}</h2>
+      </div>
+    </div>
+    <ul class="bp-cats__track" role="list">
+      {% for category in categories %}
+        <li>
+          <a class="bp-cat" href="/collections/{{ category.slug }}">
+            <span class="bp-cat__img">
+              {% if category.thumb and category.thumb != "" %}<img src="{{ category.thumb }}" alt="" loading="lazy" decoding="async" width="200" height="200">{% else %}<span aria-hidden="true" style="font-size:2rem">🛒</span>{% endif %}
+            </span>
+            <span class="bp-cat__name">{{ category.name }}</span>
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

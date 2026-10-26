@@ -1,0 +1,268 @@
+{
+  "icon": "https://api.iconify.design/lucide:timer.svg",
+  "label": "Bazaar Pop: عدّ تنازلي (وصول جديد)",
+  "section_schema": [
+    {
+      "name": "kicker",
+      "type": "string",
+      "description": "سطر صغير فوق العنوان (اختياري)",
+      "default": "⏳ قريباً",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "وصل قريب!",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_highlight",
+      "type": "string",
+      "description": "جزء من العنوان يتلوّن بالماركر (لازم يكون موجود في العنوان بالظبط)",
+      "default": "قريب",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "description": "وصف قصير",
+      "default": "شحنة جديدة في الطريق.",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle_en",
+      "type": "string",
+      "description": "Subtitle (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "target_datetime",
+      "type": "string",
+      "description": "ميعاد الوصول الحقيقي بالصيغة YYYY-MM-DD HH:mm (مثال: 2026-12-01 20:00)",
+      "default": "",
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "timezone",
+      "type": "select",
+      "description": "المنطقة الزمنية",
+      "default": "Africa/Cairo",
+      "options": [
+        {
+          "label": "القاهرة",
+          "value": "Africa/Cairo"
+        },
+        {
+          "label": "الرياض",
+          "value": "Asia/Riyadh"
+        },
+        {
+          "label": "دبي",
+          "value": "Asia/Dubai"
+        },
+        {
+          "label": "UTC",
+          "value": "UTC"
+        }
+      ],
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "date_label",
+      "type": "string",
+      "description": "الميعاد بالكلام (يظهر حتى بدون جافاسكربت)، مثال: الإثنين 1 ديسمبر الساعة 8 مساءً",
+      "default": "",
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "expired_behavior",
+      "type": "select",
+      "description": "بعد انتهاء العد",
+      "default": "message",
+      "options": [
+        {
+          "label": "اعرض رسالة",
+          "value": "message"
+        },
+        {
+          "label": "اخفي السكشن",
+          "value": "hide"
+        }
+      ],
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "expired_message",
+      "type": "string",
+      "description": "رسالة بعد الانتهاء",
+      "default": "وصلت! اتفرج على الجديد 👇",
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "product_ids",
+      "type": "product_multi_select",
+      "description": "منتجات قادمة (اختياري)",
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "image",
+      "type": "image",
+      "description": "صورة (اختياري)",
+      "default": "",
+      "group": "الميعاد (Date)"
+    },
+    {
+      "name": "cta_label",
+      "type": "string",
+      "description": "نص الزرار (فاضي = بدون زرار)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_label_en",
+      "type": "string",
+      "description": "Button label (English)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_link_type",
+      "type": "select",
+      "description": "الزرار يودّي على",
+      "default": "category",
+      "options": [
+        {
+          "label": "قسم",
+          "value": "category"
+        },
+        {
+          "label": "منتج",
+          "value": "product"
+        },
+        {
+          "label": "صفحة",
+          "value": "page"
+        },
+        {
+          "label": "رابط مكتوب",
+          "value": "url"
+        }
+      ],
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_category_id",
+      "type": "category_single_select",
+      "description": "القسم",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_product_id",
+      "type": "product_single_select",
+      "description": "المنتج",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_page_id",
+      "type": "page_single_select",
+      "description": "الصفحة",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_url",
+      "type": "string",
+      "description": "الرابط المكتوب (مثال: /collections/snacks أو /#gift-box)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "ink",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": true,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

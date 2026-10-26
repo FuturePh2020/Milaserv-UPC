@@ -1,0 +1,234 @@
+{
+  "icon": "https://api.iconify.design/lucide:gift.svg",
+  "label": "Bazaar Pop: اعمل بوكسك (دعاية)",
+  "section_schema": [
+    {
+      "name": "kicker",
+      "type": "string",
+      "description": "سطر صغير فوق العنوان (اختياري)",
+      "default": "🎁 بوكس الهدايا",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "اعمل بوكس الهدايا بنفسك",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_highlight",
+      "type": "string",
+      "description": "جزء من العنوان يتلوّن بالماركر (لازم يكون موجود في العنوان بالظبط)",
+      "default": "بنفسك",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "description": "وصف قصير",
+      "default": "اختار الحاجات اللي بتحبها ونجهزهالك.",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle_en",
+      "type": "string",
+      "description": "Subtitle (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "steps",
+      "type": "object_array",
+      "description": "الخطوات (فاضي = خطوات افتراضية)",
+      "group": "المحتوى (Content)",
+      "fields": [
+        {
+          "name": "text",
+          "type": "string",
+          "description": "الخطوة",
+          "default": ""
+        }
+      ]
+    },
+    {
+      "name": "image_1",
+      "type": "image",
+      "description": "منتج 1 (PNG)",
+      "default": "",
+      "group": "المحتوى (Content)"
+    },
+    {
+      "name": "image_2",
+      "type": "image",
+      "description": "منتج 2 (PNG)",
+      "default": "",
+      "group": "المحتوى (Content)"
+    },
+    {
+      "name": "image_3",
+      "type": "image",
+      "description": "منتج 3 (PNG)",
+      "default": "",
+      "group": "المحتوى (Content)"
+    },
+    {
+      "name": "box_image",
+      "type": "image",
+      "description": "صورة البوكس (اختياري بدل الرسمة)",
+      "default": "",
+      "group": "المحتوى (Content)"
+    },
+    {
+      "name": "cta_label",
+      "type": "string",
+      "description": "نص الزرار (فاضي = بدون زرار)",
+      "default": "ابدأ البوكس",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_label_en",
+      "type": "string",
+      "description": "Button label (English)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_link_type",
+      "type": "select",
+      "description": "الزرار يودّي على",
+      "default": "url",
+      "options": [
+        {
+          "label": "قسم",
+          "value": "category"
+        },
+        {
+          "label": "منتج",
+          "value": "product"
+        },
+        {
+          "label": "صفحة",
+          "value": "page"
+        },
+        {
+          "label": "رابط مكتوب",
+          "value": "url"
+        }
+      ],
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_category_id",
+      "type": "category_single_select",
+      "description": "القسم",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_product_id",
+      "type": "product_single_select",
+      "description": "المنتج",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_page_id",
+      "type": "page_single_select",
+      "description": "الصفحة",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_url",
+      "type": "string",
+      "description": "الرابط المكتوب (مثال: /collections/snacks أو /#gift-box)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "mint",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": true,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+{%- assign t_href = tile.link_url | default: "" | strip -%}
+{%- if t_href != "" -%}{%- assign t_tag = "a" -%}<a class="{{ tile_class }}" href="{{ t_href }}" style="{{ tile_style }}">
+{%- elsif tile.category_id != blank -%}{%- assign t_tag = "a" -%}<a class="{{ tile_class }}" data-bp-link-entity="categories" data-bp-link-id="{{ tile.category_id }}" style="{{ tile_style }}">
+{%- else -%}{%- assign t_tag = "div" -%}<div class="{{ tile_class }}" style="{{ tile_style }}">{%- endif -%}

@@ -1,0 +1,89 @@
+{% comment %} GENERATED from tools/src-home/bp-category-feature.liquid by tools/build-sections.py - edit the source, not this file. {% endcomment %}
+{% assign hs_key = "feature" %}{% assign hs_default_surface = "pink" %}{% assign hs_class = "bp-feature" %}{% assign hs_style = "" %}
+{%- assign is_en = false -%}{%- if lang == "en" -%}{%- assign is_en = true -%}{%- endif -%}
+{%- assign sd = section_data -%}
+{%- assign sid = section_id | default: hs_key -%}
+{%- assign surface = sd.surface | default: hs_default_surface -%}
+{%- assign cur = currency -%}
+{%- if is_en and theme_data.currency_display_en != blank -%}{%- assign cur = theme_data.currency_display_en -%}{%- elsif is_en == false and theme_data.currency_display != blank -%}{%- assign cur = theme_data.currency_display -%}{%- endif -%}
+{%- assign oos_label = theme_data.out_of_stock_label | default: "نفدت الكمية" -%}
+{%- assign anchor = sd.anchor_id | default: "" | strip | remove: "#" | replace: " ", "-" -%}
+{%- assign hs_title = sd.title -%}{%- assign hs_sub = sd.subtitle -%}{%- assign hs_hl = sd.title_highlight | strip -%}
+{%- if is_en -%}
+  {%- if sd.title_en != blank -%}{%- assign hs_title = sd.title_en -%}{%- assign hs_hl = "" -%}{%- endif -%}
+  {%- if sd.subtitle_en != blank -%}{%- assign hs_sub = sd.subtitle_en -%}{%- endif -%}
+{%- endif -%}
+{% if hs_title != blank or sd.product_ids.size > 0 %}
+<section class="bp-theme bp-section bp-surface--{{ surface }} {{ hs_class }}{% if sd.wave_top %} bp-has-wave{% endif %}{% if sd.hide_on_mobile %} bp-hide-sm{% endif %}"{% if anchor != "" %} id="{{ anchor }}"{% endif %}{% if hs_title != blank %} aria-labelledby="bp-h-{{ sid }}"{% endif %} data-bp-currency="{{ cur }}" style="{% if surface == 'custom' %}--bp-surface-bg: {{ sd.bg_custom | default: '#ffffff' }};{% if sd.text_light %}--bp-surface-fg: #ffffff;{% endif %}{% endif %}{{ hs_style }}">
+  {%- if sd.wave_top -%}<svg class="bp-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 40V22c80-14 160-20 240-8s160 20 240 8 160-24 240-14 160 26 240 16 160-24 240-16 160 20 240 12v22z"/></svg>{%- endif -%}
+  <div class="bp-container bp-feature__grid">
+    <div class="bp-panel bp-feature__intro">
+<div class="bp-section-head__text">
+  {%- if sd.kicker != blank -%}<p class="bp-kicker">{{ sd.kicker }}</p>{%- endif -%}
+  {%- if hs_title != blank -%}
+    <h2 class="bp-h2" id="bp-h-{{ sid }}">
+      {%- if hs_hl != "" and hs_title contains hs_hl -%}
+        {%- assign hl_html = '<span class="bp-hl">' | append: hs_hl | append: '</span>' -%}
+        {{ hs_title | replace_first: hs_hl, hl_html }}
+      {%- else -%}{{ hs_title }}{%- endif -%}
+    </h2>
+  {%- endif -%}
+  {%- if hs_sub != blank -%}<p class="bp-lead">{{ hs_sub }}</p>{%- endif -%}
+</div>
+      {% if sd.image != blank %}<img class="bp-feature__intro-img" src="{{ sd.image }}" alt="" width="400" height="260" loading="lazy">{% endif %}
+      {% if sd.chips and sd.chips.size > 0 %}
+        <div class="bp-feature__chips">
+          {% for tile in sd.chips %}
+            {% if tile.label != blank %}
+              {% assign tile_class = "bp-chip" %}{% assign tile_style = "" %}
+{%- assign t_href = tile.link_url | default: "" | strip -%}
+{%- if t_href != "" -%}{%- assign t_tag = "a" -%}<a class="{{ tile_class }}" href="{{ t_href }}" style="{{ tile_style }}">
+{%- elsif tile.category_id != blank -%}{%- assign t_tag = "a" -%}<a class="{{ tile_class }}" data-bp-link-entity="categories" data-bp-link-id="{{ tile.category_id }}" style="{{ tile_style }}">
+{%- else -%}{%- assign t_tag = "div" -%}<div class="{{ tile_class }}" style="{{ tile_style }}">{%- endif -%}{{ tile.label }}</{{ t_tag }}>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+      <div>
+        {% assign lk = "cta" %}{% assign lk_class = "bp-btn bp-btn--ink" %}
+{%- comment -%} expects lk (field prefix), lk_class {%- endcomment -%}
+{%- assign k = lk | append: "_label" -%}{%- assign lk_label = sd[k] -%}
+{%- if is_en -%}{%- assign k = lk | append: "_label_en" -%}{%- if sd[k] != blank -%}{%- assign lk_label = sd[k] -%}{%- endif -%}{%- endif -%}
+{%- assign k = lk | append: "_link_type" -%}{%- assign lk_type = sd[k] | default: "category" -%}
+{%- assign lk_href = "" -%}{%- assign lk_ent = "categories" -%}{%- assign lk_id = "" -%}
+{%- case lk_type -%}
+  {%- when "url" -%}{%- assign k = lk | append: "_url" -%}{%- assign lk_href = sd[k] | default: "" | strip -%}
+  {%- when "product" -%}{%- assign lk_ent = "products" -%}{%- assign k = lk | append: "_product_id" -%}{%- assign lk_id = sd[k] -%}
+  {%- when "page" -%}{%- assign lk_ent = "pages" -%}{%- assign k = lk | append: "_page_id" -%}{%- assign lk_id = sd[k] -%}
+  {%- else -%}{%- assign k = lk | append: "_category_id" -%}{%- assign lk_id = sd[k] -%}
+{%- endcase -%}
+{%- if lk_label != blank -%}
+  {%- if lk_href != "" -%}
+    <a class="{{ lk_class }}" href="{{ lk_href }}">{{ lk_label }}</a>
+  {%- elsif lk_id != blank -%}
+    <a class="{{ lk_class }}" data-bp-link-entity="{{ lk_ent }}" data-bp-link-id="{{ lk_id }}">{{ lk_label }}</a>
+  {%- endif -%}
+{%- endif -%}
+      </div>
+    </div>
+    {% if sd.product_ids and sd.product_ids.size > 0 %}
+      <div class="bp-rail" data-bp-rail-scope>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+<div class="bp-rail__nav" hidden>
+  <button type="button" class="bp-icon-btn bp-rail__btn" data-bp-rail="prev" aria-label="{% if is_en %}Previous{% else %}السابق{% endif %}"><svg class="bp-flip-rtl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+  <button type="button" class="bp-icon-btn bp-rail__btn" data-bp-rail="next" aria-label="{% if is_en %}Next{% else %}التالي{% endif %}"><svg class="bp-flip-rtl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+</div>
+        </div>
+        {% assign pm_ids = sd.product_ids %}{% assign pm_class = "bp-rail__track" %}{% assign pm_card = "" %}{% assign pm_limit = 16 %}
+{%- comment -%} expects pm_ids (array), pm_class, pm_card, pm_limit {%- endcomment -%}
+{%- assign pm_count = pm_ids.size -%}
+{%- if pm_limit > 0 and pm_count > pm_limit -%}{%- assign pm_count = pm_limit -%}{%- endif -%}
+{%- if pm_count > 5 -%}{%- assign pm_sk = 5 -%}{%- else -%}{%- assign pm_sk = pm_count -%}{%- endif -%}
+<ul class="{{ pm_class }}" role="list" style="list-style:none;margin-block:0" data-bp-products="{{ pm_ids | join: ',' }}" data-bp-card="{{ pm_card }}" data-bp-limit="{{ pm_limit }}" data-bp-quick-add="{{ theme_data.show_quick_add }}" data-bp-wishlist="{{ theme_data.show_card_wishlist }}" data-bp-sale="{{ theme_data.show_sale_badge }}" data-bp-oos-label="{{ oos_label }}" data-bp-currency="{{ cur }}">
+  {%- if pm_sk > 0 -%}{%- for i in (1..pm_sk) -%}<li><div class="bp-skeleton" aria-hidden="true"></div></li>{%- endfor -%}{%- endif -%}
+</ul>
+      </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}

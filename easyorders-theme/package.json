@@ -1,0 +1,13 @@
+{
+  "name": "bazaar-pop-easyorders-theme",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bazaar Pop \u2014 EasyOrders custom theme (Arabic RTL, Egypt)",
+  "scripts": {
+    "start": "easyorders start",
+    "build": "python3 tools/build-home-configs.py && python3 tools/build-sections.py",
+    "validate": "node tools/validate.mjs",
+    "preview": "node preview/render.mjs",
+    "zip": "python3 tools/make-zip.py"
+  }
+}

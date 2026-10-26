@@ -1,0 +1,18 @@
+{%- comment -%} expects lk (field prefix), lk_class {%- endcomment -%}
+{%- assign k = lk | append: "_label" -%}{%- assign lk_label = sd[k] -%}
+{%- if is_en -%}{%- assign k = lk | append: "_label_en" -%}{%- if sd[k] != blank -%}{%- assign lk_label = sd[k] -%}{%- endif -%}{%- endif -%}
+{%- assign k = lk | append: "_link_type" -%}{%- assign lk_type = sd[k] | default: "category" -%}
+{%- assign lk_href = "" -%}{%- assign lk_ent = "categories" -%}{%- assign lk_id = "" -%}
+{%- case lk_type -%}
+  {%- when "url" -%}{%- assign k = lk | append: "_url" -%}{%- assign lk_href = sd[k] | default: "" | strip -%}
+  {%- when "product" -%}{%- assign lk_ent = "products" -%}{%- assign k = lk | append: "_product_id" -%}{%- assign lk_id = sd[k] -%}
+  {%- when "page" -%}{%- assign lk_ent = "pages" -%}{%- assign k = lk | append: "_page_id" -%}{%- assign lk_id = sd[k] -%}
+  {%- else -%}{%- assign k = lk | append: "_category_id" -%}{%- assign lk_id = sd[k] -%}
+{%- endcase -%}
+{%- if lk_label != blank -%}
+  {%- if lk_href != "" -%}
+    <a class="{{ lk_class }}" href="{{ lk_href }}">{{ lk_label }}</a>
+  {%- elsif lk_id != blank -%}
+    <a class="{{ lk_class }}" data-bp-link-entity="{{ lk_ent }}" data-bp-link-id="{{ lk_id }}">{{ lk_label }}</a>
+  {%- endif -%}
+{%- endif -%}

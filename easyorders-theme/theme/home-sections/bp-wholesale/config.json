@@ -1,0 +1,264 @@
+{
+  "icon": "https://api.iconify.design/lucide:package.svg",
+  "label": "Bazaar Pop: الجملة / الكراتين",
+  "section_schema": [
+    {
+      "name": "kicker",
+      "type": "string",
+      "description": "سطر صغير فوق العنوان (اختياري)",
+      "default": "📦 الجملة",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "اشتري بالجملة ووفّر",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_highlight",
+      "type": "string",
+      "description": "جزء من العنوان يتلوّن بالماركر (لازم يكون موجود في العنوان بالظبط)",
+      "default": "بالجملة",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "description": "وصف قصير",
+      "default": "للمحلات والكافيهات والمكاتب: اطلب بالكرتونة.",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle_en",
+      "type": "string",
+      "description": "Subtitle (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "tiers",
+      "type": "object_array",
+      "description": "الشرائح (اكتب أرقامك الحقيقية)",
+      "group": "الشرائح (Tiers)",
+      "fields": [
+        {
+          "name": "name",
+          "type": "string",
+          "description": "اسم الشريحة",
+          "default": "شريحة 1"
+        },
+        {
+          "name": "quantity",
+          "type": "string",
+          "description": "الكمية/الحد الأدنى، مثال: من 3 كراتين",
+          "default": "من 3 كراتين"
+        },
+        {
+          "name": "unit_note",
+          "type": "string",
+          "description": "توضيح الوحدة، مثال: الكرتونة = 24 علبة",
+          "default": ""
+        },
+        {
+          "name": "price_note",
+          "type": "string",
+          "description": "ملاحظة السعر، مثال: سعر خاص بيتأكد مع خدمة العملاء",
+          "default": ""
+        },
+        {
+          "name": "badge",
+          "type": "string",
+          "description": "ستيكر (اختياري)",
+          "default": ""
+        },
+        {
+          "name": "highlight",
+          "type": "boolean",
+          "description": "تمييز الشريحة",
+          "default": false
+        }
+      ]
+    },
+    {
+      "name": "carton_info",
+      "type": "string",
+      "description": "معلومة عامة عن الكراتين (اختياري)",
+      "default": "",
+      "group": "الشرائح (Tiers)"
+    },
+    {
+      "name": "disclaimer",
+      "type": "string",
+      "description": "تنبيه السعر النهائي",
+      "default": "أسعار الجملة لا تُطبق تلقائياً في السلة؛ بيتم تأكيد السعر النهائي مع فريقنا قبل الشحن.",
+      "group": "الشرائح (Tiers)"
+    },
+    {
+      "name": "show_whatsapp",
+      "type": "boolean",
+      "description": "زرار واتساب للجملة (يستخدم رقم واتساب من إعدادات الثيم)",
+      "default": true,
+      "group": "الشرائح (Tiers)"
+    },
+    {
+      "name": "whatsapp_message",
+      "type": "string",
+      "description": "رسالة واتساب الجاهزة",
+      "default": "أهلاً، عايز أسأل عن أسعار الجملة",
+      "group": "الشرائح (Tiers)"
+    },
+    {
+      "name": "cta_label",
+      "type": "string",
+      "description": "نص الزرار (فاضي = بدون زرار)",
+      "default": "تصفّح منتجات الجملة",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_label_en",
+      "type": "string",
+      "description": "Button label (English)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_link_type",
+      "type": "select",
+      "description": "الزرار يودّي على",
+      "default": "category",
+      "options": [
+        {
+          "label": "قسم",
+          "value": "category"
+        },
+        {
+          "label": "منتج",
+          "value": "product"
+        },
+        {
+          "label": "صفحة",
+          "value": "page"
+        },
+        {
+          "label": "رابط مكتوب",
+          "value": "url"
+        }
+      ],
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_category_id",
+      "type": "category_single_select",
+      "description": "القسم",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_product_id",
+      "type": "product_single_select",
+      "description": "المنتج",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_page_id",
+      "type": "page_single_select",
+      "description": "الصفحة",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "cta_url",
+      "type": "string",
+      "description": "الرابط المكتوب (مثال: /collections/snacks أو /#gift-box)",
+      "default": "",
+      "group": "الزرار الأساسي"
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "blue",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": true,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "wholesale",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

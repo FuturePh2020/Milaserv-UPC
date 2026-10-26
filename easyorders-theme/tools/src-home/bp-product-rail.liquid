@@ -1,0 +1,24 @@
+{% assign hs_key = "rail" %}{% assign hs_default_surface = "cream" %}{% assign hs_class = "bp-prail" %}
+{% case section_data.box_color %}{% when "mint" %}{% assign hs_style = "--bp-box-bg:var(--bp-mint)" %}{% when "yellow" %}{% assign hs_style = "--bp-box-bg:var(--bp-yellow)" %}{% when "sky" %}{% assign hs_style = "--bp-box-bg:var(--bp-sky)" %}{% else %}{% assign hs_style = "--bp-box-bg:var(--bp-pink)" %}{% endcase %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if sd.product_ids and sd.product_ids.size > 0 %}
+{% comment %}@include hs-open{% endcomment %}
+  {% assign is_rail = true %}{% if sd.layout == "grid" %}{% assign is_rail = false %}{% endif %}
+  <div class="bp-container{% if is_rail %} bp-rail{% if sd.card_style == 'box' %} bp-rail--wide{% endif %}{% endif %}" data-bp-rail-scope>
+    <div class="bp-section-head">
+{% comment %}@include hs-heading{% endcomment %}
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        {% assign lk = "cta" %}{% assign lk_class = "bp-link-arrow" %}
+{% comment %}@include hs-link{% endcomment %}
+        {% if is_rail %}
+{% comment %}@include rail-nav{% endcomment %}
+        {% endif %}
+      </div>
+    </div>
+    {% assign pm_ids = sd.product_ids %}{% if is_rail %}{% assign pm_class = "bp-rail__track" %}{% else %}{% assign pm_class = "bp-grid bp-grid--cols-5" %}{% endif %}
+    {% if sd.card_style == "box" %}{% assign pm_card = "box" %}{% else %}{% assign pm_card = "" %}{% endif %}
+    {% assign pm_limit = sd.limit | default: 12 %}
+{% comment %}@include hs-products{% endcomment %}
+  </div>
+</section>
+{% endif %}

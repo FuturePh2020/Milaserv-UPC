@@ -1,0 +1,50 @@
+{% comment %} GENERATED from tools/src-home/bp-newsletter.liquid by tools/build-sections.py - edit the source, not this file. {% endcomment %}
+{% assign hs_key = "news" %}{% assign hs_default_surface = "yellow" %}{% assign hs_class = "bp-news" %}{% assign hs_style = "" %}
+{%- assign is_en = false -%}{%- if lang == "en" -%}{%- assign is_en = true -%}{%- endif -%}
+{%- assign sd = section_data -%}
+{%- assign sid = section_id | default: hs_key -%}
+{%- assign surface = sd.surface | default: hs_default_surface -%}
+{%- assign cur = currency -%}
+{%- if is_en and theme_data.currency_display_en != blank -%}{%- assign cur = theme_data.currency_display_en -%}{%- elsif is_en == false and theme_data.currency_display != blank -%}{%- assign cur = theme_data.currency_display -%}{%- endif -%}
+{%- assign oos_label = theme_data.out_of_stock_label | default: "نفدت الكمية" -%}
+{%- assign anchor = sd.anchor_id | default: "" | strip | remove: "#" | replace: " ", "-" -%}
+{%- assign hs_title = sd.title -%}{%- assign hs_sub = sd.subtitle -%}{%- assign hs_hl = sd.title_highlight | strip -%}
+{%- if is_en -%}
+  {%- if sd.title_en != blank -%}{%- assign hs_title = sd.title_en -%}{%- assign hs_hl = "" -%}{%- endif -%}
+  {%- if sd.subtitle_en != blank -%}{%- assign hs_sub = sd.subtitle_en -%}{%- endif -%}
+{%- endif -%}
+{% if hs_title != blank %}
+<section class="bp-theme bp-section bp-surface--{{ surface }} {{ hs_class }}{% if sd.wave_top %} bp-has-wave{% endif %}{% if sd.hide_on_mobile %} bp-hide-sm{% endif %}"{% if anchor != "" %} id="{{ anchor }}"{% endif %}{% if hs_title != blank %} aria-labelledby="bp-h-{{ sid }}"{% endif %} data-bp-currency="{{ cur }}" style="{% if surface == 'custom' %}--bp-surface-bg: {{ sd.bg_custom | default: '#ffffff' }};{% if sd.text_light %}--bp-surface-fg: #ffffff;{% endif %}{% endif %}{{ hs_style }}">
+  {%- if sd.wave_top -%}<svg class="bp-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 40V22c80-14 160-20 240-8s160 20 240 8 160-24 240-14 160 26 240 16 160-24 240-16 160 20 240 12v22z"/></svg>{%- endif -%}
+  <div class="bp-container">
+    <div class="bp-panel bp-news__box" style="color:var(--bp-ink)">
+      <div>
+<div class="bp-section-head__text">
+  {%- if sd.kicker != blank -%}<p class="bp-kicker">{{ sd.kicker }}</p>{%- endif -%}
+  {%- if hs_title != blank -%}
+    <h2 class="bp-h2" id="bp-h-{{ sid }}">
+      {%- if hs_hl != "" and hs_title contains hs_hl -%}
+        {%- assign hl_html = '<span class="bp-hl">' | append: hs_hl | append: '</span>' -%}
+        {{ hs_title | replace_first: hs_hl, hl_html }}
+      {%- else -%}{{ hs_title }}{%- endif -%}
+    </h2>
+  {%- endif -%}
+  {%- if hs_sub != blank -%}<p class="bp-lead">{{ hs_sub }}</p>{%- endif -%}
+</div>
+        {% if sd.image != blank %}<img src="{{ sd.image }}" alt="" width="200" height="160" loading="lazy" style="max-height:160px;width:auto;margin-top:12px">{% endif %}
+      </div>
+      <div>
+        <form class="bp-newsletter-form" novalidate
+          data-err="{% if is_en %}Please enter a valid email address.{% else %}اكتب إيميل صحيح من فضلك.{% endif %}"
+          onsubmit="event.preventDefault();var f=this,i=f.elements.email,m=f.querySelector('.bp-form-msg'),v=i&&i.value?String(i.value).trim():'';if(!i||!v||!i.checkValidity()){if(i){i.setAttribute('aria-invalid','true');i.focus();}if(m){m.textContent=f.getAttribute('data-err');m.className='bp-form-msg bp-form-msg--error';}return;}i.removeAttribute('aria-invalid');if(m){m.textContent='';m.className='bp-form-msg';}f.dispatchEvent(new CustomEvent('footer-subscribe',{bubbles:true,detail:{email:v}}));f.reset();">
+          <label class="bp-visually-hidden" for="bp-news-{{ sid }}">{% if is_en %}Email address{% else %}البريد الإلكتروني{% endif %}</label>
+          <input id="bp-news-{{ sid }}" class="bp-input" type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" pattern="[^@\s]+@[^@\s]+\.[^@\s]+" required aria-required="true" aria-describedby="bp-news-msg-{{ sid }}" placeholder="{{ sd.placeholder | default: 'name@example.com' }}" dir="ltr" oninput="this.removeAttribute('aria-invalid')">
+          <button type="submit" class="bp-btn bp-btn--blue">{% if is_en %}{{ sd.button_label_en | default: "Subscribe" }}{% else %}{{ sd.button_label | default: "اشترك" }}{% endif %}</button>
+          <p id="bp-news-msg-{{ sid }}" class="bp-form-msg" aria-live="polite"></p>
+        </form>
+        {% if sd.footnote != blank %}<p class="bp-news__fine">{{ sd.footnote }}</p>{% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}

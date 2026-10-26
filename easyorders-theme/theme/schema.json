@@ -1,0 +1,483 @@
+[
+  {
+    "name": "font_display",
+    "type": "select",
+    "default": "baloo",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "خط العناوين (Display font)",
+    "options": [
+      {
+        "label": "Baloo Bhaijaan 2 (مدوّر - مقترح)",
+        "value": "baloo"
+      },
+      {
+        "label": "Lalezar (عريض)",
+        "value": "lalezar"
+      },
+      {
+        "label": "Lemonada (مرح)",
+        "value": "lemonada"
+      },
+      {
+        "label": "خط النظام (بدون تحميل)",
+        "value": "system"
+      }
+    ]
+  },
+  {
+    "name": "font_body",
+    "type": "select",
+    "default": "cairo",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "خط النصوص (Body font)",
+    "options": [
+      {
+        "label": "Cairo",
+        "value": "cairo"
+      },
+      {
+        "label": "IBM Plex Sans Arabic",
+        "value": "ibm"
+      },
+      {
+        "label": "Tajawal",
+        "value": "tajawal"
+      },
+      {
+        "label": "خط النظام (بدون تحميل)",
+        "value": "system"
+      }
+    ]
+  },
+  {
+    "name": "color_primary",
+    "type": "color",
+    "default": "#214BD9",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "اللون الأزرق الأساسي (Primary blue)"
+  },
+  {
+    "name": "color_accent",
+    "type": "color",
+    "default": "#FFDE00",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "اللون الأصفر (Accent yellow)"
+  },
+  {
+    "name": "color_cream",
+    "type": "color",
+    "default": "#FAF6EA",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "خلفية الكريمي (Cream background)"
+  },
+  {
+    "name": "color_ink",
+    "type": "color",
+    "default": "#0C1423",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "الكحلي الغامق للحدود والنصوص (Ink / outline)"
+  },
+  {
+    "name": "color_pink",
+    "type": "color",
+    "default": "#FF9EC4",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "لون مساعد وردي (Pink accent)"
+  },
+  {
+    "name": "color_mint",
+    "type": "color",
+    "default": "#7FE3C4",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "لون مساعد نعناعي (Mint accent)"
+  },
+  {
+    "name": "color_red",
+    "type": "color",
+    "default": "#F2452E",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "لون الخصومات والتنبيه (Red / sale)"
+  },
+  {
+    "name": "color_sky",
+    "type": "color",
+    "default": "#A9D6FF",
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "لون مساعد سماوي (Light blue accent)"
+  },
+  {
+    "name": "use_store_palette",
+    "type": "checkbox",
+    "default": false,
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "استخدم ألوان الـ Palette من إعدادات الثيم للهيدر والفوتر وشريط الإعلانات بدل ألوان الثيم (Use store palette for header/footer/announcement)"
+  },
+  {
+    "name": "outline_width",
+    "type": "number",
+    "default": 3,
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "سُمك الحدود الغامقة بالبكسل 0–5 (Outline width px)"
+  },
+  {
+    "name": "shadow_offset",
+    "type": "number",
+    "default": 4,
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "مسافة الظل الصلب بالبكسل 0–8 (Offset shadow px)"
+  },
+  {
+    "name": "radius",
+    "type": "number",
+    "default": 22,
+    "group": "الهوية والخطوط (Brand & fonts)",
+    "description": "استدارة الكروت بالبكسل (Card radius px)"
+  },
+  {
+    "name": "logo_height_desktop",
+    "type": "number",
+    "default": 52,
+    "group": "الهيدر (Header)",
+    "description": "ارتفاع اللوجو على الكمبيوتر px"
+  },
+  {
+    "name": "logo_height_mobile",
+    "type": "number",
+    "default": 38,
+    "group": "الهيدر (Header)",
+    "description": "ارتفاع اللوجو على الموبايل px"
+  },
+  {
+    "name": "header_search_placeholder",
+    "type": "string",
+    "default": "دوّر على سناكس، مشروبات، براندات…",
+    "group": "الهيدر (Header)",
+    "description": "نص خانة البحث بالعربي"
+  },
+  {
+    "name": "header_search_placeholder_en",
+    "type": "string",
+    "default": "Search snacks, drinks, brands…",
+    "group": "الهيدر (Header)",
+    "description": "Search placeholder (English)"
+  },
+  {
+    "name": "header_delivery_label",
+    "type": "string",
+    "default": "التوصيل لـ",
+    "group": "الهيدر (Header)",
+    "description": "عنوان معلومة التوصيل (يظهر فقط لو كتبت المنطقة تحت)"
+  },
+  {
+    "name": "header_delivery_value",
+    "type": "string",
+    "default": "",
+    "group": "الهيدر (Header)",
+    "description": "مناطق التوصيل، مثال: القاهرة والجيزة (اتركه فاضي لإخفاء المعلومة)"
+  },
+  {
+    "name": "header_delivery_value_en",
+    "type": "string",
+    "default": "",
+    "group": "الهيدر (Header)",
+    "description": "Delivery area (English, optional)"
+  },
+  {
+    "name": "header_show_wishlist",
+    "type": "checkbox",
+    "default": true,
+    "group": "الهيدر (Header)",
+    "description": "إظهار أيقونة المفضلة (/wishlist)"
+  },
+  {
+    "name": "header_show_compare",
+    "type": "checkbox",
+    "default": false,
+    "group": "الهيدر (Header)",
+    "description": "إظهار أيقونة المقارنة"
+  },
+  {
+    "name": "header_sticky",
+    "type": "checkbox",
+    "default": true,
+    "group": "الهيدر (Header)",
+    "description": "تثبيت الهيدر أعلى الصفحة عند النزول"
+  },
+  {
+    "name": "header_extra_links",
+    "type": "object_array",
+    "group": "الهيدر (Header)",
+    "description": "روابط إضافية في شريط الأقسام (مثلاً: اعمل بوكسك /#gift-box ، الجملة /#wholesale)",
+    "fields": [
+      {
+        "name": "label",
+        "type": "string",
+        "default": "اعمل بوكسك",
+        "description": "النص بالعربي"
+      },
+      {
+        "name": "label_en",
+        "type": "string",
+        "default": "",
+        "description": "Label (English)"
+      },
+      {
+        "name": "url",
+        "type": "string",
+        "default": "/#gift-box",
+        "description": "الرابط، مثال: /collections/snacks أو /#gift-box"
+      },
+      {
+        "name": "emoji",
+        "type": "string",
+        "default": "🎁",
+        "description": "إيموجي/رمز صغير (اختياري)"
+      },
+      {
+        "name": "position",
+        "type": "select",
+        "default": "end",
+        "description": "المكان في الشريط",
+        "options": [
+          {
+            "label": "قبل الأقسام",
+            "value": "start"
+          },
+          {
+            "label": "بعد الأقسام",
+            "value": "end"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "announcement_separator",
+    "type": "string",
+    "default": "✦",
+    "group": "شريط الإعلانات (Announcement)",
+    "description": "الفاصل بين الإعلانات"
+  },
+  {
+    "name": "announcement_speed",
+    "type": "number",
+    "default": 40,
+    "group": "شريط الإعلانات (Announcement)",
+    "description": "سرعة الحركة (بكسل/ثانية) لوضع marquee"
+  },
+  {
+    "name": "currency_display",
+    "type": "string",
+    "default": "",
+    "group": "المنتجات (Products)",
+    "description": "شكل العملة بجانب السعر، مثال: ج.م (اتركه فاضي لاستخدام عملة المتجر)"
+  },
+  {
+    "name": "currency_display_en",
+    "type": "string",
+    "default": "",
+    "group": "المنتجات (Products)",
+    "description": "Currency label in English, e.g. EGP (optional)"
+  },
+  {
+    "name": "show_sale_badge",
+    "type": "checkbox",
+    "default": true,
+    "group": "المنتجات (Products)",
+    "description": "إظهار ستيكر نسبة الخصم (محسوبة من السعر الأصلي وسعر البيع)"
+  },
+  {
+    "name": "show_quick_add",
+    "type": "checkbox",
+    "default": true,
+    "group": "المنتجات (Products)",
+    "description": "زرار الإضافة السريعة للسلة على الكروت"
+  },
+  {
+    "name": "show_card_wishlist",
+    "type": "checkbox",
+    "default": true,
+    "group": "المنتجات (Products)",
+    "description": "زرار المفضلة على كروت المنتجات"
+  },
+  {
+    "name": "card_media_bg",
+    "type": "color",
+    "default": "#FFFFFF",
+    "group": "المنتجات (Products)",
+    "description": "خلفية صورة المنتج في الكارت"
+  },
+  {
+    "name": "grid_columns_desktop",
+    "type": "select",
+    "default": "5",
+    "group": "المنتجات (Products)",
+    "description": "عدد الأعمدة في صفحات الأقسام والبحث على الشاشات الكبيرة",
+    "options": [
+      {
+        "label": "4",
+        "value": "4"
+      },
+      {
+        "label": "5",
+        "value": "5"
+      },
+      {
+        "label": "6",
+        "value": "6"
+      }
+    ]
+  },
+  {
+    "name": "out_of_stock_label",
+    "type": "string",
+    "default": "نفدت الكمية",
+    "group": "المنتجات (Products)",
+    "description": "نص حالة نفاد المخزون"
+  },
+  {
+    "name": "collection_empty_title",
+    "type": "string",
+    "default": "القسم ده لسه فاضي",
+    "group": "الأقسام والبحث (Collections & search)",
+    "description": "عنوان القسم الفارغ"
+  },
+  {
+    "name": "collection_empty_text",
+    "type": "string",
+    "default": "منتجات جديدة جاية قريب، جرّب تتفرج على باقي الأقسام.",
+    "group": "الأقسام والبحث (Collections & search)",
+    "description": "نص القسم الفارغ"
+  },
+  {
+    "name": "search_empty_title",
+    "type": "string",
+    "default": "مالقيناش نتايج",
+    "group": "الأقسام والبحث (Collections & search)",
+    "description": "عنوان البحث بدون نتائج"
+  },
+  {
+    "name": "search_empty_text",
+    "type": "string",
+    "default": "جرّب كلمة تانية، أو اكتب اسم البراند أو نوع المنتج.",
+    "group": "الأقسام والبحث (Collections & search)",
+    "description": "نص البحث بدون نتائج"
+  },
+  {
+    "name": "empty_state_image",
+    "type": "image",
+    "default": "",
+    "group": "الأقسام والبحث (Collections & search)",
+    "description": "رسمة/ماسكوت للحالة الفارغة (اختياري)"
+  },
+  {
+    "name": "whatsapp_number",
+    "type": "string",
+    "default": "",
+    "group": "التواصل (Contact)",
+    "description": "رقم واتساب بالصيغة الدولية بدون + أو مسافات، مثال: 2010xxxxxxxx (اتركه فاضي لإخفاء أزرار واتساب)"
+  },
+  {
+    "name": "whatsapp_product_message",
+    "type": "string",
+    "default": "أهلاً، عايز أسأل عن المنتج ده:",
+    "group": "التواصل (Contact)",
+    "description": "بداية رسالة واتساب من صفحة المنتج"
+  },
+  {
+    "name": "contact_hours",
+    "type": "string",
+    "default": "",
+    "group": "التواصل (Contact)",
+    "description": "مواعيد خدمة العملاء (اختياري)"
+  },
+  {
+    "name": "product_whatsapp_label",
+    "type": "string",
+    "default": "اسأل على واتساب",
+    "group": "صفحة المنتج (Product page)",
+    "description": "نص زرار واتساب في صفحة المنتج"
+  },
+  {
+    "name": "product_info_rows",
+    "type": "object_array",
+    "group": "صفحة المنتج (Product page)",
+    "description": "معلومات ثابتة تحت تفاصيل المنتج (شحن/دفع/استبدال). اكتب سياساتك الحقيقية فقط",
+    "fields": [
+      {
+        "name": "icon",
+        "type": "string",
+        "default": "🚚",
+        "description": "إيموجي"
+      },
+      {
+        "name": "title",
+        "type": "string",
+        "default": "الشحن والتوصيل",
+        "description": "العنوان"
+      },
+      {
+        "name": "text",
+        "type": "string",
+        "default": "",
+        "description": "التفاصيل (اتركها فاضية لإخفاء الصف)"
+      }
+    ]
+  },
+  {
+    "name": "show_platform_urgency_widgets",
+    "type": "checkbox",
+    "default": false,
+    "group": "صفحة المنتج (Product page)",
+    "description": "إظهار نص \"المخزون\" اللي بتكتبه في إعدادات المنتج (fake stock). عداد الزوار والعداد المؤقت الوهمي مش بيظهروا في الثيم ده نهائياً"
+  },
+  {
+    "name": "footer_about",
+    "type": "string",
+    "default": "",
+    "group": "الفوتر (Footer)",
+    "description": "نبذة قصيرة عن المتجر"
+  },
+  {
+    "name": "footer_about_en",
+    "type": "string",
+    "default": "",
+    "group": "الفوتر (Footer)",
+    "description": "About text (English)"
+  },
+  {
+    "name": "footer_show_newsletter",
+    "type": "checkbox",
+    "default": true,
+    "group": "الفوتر (Footer)",
+    "description": "إظهار خانة الاشتراك في الفوتر"
+  },
+  {
+    "name": "footer_newsletter_title",
+    "type": "string",
+    "default": "",
+    "group": "الفوتر (Footer)",
+    "description": "عنوان الاشتراك (فاضي = نص المنصة)"
+  },
+  {
+    "name": "footer_newsletter_text",
+    "type": "string",
+    "default": "",
+    "group": "الفوتر (Footer)",
+    "description": "وصف الاشتراك (اختياري)"
+  },
+  {
+    "name": "footer_show_payment",
+    "type": "checkbox",
+    "default": true,
+    "group": "الفوتر (Footer)",
+    "description": "إظهار صورة طرق الدفع"
+  },
+  {
+    "name": "footer_mascot_image",
+    "type": "image",
+    "default": "",
+    "group": "الفوتر (Footer)",
+    "description": "رسمة/ماسكوت تظهر في الفوتر (اختياري)"
+  }
+]

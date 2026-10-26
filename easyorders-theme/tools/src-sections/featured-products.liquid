@@ -1,0 +1,32 @@
+{% comment %}@include listing-setup{% endcomment %}
+{% if products.size > 0 %}
+<section class="bp-theme bp-section bp-featured" aria-labelledby="bp-fp-{{ category.slug | default: 'x' }}-title" data-bp-currency="{{ cur }}">
+  <div class="bp-container">
+    <div class="bp-section-head">
+      <div class="bp-section-head__text">
+        <h2 class="bp-h2" id="bp-fp-{{ category.slug | default: 'x' }}-title">{{ section_title | default: category.name }}</h2>
+      </div>
+      {% if category and category.slug and hide_view_all != true %}
+        <a class="bp-btn bp-btn--white bp-btn--sm" href="/collections/{{ category.slug }}">{{ shop_now }}<svg class="bp-flip-rtl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      {% endif %}
+    </div>
+    <div class="bp-featured__layout">
+      {% if category and category.slug %}
+        <a class="bp-promo-tile" href="/collections/{{ category.slug }}">
+          {% if category.thumb and category.thumb != "" %}<img src="{{ category.thumb }}" alt="" loading="lazy" decoding="async" width="600" height="700">{% endif %}
+          <span class="bp-sticker">{{ category.name }}</span>
+          <span class="bp-h2">{{ section_title | default: category.name }}</span>
+          {% unless hide_view_all %}<span class="bp-btn bp-btn--sm" style="align-self:flex-start">{{ shop_now }}</span>{% endunless %}
+        </a>
+      {% endif %}
+      <ul class="bp-grid" role="list" style="list-style:none;margin:0;padding:0">
+        {% for product in products limit: 8 %}
+          <li>
+{% comment %}@include product-card{% endcomment %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</section>
+{% endif %}

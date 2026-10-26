@@ -1,0 +1,22 @@
+{% comment %}@include listing-setup{% endcomment %}
+{% if products.size > 0 %}
+<section class="bp-theme bp-section bp-hgrid" aria-labelledby="bp-hg-{{ category.slug | default: 'x' }}-title" data-bp-currency="{{ cur }}">
+  <div class="bp-container">
+    <div class="bp-section-head">
+      <div class="bp-section-head__text">
+        <h2 class="bp-h2" id="bp-hg-{{ category.slug | default: 'x' }}-title"><span class="bp-hl">{{ section_title | default: category.name }}</span></h2>
+      </div>
+      {% if category and category.slug and hide_view_all != true %}
+        <a class="bp-btn bp-btn--sm" href="/collections/{{ category.slug }}">{{ shop_now }}</a>
+      {% endif %}
+    </div>
+    <ul class="bp-grid bp-grid--cols-{{ theme_data.grid_columns_desktop | default: '5' }}" role="list" style="list-style:none;margin:0;padding:0">
+      {% for product in products limit: 10 %}
+        <li>
+{% comment %}@include product-card{% endcomment %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}

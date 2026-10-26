@@ -1,0 +1,104 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+<footer class="bp-theme bp-footer" aria-labelledby="bp-footer-title">
+  <svg class="bp-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 40V22c80-14 160-20 240-8s160 20 240 8 160-24 240-14 160 26 240 16 160-24 240-16 160 20 240 12v22z"/></svg>
+  {% if theme_data.footer_mascot_image != blank %}
+    <img class="bp-footer__mascot" src="{{ theme_data.footer_mascot_image }}" alt="" loading="lazy" width="170" height="170">
+  {% endif %}
+  <h2 id="bp-footer-title" class="bp-visually-hidden">{% if is_en %}Store information{% else %}معلومات المتجر{% endif %}</h2>
+  <div class="bp-container">
+    <div class="bp-footer__grid">
+      <div class="bp-footer__brand">
+        <a href="/" class="bp-logo">
+          {% if logo and logo != "" %}<img src="{{ logo }}" alt="{{ store_name }}" loading="lazy" height="64">{% else %}<span class="bp-logo__text">{{ store_name }}</span>{% endif %}
+        </a>
+        {% if is_en and theme_data.footer_about_en != blank %}{% assign about = theme_data.footer_about_en %}{% else %}{% assign about = theme_data.footer_about %}{% endif %}
+        {% if about != blank %}<p class="bp-footer__about">{{ about }}</p>{% endif %}
+        {% if social and social.size > 0 %}
+          <div class="bp-footer__social" aria-label="{{ follow_label }}">
+            {% for item in social %}
+              {% assign s_label = item.label | default: item.type %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer" aria-label="{{ s_label }}">
+                {% if item.icon and item.icon != "" %}
+                  <span class="bp-footer__social-img" style="-webkit-mask-image:url({{ item.icon }});mask-image:url({{ item.icon }})" aria-hidden="true"></span>
+                {% else %}
+                  <span aria-hidden="true">{{ s_label | slice: 0, 1 | upcase }}</span>
+                {% endif %}
+              </a>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      {% if categories.size > 0 %}
+        <details class="bp-footer__col" open>
+          <summary class="bp-footer__title"><span>{{ shop_label | default: "تسوّق" }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+          <ul class="bp-footer__links">
+            {% for cat in categories %}
+              <li><a href="/collections/{{ cat.slug }}">{{ cat.name }}</a></li>
+            {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+
+      {% if pages.size > 0 %}
+        <details class="bp-footer__col" open>
+          <summary class="bp-footer__title"><span>{{ help_label | default: "مساعدة" }}</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+          <ul class="bp-footer__links">
+            {% for page in pages %}
+              <li><a href="/pages/{{ page.slug }}">{{ page.title }}</a></li>
+            {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+
+      <div class="bp-footer__col">
+        {% assign wa = theme_data.whatsapp_number | strip | remove: "+" | remove: " " %}
+        {% if has_contact or wa != "" %}
+          <p class="bp-footer__title">{% if is_en %}Contact us{% else %}كلمنا{% endif %}</p>
+          <address class="bp-footer__contact">
+            {% if phone and phone != "" %}
+              <a href="tel:{{ phone | remove: ' ' }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 5a2 2 0 0 1 2-2z"/></svg><span dir="ltr">{{ phone }}</span></a>
+            {% endif %}
+            {% if wa != "" %}
+              <a href="https://wa.me/{{ wa }}" target="_blank" rel="noopener noreferrer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20l1.3-4A8 8 0 1 1 8 18.7z"/><path d="M9 9.5c.3 2.2 2.3 4.2 4.5 4.5l1-1.2 2 1"/></svg><span>{% if is_en %}WhatsApp{% else %}واتساب{% endif %}</span></a>
+            {% endif %}
+            {% if email and email != "" %}
+              <a href="mailto:{{ email }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><span dir="ltr">{{ email }}</span></a>
+            {% endif %}
+            {% if address and address != "" %}
+              <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>{{ address }}</span>
+            {% endif %}
+            {% if theme_data.contact_hours != blank %}
+              <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>{{ theme_data.contact_hours }}</span>
+            {% endif %}
+          </address>
+        {% endif %}
+
+        {% if theme_data.footer_show_newsletter != false %}
+          <div style="margin-top:22px" class="bp-footer__news">
+            <p class="bp-footer__title">{{ theme_data.footer_newsletter_title | default: subscribe_label }}</p>
+            {% if theme_data.footer_newsletter_text != blank %}<p class="bp-footer__about" style="margin-top:0">{{ theme_data.footer_newsletter_text }}</p>{% endif %}
+            <form class="bp-newsletter-form" novalidate
+              data-err="{% if is_en %}Please enter a valid email address.{% else %}اكتب إيميل صحيح من فضلك.{% endif %}"
+              onsubmit="event.preventDefault();var f=this,i=f.elements.email,m=f.querySelector('.bp-form-msg'),v=i&&i.value?String(i.value).trim():'';if(!i||!v||!i.checkValidity()){if(i){i.setAttribute('aria-invalid','true');i.focus();}if(m){m.textContent=f.getAttribute('data-err');m.className='bp-form-msg bp-form-msg--error';}return;}i.removeAttribute('aria-invalid');if(m){m.textContent='';m.className='bp-form-msg';}f.dispatchEvent(new CustomEvent('footer-subscribe',{bubbles:true,detail:{email:v}}));f.reset();">
+              <label class="bp-visually-hidden" for="bp-footer-email">{{ email_placeholder | default: "البريد الإلكتروني" }}</label>
+              <input id="bp-footer-email" class="bp-input" type="email" name="email" autocomplete="email" inputmode="email" maxlength="254" pattern="[^@\s]+@[^@\s]+\.[^@\s]+" required aria-required="true" aria-describedby="bp-footer-email-msg" placeholder="{{ email_placeholder | default: 'name@example.com' }}" dir="ltr" oninput="this.removeAttribute('aria-invalid')">
+              <button type="submit" class="bp-btn">{{ subscribe_label | default: "اشترك" }}</button>
+              <p id="bp-footer-email-msg" class="bp-form-msg" aria-live="polite"></p>
+            </form>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="bp-footer__bottom">
+      <p>&copy; {{ year }} {{ store_name }}. {{ rights_label }}</p>
+      {% if show_powered %}
+        <p>Powered by <a href="https://www.easy-orders.net" target="_blank" rel="noopener noreferrer">EasyOrders</a></p>
+      {% endif %}
+      {% if payment_img and payment_img != "" and theme_data.footer_show_payment != false %}
+        <div class="bp-footer__payment"><img src="{{ payment_img }}" alt="{% if is_en %}Accepted payment methods{% else %}طرق الدفع المتاحة{% endif %}" loading="lazy" height="34"></div>
+      {% endif %}
+    </div>
+  </div>
+</footer>

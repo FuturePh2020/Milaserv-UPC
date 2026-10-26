@@ -1,0 +1,196 @@
+{
+  "icon": "https://api.iconify.design/lucide:boxes.svg",
+  "label": "Bazaar Pop: بنّاء بوكس الهدايا",
+  "section_schema": [
+    {
+      "name": "kicker",
+      "type": "string",
+      "description": "سطر صغير فوق العنوان (اختياري)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "description": "العنوان",
+      "default": "ابني البوكس بتاعك",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_highlight",
+      "type": "string",
+      "description": "جزء من العنوان يتلوّن بالماركر (لازم يكون موجود في العنوان بالظبط)",
+      "default": "البوكس",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle",
+      "type": "string",
+      "description": "وصف قصير",
+      "default": "اختار من {min} لـ {max} قطعة، واختار التغليف، وبعدين ضيفهم للسلة مرة واحدة.",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "title_en",
+      "type": "string",
+      "description": "Title (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "subtitle_en",
+      "type": "string",
+      "description": "Subtitle (English, optional)",
+      "default": "",
+      "group": "العنوان (Heading)"
+    },
+    {
+      "name": "item_ids",
+      "type": "product_multi_select",
+      "description": "المنتجات المتاحة للبوكس (المنتجات اللي ليها اختيارات/مقاسات هتظهر برابط لصفحتها بدل الإضافة المباشرة)",
+      "group": "المنتجات (Products)"
+    },
+    {
+      "name": "pack_ids",
+      "type": "product_multi_select",
+      "description": "منتجات التغليف (اعمل كل نوع تغليف كمنتج بسعره الحقيقي)",
+      "group": "المنتجات (Products)"
+    },
+    {
+      "name": "pack_required",
+      "type": "boolean",
+      "description": "التغليف إجباري",
+      "default": false,
+      "group": "المنتجات (Products)"
+    },
+    {
+      "name": "min_items",
+      "type": "number",
+      "description": "أقل عدد قطع",
+      "default": 3,
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "max_items",
+      "type": "number",
+      "description": "أقصى عدد قطع",
+      "default": 12,
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "show_message",
+      "type": "boolean",
+      "description": "خانة رسالة الهدية (العميل بينسخها ويلصقها في ملاحظات الطلب)",
+      "default": true,
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "message_hint",
+      "type": "string",
+      "description": "توضيح رسالة الهدية",
+      "default": "اكتب رسالتك هنا، وبعد ما تضيف البوكس انسخها والصقها في خانة الملاحظات عند إتمام الطلب.",
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "open_cart",
+      "type": "boolean",
+      "description": "افتح السلة بعد الإضافة",
+      "default": true,
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "add_gap_ms",
+      "type": "number",
+      "description": "فاصل زمني بين إضافة كل قطعة بالمللي ثانية (زوّده لو لاحظت قطع ناقصة)",
+      "default": 600,
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "add_label",
+      "type": "string",
+      "description": "نص زرار الإضافة",
+      "default": "ضيف البوكس للسلة",
+      "group": "القواعد (Rules)"
+    },
+    {
+      "name": "surface",
+      "type": "select",
+      "description": "خلفية السكشن",
+      "default": "cream",
+      "options": [
+        {
+          "label": "كريمي",
+          "value": "cream"
+        },
+        {
+          "label": "أزرق",
+          "value": "blue"
+        },
+        {
+          "label": "أصفر",
+          "value": "yellow"
+        },
+        {
+          "label": "وردي",
+          "value": "pink"
+        },
+        {
+          "label": "نعناعي",
+          "value": "mint"
+        },
+        {
+          "label": "سماوي",
+          "value": "sky"
+        },
+        {
+          "label": "كحلي غامق",
+          "value": "ink"
+        },
+        {
+          "label": "أبيض",
+          "value": "white"
+        },
+        {
+          "label": "لون مخصص ↓",
+          "value": "custom"
+        }
+      ],
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "bg_custom",
+      "type": "color",
+      "description": "اللون المخصص (لو اخترت لون مخصص)",
+      "default": "#FFFFFF",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "text_light",
+      "type": "boolean",
+      "description": "نص فاتح (للخلفيات الغامقة المخصصة)",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "wave_top",
+      "type": "boolean",
+      "description": "حافة متموجة أعلى السكشن",
+      "default": false,
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "anchor_id",
+      "type": "string",
+      "description": "معرّف للرابط المباشر بدون # (مثال: gift-box ← الرابط /#gift-box)",
+      "default": "gift-box",
+      "group": "الشكل (Look)"
+    },
+    {
+      "name": "hide_on_mobile",
+      "type": "boolean",
+      "description": "إخفاء السكشن على الموبايل",
+      "default": false,
+      "group": "الشكل (Look)"
+    }
+  ]
+}

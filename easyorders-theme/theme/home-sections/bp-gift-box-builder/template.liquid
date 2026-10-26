@@ -1,0 +1,80 @@
+{% comment %} GENERATED from tools/src-home/bp-gift-box-builder.liquid by tools/build-sections.py - edit the source, not this file. {% endcomment %}
+{% assign hs_key = "builder" %}{% assign hs_default_surface = "cream" %}{% assign hs_class = "bp-builder" %}{% assign hs_style = "" %}
+{%- assign is_en = false -%}{%- if lang == "en" -%}{%- assign is_en = true -%}{%- endif -%}
+{%- assign sd = section_data -%}
+{%- assign sid = section_id | default: hs_key -%}
+{%- assign surface = sd.surface | default: hs_default_surface -%}
+{%- assign cur = currency -%}
+{%- if is_en and theme_data.currency_display_en != blank -%}{%- assign cur = theme_data.currency_display_en -%}{%- elsif is_en == false and theme_data.currency_display != blank -%}{%- assign cur = theme_data.currency_display -%}{%- endif -%}
+{%- assign oos_label = theme_data.out_of_stock_label | default: "نفدت الكمية" -%}
+{%- assign anchor = sd.anchor_id | default: "" | strip | remove: "#" | replace: " ", "-" -%}
+{%- assign hs_title = sd.title -%}{%- assign hs_sub = sd.subtitle -%}{%- assign hs_hl = sd.title_highlight | strip -%}
+{%- if is_en -%}
+  {%- if sd.title_en != blank -%}{%- assign hs_title = sd.title_en -%}{%- assign hs_hl = "" -%}{%- endif -%}
+  {%- if sd.subtitle_en != blank -%}{%- assign hs_sub = sd.subtitle_en -%}{%- endif -%}
+{%- endif -%}
+{% if sd.item_ids and sd.item_ids.size > 0 %}
+{% assign b_min = sd.min_items | default: 3 %}{% assign b_max = sd.max_items | default: 12 %}
+{% if b_max < b_min %}{% assign b_max = b_min %}{% endif %}
+{% assign hs_sub = hs_sub | replace: "{min}", b_min | replace: "{max}", b_max %}
+<section class="bp-theme bp-section bp-surface--{{ surface }} {{ hs_class }}{% if sd.wave_top %} bp-has-wave{% endif %}{% if sd.hide_on_mobile %} bp-hide-sm{% endif %}"{% if anchor != "" %} id="{{ anchor }}"{% endif %}{% if hs_title != blank %} aria-labelledby="bp-h-{{ sid }}"{% endif %} data-bp-currency="{{ cur }}" style="{% if surface == 'custom' %}--bp-surface-bg: {{ sd.bg_custom | default: '#ffffff' }};{% if sd.text_light %}--bp-surface-fg: #ffffff;{% endif %}{% endif %}{{ hs_style }}">
+  {%- if sd.wave_top -%}<svg class="bp-wave" viewBox="0 0 1440 40" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path d="M0 40V22c80-14 160-20 240-8s160 20 240 8 160-24 240-14 160 26 240 16 160-24 240-16 160 20 240 12v22z"/></svg>{%- endif -%}
+  <div class="bp-container" id="bp-builder-{{ sid }}" data-bp-builder
+       data-items="{{ sd.item_ids | join: ',' }}"
+       data-packs="{{ sd.pack_ids | join: ',' }}"
+       data-pack-required="{% if sd.pack_required %}true{% else %}false{% endif %}"
+       data-min="{{ b_min }}" data-max="{{ b_max }}"
+       data-gap="{{ sd.add_gap_ms | default: 600 }}"
+       data-open-cart="{% if sd.open_cart == false %}false{% else %}true{% endif %}"
+       data-empty-label="{% if is_en %}Your box is empty{% else %}البوكس لسه فاضي{% endif %}"
+       data-bp-currency="{{ cur }}">
+    <div class="bp-section-head">
+<div class="bp-section-head__text">
+  {%- if sd.kicker != blank -%}<p class="bp-kicker">{{ sd.kicker }}</p>{%- endif -%}
+  {%- if hs_title != blank -%}
+    <h2 class="bp-h2" id="bp-h-{{ sid }}">
+      {%- if hs_hl != "" and hs_title contains hs_hl -%}
+        {%- assign hl_html = '<span class="bp-hl">' | append: hs_hl | append: '</span>' -%}
+        {{ hs_title | replace_first: hs_hl, hl_html }}
+      {%- else -%}{{ hs_title }}{%- endif -%}
+    </h2>
+  {%- endif -%}
+  {%- if hs_sub != blank -%}<p class="bp-lead">{{ hs_sub }}</p>{%- endif -%}
+</div>
+    </div>
+    <div class="bp-builder__grid">
+      <div>
+        <h3 class="bp-h3 bp-builder__step-title"><span class="bp-builder__step-num" aria-hidden="true">1</span>{% if is_en %}Pick your items{% else %}اختار المنتجات{% endif %}</h3>
+        <ul class="bp-builder__items" data-bp-builder-items aria-live="polite">
+          {% for id in sd.item_ids limit: 4 %}<li><div class="bp-skeleton" style="min-height:260px" aria-hidden="true"></div></li>{% endfor %}
+        </ul>
+        {% if sd.pack_ids and sd.pack_ids.size > 0 %}
+          <div data-bp-pack-step>
+            <h3 class="bp-h3 bp-builder__step-title"><span class="bp-builder__step-num" aria-hidden="true">2</span>{% if is_en %}Choose packaging{% else %}اختار التغليف{% endif %}</h3>
+            <ul class="bp-packs" data-bp-builder-packs role="radiogroup" aria-label="{% if is_en %}Packaging{% else %}التغليف{% endif %}"></ul>
+          </div>
+        {% endif %}
+        {% if sd.show_message != false %}
+          <div class="bp-message-copy">
+            <h3 class="bp-h3 bp-builder__step-title"><span class="bp-builder__step-num" aria-hidden="true">{% if sd.pack_ids.size > 0 %}3{% else %}2{% endif %}</span><label for="bp-gift-msg-{{ sid }}">{% if is_en %}Gift message (optional){% else %}رسالة الهدية (اختياري){% endif %}</label></h3>
+            <p class="bp-summary__hint" id="bp-gift-hint-{{ sid }}">{{ sd.message_hint }}</p>
+            <textarea class="bp-textarea" id="bp-gift-msg-{{ sid }}" maxlength="300" aria-describedby="bp-gift-hint-{{ sid }}"></textarea>
+            <div><button type="button" class="bp-btn bp-btn--white bp-btn--sm" data-bp-copy>{% if is_en %}Copy message{% else %}انسخ الرسالة{% endif %}</button></div>
+            <p class="bp-live" data-bp-copy-status aria-live="polite"></p>
+          </div>
+        {% endif %}
+      </div>
+      <aside class="bp-panel bp-summary" aria-labelledby="bp-sum-{{ sid }}">
+        <h3 class="bp-h3" id="bp-sum-{{ sid }}">🎁 {% if is_en %}Your box{% else %}البوكس بتاعك{% endif %} <span class="bp-sticker bp-sticker--sky" data-bp-summary-count style="--bp-tilt:0deg">0 / {{ b_max }}</span></h3>
+        <div class="bp-progress" role="progressbar" aria-valuemin="0" aria-valuemax="{{ b_min }}" aria-valuenow="0" aria-label="{% if is_en %}Minimum items progress{% else %}التقدم نحو الحد الأدنى{% endif %}"><div class="bp-progress__bar"></div></div>
+        <ul class="bp-summary__list" data-bp-summary-list><li><span>{% if is_en %}Your box is empty{% else %}البوكس لسه فاضي{% endif %}</span></li></ul>
+        <div class="bp-summary__total"><span>{% if is_en %}Estimated total{% else %}إجمالي تقديري{% endif %}</span><span data-bp-summary-total>0 {{ cur }}</span></div>
+        <p class="bp-summary__hint">{% if is_en %}Prices are today's listed prices. The final total, shipping and any discounts are calculated in the cart and at checkout.{% else %}الأسعار هي أسعار المنتجات المعروضة. الإجمالي النهائي والشحن وأي خصومات بيتحسبوا في السلة وعند إتمام الطلب.{% endif %}</p>
+        <p class="bp-live" data-bp-builder-status role="status" aria-live="polite"></p>
+        <button type="button" class="bp-btn bp-btn--blue bp-btn--block" data-bp-builder-add disabled>{% if is_en %}Add box to cart{% else %}{{ sd.add_label | default: "ضيف البوكس للسلة" }}{% endif %}</button>
+        <noscript><p class="bp-summary__hint">{% if is_en %}The box builder needs JavaScript. You can still add each product from its page.{% else %}بنّاء البوكس محتاج جافاسكربت. تقدر تضيف كل منتج من صفحته.{% endif %}</p></noscript>
+      </aside>
+    </div>
+  </div>
+</section>
+{% endif %}

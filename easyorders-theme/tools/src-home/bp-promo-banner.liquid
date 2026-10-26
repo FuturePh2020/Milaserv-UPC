@@ -1,0 +1,25 @@
+{% assign hs_key = "promo" %}{% assign hs_default_surface = "cream" %}{% assign hs_class = "bp-promo" %}{% assign hs_style = "" %}
+{% comment %}@include hs-setup{% endcomment %}
+{% if hs_title != blank %}
+{% case sd.box_color %}
+  {% when "yellow" %}{% assign pb_bg = "var(--bp-yellow)" %}{% assign pb_fg = "var(--bp-ink)" %}{% assign pb_hl = "#fff" %}{% assign pb_btn = "bp-btn bp-btn--blue" %}
+  {% when "ink" %}{% assign pb_bg = "var(--bp-ink)" %}{% assign pb_fg = "#fff" %}{% assign pb_hl = "var(--bp-blue)" %}{% assign pb_btn = "bp-btn" %}
+  {% when "pink" %}{% assign pb_bg = "var(--bp-pink)" %}{% assign pb_fg = "var(--bp-ink)" %}{% assign pb_hl = "var(--bp-yellow)" %}{% assign pb_btn = "bp-btn bp-btn--ink" %}
+  {% else %}{% assign pb_bg = "var(--bp-blue)" %}{% assign pb_fg = "#fff" %}{% assign pb_hl = "var(--bp-red)" %}{% assign pb_btn = "bp-btn" %}
+{% endcase %}
+{% comment %}@include hs-open{% endcomment %}
+  <div class="bp-container">
+    <div class="bp-promo__box" style="--bp-promo-bg:{{ pb_bg }};--bp-promo-fg:{{ pb_fg }};--bp-hl-color:{{ pb_hl }}">
+      {% if sd.burst_text != blank %}<span class="bp-starburst bp-promo__burst">{{ sd.burst_text }}</span>{% endif %}
+      <div>
+{% comment %}@include hs-heading{% endcomment %}
+        <div class="bp-promo__ctas">
+          {% assign lk = "cta" %}{% assign lk_class = pb_btn %}
+{% comment %}@include hs-link{% endcomment %}
+        </div>
+      </div>
+      {% if sd.image != blank %}<img class="bp-promo__img" src="{{ sd.image }}" alt="" width="520" height="340" loading="lazy">{% endif %}
+    </div>
+  </div>
+</section>
+{% endif %}

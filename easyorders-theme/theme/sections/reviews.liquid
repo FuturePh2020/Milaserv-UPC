@@ -1,0 +1,37 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+<section class="bp-theme bp-reviews" aria-labelledby="bp-reviews-title">
+  <div class="bp-section-head">
+    <div class="bp-section-head__text">
+      <h2 class="bp-h2" id="bp-reviews-title">{{ t_users_reviews | default: "آراء العملاء" }}</h2>
+      {% if reviews_count > 0 %}
+        {% assign avg_full = average_rating | round %}
+        <p class="bp-pd__rating" style="margin:8px 0 0">
+          <span class="bp-stars" role="img" aria-label="{% if is_en %}Average {{ average_rating_display }} out of 5{% else %}متوسط التقييم {{ average_rating_display }} من 5{% endif %}">
+            {% for i in (1..5) %}<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="{% if i <= avg_full %}currentColor{% else %}none{% endif %}" stroke="#0C1423" stroke-width="1.5" d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>{% endfor %}
+          </span>
+          <strong>{{ average_rating_display }}</strong>
+          <span>({{ reviews_count }} {{ t_reviews }})</span>
+        </p>
+      {% endif %}
+    </div>
+    <button type="button" class="bp-btn bp-btn--sm" data-review-open onclick="this.dispatchEvent(new CustomEvent('review-open',{bubbles:true}))">{{ t_share_your_review | default: "اكتب تقييمك" }}</button>
+  </div>
+  {% if reviews.size > 0 %}
+    <ul class="bp-reviews__list" role="list" style="list-style:none;margin:0;padding:0">
+      {% for review in reviews %}
+        <li class="bp-panel bp-review">
+          <div class="bp-review__head">
+            <span class="bp-stars" role="img" aria-label="{% if is_en %}{{ review.rating }} out of 5{% else %}{{ review.rating }} من 5{% endif %}">
+              {% for i in (1..5) %}<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="{% if i <= review.rating %}currentColor{% else %}none{% endif %}" stroke="#0C1423" stroke-width="1.5" d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>{% endfor %}
+            </span>
+          </div>
+          {% if review.user_name and review.user_name != "" %}<h3 class="bp-review__author bp-h3">{{ review.user_name }}</h3>{% endif %}
+          {% if review.comment and review.comment != "" %}<p class="bp-review__comment">{{ review.comment }}</p>{% endif %}
+          {% if review.image and review.image != "" %}<img class="bp-review__img" src="{{ review.image }}" alt="" loading="lazy" width="400" height="220">{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="bp-state"><span class="bp-state__icon" aria-hidden="true">💬</span><p>{{ t_no_reviews | default: "لسه مفيش تقييمات" }}</p></div>
+  {% endif %}
+</section>

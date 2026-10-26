@@ -1,0 +1,85 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+{% assign cur = currency %}
+{% if is_en and theme_data.currency_display_en != blank %}{% assign cur = theme_data.currency_display_en %}{% elsif is_en == false and theme_data.currency_display != blank %}{% assign cur = theme_data.currency_display %}{% endif %}
+{% assign on_sale = false %}{% if sale_price and sale_price > 0 and sale_price < price %}{% assign on_sale = true %}{% endif %}
+{% assign ptd = product_theme_data %}
+<div class="bp-theme bp-pd">
+  <div class="bp-pd__top">
+    {% if ptd.brand != blank %}<p class="bp-pd__brand">{{ ptd.brand }}</p>{% endif %}
+    {% if ptd.origin_country != blank %}
+      <span class="bp-sticker bp-sticker--sky bp-origin" style="--bp-tilt:-2deg">
+        {% if ptd.origin_flag != blank %}<img src="{{ ptd.origin_flag }}" alt="" width="26" height="18">{% endif %}
+        <span>{% if is_en %}Made in{% else %}صنع في{% endif %} {{ ptd.origin_country }}</span>
+      </span>
+    {% endif %}
+    {% if ptd.custom_badge_title != blank %}
+      <span class="bp-sticker bp-sticker--{{ ptd.custom_badge_color | default: 'pink' }}" style="--bp-tilt:3deg">{{ ptd.custom_badge_title }}</span>
+    {% endif %}
+  </div>
+
+  <h1 class="bp-pd__name">{{ product_name }}</h1>
+
+  <div class="bp-pd__price">
+    {% if on_sale %}
+      <span class="bp-price__now bp-price__now--sale"><span class="bp-money">{{ sale_price }}</span> {{ cur }}</span>
+      <span class="bp-price__old"><span class="bp-visually-hidden">{% if is_en %}was{% else %}بدلاً من{% endif %} </span><span class="bp-money">{{ price }}</span> {{ cur }}</span>
+      {% if theme_data.show_sale_badge != false %}
+        {% assign pct = price | minus: sale_price | times: 100 | divided_by: price | floor %}
+        {% if pct > 0 %}<span class="bp-sticker bp-sticker--red">{% if is_en %}Save {{ pct }}%{% else %}وفّر {{ pct }}%{% endif %}</span>{% endif %}
+      {% endif %}
+    {% else %}
+      <span class="bp-price__now"><span class="bp-money">{{ price }}</span> {{ cur }}</span>
+    {% endif %}
+  </div>
+
+  {% if rating > 0 and reviews_count > 0 %}
+    {% assign full = rating | round %}
+    <div class="bp-pd__rating">
+      <span class="bp-stars" role="img" aria-label="{% if is_en %}Rated {{ rating }} out of 5{% else %}التقييم {{ rating }} من 5{% endif %}">
+        {% for i in (1..5) %}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="{% if i <= full %}currentColor{% else %}none{% endif %}" stroke="#0C1423" stroke-width="1.5" d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/></svg>
+        {% endfor %}
+      </span>
+      <span>({{ reviews_count }})</span>
+    </div>
+  {% endif %}
+
+  {% if description and description != "" %}
+    <p class="bp-pd__desc">{{ description }}</p>
+  {% endif %}
+
+  {% if ptd.weight != blank or ptd.sku != blank or ptd.expiry_note != blank %}
+    <dl class="bp-pd__meta">
+      {% if ptd.weight != blank %}<div><dt>{% if is_en %}Size / weight{% else %}الوزن / الحجم{% endif %}</dt><dd>{{ ptd.weight }}</dd></div>{% endif %}
+      {% if ptd.expiry_note != blank %}<div><dt>{% if is_en %}Expiry{% else %}الصلاحية{% endif %}</dt><dd>{{ ptd.expiry_note }}</dd></div>{% endif %}
+      {% if ptd.sku != blank %}<div><dt>SKU</dt><dd dir="ltr">{{ ptd.sku }}</dd></div>{% endif %}
+    </dl>
+  {% endif %}
+
+  <div class="bp-pd__actions">
+    <button type="button" class="bp-btn bp-btn--white" aria-label="{% if is_en %}Add to or remove from wishlist{% else %}إضافة أو إزالة من المفضلة{% endif %}" onclick="event.preventDefault();event.stopPropagation();this.dispatchEvent(new CustomEvent('toggle-wishlist',{bubbles:true,detail:{productId:'{{ product_id }}'}}));">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z"/></svg>
+      {% if is_en %}Wishlist{% else %}المفضلة{% endif %}
+    </button>
+    {% assign wa = theme_data.whatsapp_number | strip | remove: "+" | remove: " " %}
+    {% if wa != "" %}
+      {% assign wa_text = theme_data.whatsapp_product_message | default: "أهلاً، عايز أسأل عن المنتج ده:" | append: " " | append: product_name %}
+      <a class="bp-btn bp-btn--whatsapp" href="https://wa.me/{{ wa }}?text={{ wa_text | url_encode }}" target="_blank" rel="noopener noreferrer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 20l1.3-4A8 8 0 1 1 8 18.7z"/><path d="M9 9.5c.3 2.2 2.3 4.2 4.5 4.5l1-1.2 2 1"/></svg>
+        {% if is_en %}Ask on WhatsApp{% else %}{{ theme_data.product_whatsapp_label | default: "اسأل على واتساب" }}{% endif %}
+      </a>
+    {% endif %}
+  </div>
+
+  {% assign has_rows = false %}
+  {% for row in theme_data.product_info_rows %}{% if row.text != blank %}{% assign has_rows = true %}{% endif %}{% endfor %}
+  {% if has_rows %}
+    <ul class="bp-info-rows">
+      {% for row in theme_data.product_info_rows %}
+        {% if row.text != blank %}
+          <li><span class="bp-info-rows__icon" aria-hidden="true">{{ row.icon }}</span><span><strong>{{ row.title }}</strong>{{ row.text }}</span></li>
+        {% endif %}
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>

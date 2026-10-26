@@ -1,0 +1,26 @@
+{% assign is_en = false %}{% if lang == "en" %}{% assign is_en = true %}{% endif %}
+{% assign cur = currency %}
+{% if is_en and theme_data.currency_display_en != blank %}{% assign cur = theme_data.currency_display_en %}{% elsif is_en == false and theme_data.currency_display != blank %}{% assign cur = theme_data.currency_display %}{% endif %}
+<div class="bp-theme bp-fixed-buy" role="region" aria-label="{% if is_en %}Quick buy{% else %}شراء سريع{% endif %}">
+  {% if thumb and thumb != "" %}<img class="bp-fixed-buy__thumb" src="{{ thumb }}" alt="" width="48" height="48">{% endif %}
+  <div class="bp-fixed-buy__info">
+    <span class="bp-fixed-buy__name">{{ product_name }}</span>
+    {% if sale_price and sale_price > 0 and sale_price < price %}
+      <span class="bp-price__now bp-price__now--sale" style="font-size:1rem"><span class="bp-money">{{ sale_price }}</span> {{ cur }}</span>
+    {% else %}
+      <span class="bp-price__now" style="font-size:1rem"><span class="bp-money">{{ price }}</span> {{ cur }}</span>
+    {% endif %}
+  </div>
+  {% unless hide_quantity %}
+    <div class="bp-qty" role="group" aria-label="{% if is_en %}Quantity{% else %}الكمية{% endif %}">
+      <button type="button" aria-label="{% if is_en %}Increase quantity{% else %}زوّد الكمية{% endif %}" onclick="this.dispatchEvent(new CustomEvent('increment-quantity',{bubbles:true}));" {% if increase_disabled %}disabled{% endif %}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <output aria-live="polite">{{ quantity }}</output>
+      <button type="button" aria-label="{% if is_en %}Decrease quantity{% else %}قلّل الكمية{% endif %}" onclick="this.dispatchEvent(new CustomEvent('decrement-quantity',{bubbles:true}));" {% if quantity <= 1 %}disabled{% endif %}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"/></svg>
+      </button>
+    </div>
+  {% endunless %}
+  <button type="button" class="bp-btn" {% if disabled %}disabled{% endif %} onclick="event.preventDefault();this.dispatchEvent(new CustomEvent('buy-now',{bubbles:true}));">{{ buy_now_text | default: "اشتري دلوقتي" }}</button>
+</div>
