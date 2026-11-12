@@ -346,7 +346,7 @@ describe('orders, items and snapshots', () => {
 
   test('only legal state transitions, each advancing the version', () => {
     const { userId, merchantId } = trader();
-    const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
+    const o = insertOrder(db, { userId, merchantId, finalize: true, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
     const to = (state: string) => db.prepare('UPDATE orders SET state = ?, version = version + 1, updated_at = ? WHERE id = ?').run(state, now(), o);
     fails(() => to('shipped'), SQLITE.CONSTRAINT_TRIGGER, /illegal order state transition/);
     fails(() => db.prepare("UPDATE orders SET state = 'confirmed' WHERE id = ?").run(o), SQLITE.CONSTRAINT_TRIGGER, /version/);
@@ -371,6 +371,65 @@ describe('orders, items and snapshots', () => {
     fails(() => ev('delivered', 'cancelled'), SQLITE.CONSTRAINT_CHECK);
     fails(() => db.prepare('UPDATE order_events SET note = ? WHERE order_id = ?').run('x', o), SQLITE.CONSTRAINT_TRIGGER, /append-only/);
     fails(() => db.prepare('DELETE FROM order_events WHERE order_id = ?').run(o), SQLITE.CONSTRAINT_TRIGGER);
+  });
+});
+
+describe('order finalization (migration 0004)', () => {
+  const create = (o: string, actor: string) =>
+    db.prepare("INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, created_at) VALUES (?, ?, NULL, 'pending', ?)").run(o, actor, now());
+  const item = (o: string, productId: string, lineNo: number, price = 100, cartons = 1) =>
+    db
+      .prepare(
+        `INSERT INTO order_items (order_id, product_id, line_no, product_name, product_brand, product_barcode, pack_size, unit_price_cents, cartons, line_total_cents)
+         VALUES (?, ?, ?, 'منتج', 'براند', NULL, 24, ?, ?, ?)`,
+      )
+      .run(o, productId, lineNo, price, cartons, price * cartons);
+
+  test('a consistent order is finalized once, only by its creator', () => {
+    const { userId, merchantId } = trader();
+    const other = trader();
+    const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 2, unitPrice: 100 }, { productId: insertProduct(db), cartons: 1, unitPrice: 300 }] });
+    fails(() => create(o, other.userId), SQLITE.CONSTRAINT_TRIGGER, /created by the event actor/);
+    create(o, userId);
+    fails(() => create(o, userId), SQLITE.CONSTRAINT_TRIGGER, /already exists/);
+    assert.equal(scalar('SELECT count(*) FROM order_events WHERE order_id = ?', o), 1);
+  });
+
+  test('header and items must agree: subtotal = sum of line totals', () => {
+    const { userId, merchantId } = trader();
+    const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 2, unitPrice: 100 }] });
+    item(o, insertProduct(db), 2); // an extra line not reflected in the header subtotal
+    fails(() => create(o, userId), SQLITE.CONSTRAINT_TRIGGER, /subtotal does not match/);
+    assert.equal(scalar('SELECT count(*) FROM order_events WHERE order_id = ?', o), 0);
+  });
+
+  test('every item must have the order demo classification', () => {
+    const { userId, merchantId } = trader();
+    const demo = randomUUID();
+    db.prepare(
+      `INSERT INTO products (id, name, brand, category, price_cents, on_hand, reserved, pack_size, minimum_cartons, active, is_demo, version, created_at, updated_at)
+       VALUES (?, 'منتج عرض', 'براند', 'candy', 100, 0, 0, 24, 1, 0, 1, 1, ?, ?)`,
+    ).run(demo, now(), now());
+    const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }, { productId: demo, cartons: 1, unitPrice: 100 }] });
+    fails(() => create(o, userId), SQLITE.CONSTRAINT_TRIGGER, /demo classification/);
+  });
+
+  test('no items after finalization; no transition or state change before it', () => {
+    const { userId, merchantId } = trader();
+    const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
+    const transition = () => db.prepare("INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, created_at) VALUES (?, ?, 'pending', 'confirmed', ?)").run(o, userId, now());
+    const confirm = () => db.prepare("UPDATE orders SET state = 'confirmed', version = version + 1, updated_at = ? WHERE id = ?").run(now(), o);
+    fails(transition, SQLITE.CONSTRAINT_TRIGGER, /no creation event/);
+    fails(confirm, SQLITE.CONSTRAINT_TRIGGER, /no creation event/);
+    create(o, userId);
+    fails(() => item(o, insertProduct(db), 2), SQLITE.CONSTRAINT_TRIGGER, /after the order was created/);
+    confirm();
+    transition();
+    // The creation event cannot be written for an order that already left pending/version 1.
+    const late = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
+    fails(() => db.prepare("UPDATE orders SET state = 'confirmed', version = version + 1 WHERE id = ?").run(late), SQLITE.CONSTRAINT_TRIGGER, /no creation event/);
+    db.prepare('UPDATE orders SET version = version + 1 WHERE id = ?').run(late);
+    fails(() => create(late, userId), SQLITE.CONSTRAINT_TRIGGER, /pending order at version 1/);
   });
 });
 

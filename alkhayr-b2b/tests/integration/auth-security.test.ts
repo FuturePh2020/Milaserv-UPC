@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { describe, test } from 'node:test';
 import { PasswordHasher } from '../../src/server/auth/passwords.ts';
 import { hashSessionToken } from '../../src/server/auth/sessions.ts';
@@ -495,13 +495,15 @@ describe('authorization guards (exercised through TEST-ONLY routes)', () => {
 });
 
 describe('stage boundary', () => {
-  test('no order endpoints exist yet', () =>
+  test('stage 08 adds own-order endpoints only; administrator order and fulfillment endpoints do not exist yet', () =>
     withApp(async (app) => {
       const t = await createTrader(app);
       const c = new Client(app, ip());
       await c.login(t.username, t.password);
-      for (const p of ['/api/v1/orders', '/api/v1/admin/orders', '/api/v1/admin/inventory/reservations']) {
+      assert.equal((await c.request('GET', '/api/v1/orders')).status, 200);
+      for (const p of ['/api/v1/admin/orders', '/api/v1/admin/inventory/reservations', '/api/v1/orders/summary']) {
         expectCode(await c.request('GET', p), 404, 'NOT_FOUND');
       }
+      expectCode(await c.request('POST', `/api/v1/orders/${randomUUID()}/cancel`, { body: {} }), 404, 'NOT_FOUND');
     }));
 });

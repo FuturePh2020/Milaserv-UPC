@@ -90,10 +90,10 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 | GET `/api/v1/products` | A/D (approved merchant or admin) | Active products only. Query (strict): `q` (1–80; literal substring of name/brand, or exact barcode), `category` (id from the database), `brand` (exact), `sort∈{name,newest,price_asc,price_desc}` (default name), `limit` 1–100 (25), `cursor`. → `{items:[CatalogProduct], nextCursor}` | **06 ✅** |
 | GET `/api/v1/products/:id` | A/D | `{product: CatalogProduct}`; inactive, unknown and malformed ids → identical 404 | **06 ✅** |
 | GET `/api/v1/catalog/filters` | A/D | `{categories:[{id,labelAr,productCount}], brands:[{name,productCount}]}` — categories from `product_categories` (active), counts and brands only from active products (≤ 500 brands) | **06 ✅** |
-| POST `/api/v1/orders` | A/D | `{requestKey, note?, items:[{productId,cartons,expectedUnitPriceCents?}]}` | 08 |
-| GET `/api/v1/orders` | A/D | own orders, cursor | 08 |
-| GET `/api/v1/orders/:id` | A/D | own order + items + events | 08 |
-| GET `/api/v1/orders/:id/summary` | A/D(own) | print data; labeled not a tax invoice | 08/14 |
+| POST `/api/v1/orders` | A/D (session token) | Strict: `{requestKey (UUID v4), note? (≤ 500, NFC-trimmed; blank → null), items:[1–100 × {productId, cartons 1–100000, expectedCartonPriceCents, expectedPackSize}]}`. For the session's **own** merchant only (administrators: their own approved profile). → **201** `{replayed:false, order:Order}`; identical retry → **200** `{replayed:true, order:<original>}`. Details §3c. Limit 30 attempts / 10 min / merchant. | **08 ✅** |
+| GET `/api/v1/orders` | A/D | Own finalized orders, newest first. Query (strict): `state∈{pending,confirmed,preparing,shipped,delivered,cancelled}`, `limit` 1–100 (25), `cursor` (bound to user, merchant and `state`). → `{items:[{id, displayNumber, state, isDemo, lineCount, cartonCount, totalCents, createdAt, updatedAt}], nextCursor}` | **08 ✅** |
+| GET `/api/v1/orders/:id` | A/D | `{order:Order}`; foreign, unfinished, unknown and malformed ids → identical 404 | **08 ✅** |
+| GET `/api/v1/orders/:id/summary` | A/D(own) | print data; labeled not a tax invoice — **deferred to stage 14** (no route yet) | 14 |
 | GET `/api/v1/admin/merchants` | D (live admin session; recency not required, D-063) | Query (strict, each at most once): `status∈{pending,approved,suspended}`, `q` (1–80 chars; literal match on business/contact name, username, email, phone), `sort∈{newest,oldest,name}` (default newest), `limit` 1–100 (default 25), `cursor`. → `{items:[{…profile, username, role, createdAt, statusChangedAt}], nextCursor}`. Keyset pagination on (sort key, id); cursor HMAC-bound to admin, sort and filters. | **05 ✅** |
 | GET `/api/v1/admin/merchants/:id` | D | `{merchant, statusHistory:[{from,to,reason,at,actor}]}` (last 20). Unknown/malformed id → 404. | **05 ✅** |
 | PATCH `/api/v1/admin/merchants/:id` | D R (session token) | `{status, expectedVersion, reason?}` (strict). Transitions in §4a. → `{merchant, sessionsRevoked}`. Approval creates no session and sends nothing. Administrator targets → `403 ADMIN_ACCOUNT_PROTECTED`. | **05 ✅** |
@@ -131,6 +131,45 @@ ledger or audit row; works even if the product version moved on since), differen
 > 1e9 → insert ledger row → update product (`on_hand`, `version`+1, `last_ledger_id`) `WHERE version =
 expectedVersion` → audit `inventory.adjusted`. Any failure rolls back all of it, and the key stays unused.
 Digest = SHA-256 of `["inventory.adjustment.v1", productId, type, amount, reason, reference|null, expectedVersion]`.
+
+## 3c. Orders (stage 08)
+**Order** = `{id, displayNumber (AK-YYMMDD-XXXXXX), state, version, isDemo, note, requestKey,
+buyer:{businessName, contactName, phone, governorate, address}, items:[{lineNo, productId, name, brand,
+barcode, packSize, cartonPriceCents, cartons, lineTotalCents}], amounts:{subtotalCents, shippingCents,
+shippingTaxable, taxBps, taxBaseCents, taxCents, totalCents, minimumOrderCents}, events:[{fromState,
+toState, at}], createdAt, updatedAt}` — built **only from the order's snapshots**, never from current
+product, profile or settings rows. No request digest, merchant/user ids, stock numbers or revenue figures.
+
+Rejected in the body (400): any merchant/user/actor/buyer, state, amount, tax, shipping, reservation, demo,
+display-number or version field; unknown line fields; numeric strings, fractions, values beyond the
+ranges, non-finite numbers; duplicate `productId` lines (`items.N.productId`); more than 100 lines (checked
+before any other validation: single error `items`). Body limit 32 KiB.
+
+Processing (ONE write transaction): re-validate session and approval at commit and compare the merchant's
+`access_version` with the value read at request start (`409 ACCESS_CHANGED`) → idempotency lookup by
+`(merchant, requestKey)`: same digest → replay original order (even if prices, stock, profile or settings
+have since changed); different → `409 IDEMPOTENCY_KEY_REUSED` → product rules → amounts → minimum order →
+insert header, items (client line order = `lineNo`), creation event, audit `order.created`. Any failure
+rolls back everything and leaves the key unused. Digest = SHA-256 of `["order.create.v1", note|null,
+lines sorted by productId: [productId, cartons, expectedCartonPriceCents, expectedPackSize]]`; line order
+alone does not make a request different.
+
+| Rule (in this order) | Error |
+|---|---|
+| Product missing, inactive, or its category inactive (indistinguishable) | `409 PRODUCT_UNAVAILABLE`, `fields: items.N.productId`, `current.items:[{productId}]` |
+| Demo products in production | `422 DEMO_NOT_ALLOWED` |
+| Demo and real products mixed | `422 MIXED_DEMO_ITEMS` (an order is demo iff its products are) |
+| Expected carton price differs | `409 PRICE_CHANGED`, `current.items:[{productId, cartonPriceCents, packSize}]` |
+| Expected pack size differs (price equal) | `409 PACKAGING_CHANGED`, same `current` |
+| Cartons below the product minimum | `422 MINIMUM_QUANTITY_NOT_MET`, `current.items:[{productId, minimumCartons}]` |
+| Cartons above available (`on_hand − reserved`) | `409 INSUFFICIENT_STOCK`, `current.items:[{productId, availability:{status, labelAr}}]` — **no counts** |
+| Subtotal or total above 1e13 piasters | `422 AMOUNT_LIMIT_EXCEEDED` (never clamped) |
+| Subtotal below `minimum_order_cents` | `422 MINIMUM_ORDER_NOT_MET`, `current:{minimumOrderCents, subtotalCents}` |
+
+Amounts (BigInt): `line = cartonPrice × cartons`; `subtotal = Σ lines`; `taxBase = subtotal + (shippingTaxable ?
+shipping : 0)`; `tax = ⌊(taxBase × taxBps + 5000) / 10000⌋` (half-up; amounts are non-negative);
+`total = subtotal + shipping + tax`. Settings and buyer data are snapshotted at creation. Creating a
+pending order changes no stock, reservation, ledger row or product version.
 
 ## 4a. Merchant status transitions (PATCH /api/v1/admin/merchants/:id)
 | from \ to | pending | approved | suspended |

@@ -9,6 +9,9 @@ Versioned, checksum-verified SQL migrations: `NNNN_name.sql`, contiguous from `0
 - `0003_inventory_integrity.sql` — products must be inserted inactive with zero stock; every
   on_hand/reserved change must be paired with a new matching ledger row (`products.last_ledger_id`);
   ledger `product_version_after` and `adjustment_type` (stage 07).
+- `0004_order_finalization.sql` — the order creation event is a guarded finalization marker (consistent
+  subtotal, 1–100 items, uniform demo flag, once, by the creator); no items after it, no transition or
+  state change before it (stage 08).
 
 Rules (enforced by `src/server/database/migrations.ts`, see `docs/DATABASE.md` §5 and `docs/MIGRATION.md`):
 - **Never edit an applied migration.** Its SHA-256 is verified on every startup; changes go into a new file.

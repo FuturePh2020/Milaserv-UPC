@@ -138,7 +138,7 @@ describe('unknown endpoints', () => {
     ['GET', '/api/v1/does-not-exist'],
     ['GET', '/api/v1'],
     ['GET', '/api'],
-    ['POST', '/api/v1/orders'],
+    ['POST', '/api/v1/admin/orders'],
     ['DELETE', '/api/v1/admin/inventory/1'],
     ['GET', '/api/v1/admin/backup'],
     ['POST', '/api/v1/admin/restore'],

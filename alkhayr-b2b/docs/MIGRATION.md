@@ -94,6 +94,15 @@ server refuse to start with `MIGRATIONS_PENDING`; apply it with §2 (stop the se
   movement in the reason.
 - Each adjustment needs a fresh operation key (the UI will generate it); retrying the same request is safe.
 
+### Stage 08 note: migration 0004 and orders
+`0004_order_finalization.sql` must be applied to databases created earlier (§2). It adds checks only; no
+existing data changes. After it, approved traders (and administrators, for their own company profile) can
+submit pending orders through the API (`POST /api/v1/orders`):
+- Prices, totals, tax and shipping are calculated by the server from the current settings (defaults:
+  tax 0, shipping 0); configure the real values before production (settings screen: stage 14).
+- A pending order does **not** reserve stock; stock is reserved when an administrator confirms (stage 09).
+- Each trader may attempt at most 30 orders per 10 minutes.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -133,6 +142,7 @@ None has been supplied (BUILD_NEW). If one is:
 - المرحلة 07 أضافت الترحيل 0003: المنتجات الجديدة تُنشأ غير مفعّلة وبرصيد صفر، وأي تغيير في الرصيد يجب أن يقابله قيد في سجل الحركة.
 - رصيد الافتتاح: البوابة لا تعرف المبيعات في البرامج الأخرى؛ خصّص كمية للبوابة وسجّلها كاستلام أو كتحديد للإجمالي مع ذكر السبب، وراجعها دوريًا.
 - لا تُعدَّل الحركات القديمة ولا تُحذف؛ الخطأ يُصحَّح بحركة تسوية عكسية مع ذكر السبب.
+- المرحلة 08 أضافت الترحيل 0004 (فحوص إضافية فقط) وإنشاء الطلبات قيد الانتظار: الأسعار والضريبة والشحن يحسبها الخادم، والطلب قيد الانتظار لا يحجز مخزونًا (الحجز عند تأكيد الإدارة في المرحلة 09)، وبحد أقصى 30 محاولة طلب لكل تاجر كل 10 دقائق.
 - المرحلة 05 أضافت الترحيل 0002؛ قواعد البيانات الأقدم تحتاج `db:migrate --confirm-backup` بعد إيقاف الخادم وأخذ نسخة احتياطية.
 - اعتماد التاجر أو تعليقه يتم من حساب مدير سجّل الدخول خلال آخر 15 دقيقة، مع ذكر سبب عند التعليق أو الإرجاع للمراجعة؛ التعليق يُنهي كل جلسات التاجر فورًا، والاعتماد لا يرسل أي رسائل.
 - اضبط `TRUST_PROXY` على عنوان الوكيل العكسي فقط إذا كان الخادم لا يُصل إليه إلا عبره.

@@ -163,9 +163,14 @@ export interface OrderInput {
   taxCents?: number;
   totalOverride?: number;
   state?: string;
+  /** Write the creation event (finalization marker, migration 0004); the order then becomes visible to reads. */
+  finalize?: boolean;
 }
 
-/** Inserts an order and its items (no stock effects — pending orders reserve nothing). */
+/**
+ * Inserts an order and its items (no stock effects — pending orders reserve nothing). Without
+ * `finalize` the order has no creation event: it is an unfinished fixture invisible to API reads.
+ */
 export function insertOrder(db: DatabaseSync, o: OrderInput): string {
   const id = o.id ?? randomUUID();
   const t = now();
@@ -193,6 +198,9 @@ export function insertOrder(db: DatabaseSync, o: OrderInput): string {
   o.items.forEach((item, idx) => {
     stmt.run(id, item.productId, idx + 1, 'شيكولاتة بالبندق', 'براند', item.unitPrice, item.cartons, item.lineTotal ?? item.unitPrice * item.cartons);
   });
+  if (o.finalize) {
+    db.prepare("INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, created_at) VALUES (?, ?, NULL, 'pending', ?)").run(id, o.userId, t);
+  }
   return id;
 }
 

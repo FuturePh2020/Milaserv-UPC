@@ -204,6 +204,27 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Audit `inventory.adjusted` stores type, delta, resulting on_hand, version and the ledger id; reason and
   reference live in the append-only ledger.
 
+## 7d. Orders (implemented stage 08)
+- `POST /api/v1/orders`: session + session CSRF + exact Origin + JSON (32 KiB); approved merchant only;
+  the merchant is always the session's own (no id from body, path or headers; administrators order only
+  for their own approved profile). Re-checked at commit: valid session for the same user, still approved,
+  `merchants.access_version` unchanged since the request started (ABA-safe).
+- Strict schema; collection limit (100 lines) before any other validation; integers validated before
+  SQLite; server-owned fields (merchant, actor, buyer, state, totals, tax, shipping, reservation, demo,
+  version, display number) rejected.
+- Server-authoritative prices, packaging, availability, demo classification, tax, shipping and buyer
+  snapshot; client prices/packaging are stale-data checks only. BigInt arithmetic, half-up tax, limits
+  rejected not clamped.
+- Idempotency per merchant (`UNIQUE(merchant_id, request_key)` + SHA-256 digest); replay before any
+  current-state rule; concurrent identical requests serialize on `BEGIN IMMEDIATE` (one order).
+- No stock counts disclosed: insufficient-stock errors carry only the availability status. Exact
+  availability can still be **bounded** by repeated attempts with different quantities; the per-merchant
+  limit of 30 attempts / 10 min (counted for every attempt, valid or not) slows this probing (T57).
+- Reads: approved own-merchant only, finalized orders only, identical 404 for foreign/unfinished/unknown
+  ids, signed cursors bound to user + merchant + filter, no digests or revenue claims.
+- Audit `order.created` stores display number, line count, total and demo flag only (no note or buyer data).
+- Database finalization guards (0004) make the creation event a consistency check; exact boundary DATABASE.md §13.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -278,6 +299,11 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Inventory adjustments: recency at commit, strict types, no reservation changes | ✅ | ✅ 07 (HTTP, slow bodies) |
 | Idempotent adjustments (replay before version check, 409 on changed content, per-admin scope) | ✅ | ✅ 07 (sequential, concurrent, lost response) |
 | Stock changes paired with ledger rows; inactive zero-stock inserts (database triggers) | ✅ | ✅ 07 (SQL and HTTP) |
+| Own-merchant order creation; commit-time approval + access_version re-check | ✅ | ✅ 08 (HTTP, slow bodies) |
+| Server-authoritative pricing/packaging/stock/demo; strict order schema; BigInt half-up tax; limits | ✅ | ✅ 08 (HTTP + unit) |
+| Order idempotency per merchant (replay, 409, concurrent, failed attempt reusable) | ✅ | ✅ 08 |
+| Atomic order write; finalization guards (0004); unfinished orders invisible | ✅ | ✅ 08 (injected failure, SQL) |
+| Own-order reads: ownership, non-disclosing 404, signed cursors; per-merchant order limit | ✅ | ✅ 08 |
 | Atomic ledger + balance + audit (rollback on any failure) | ✅ | ✅ 07 (three injected failures) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

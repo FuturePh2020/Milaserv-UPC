@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **07 — Inventory movements, adjustments & ledger: COMPLETE** |
-| Next stage | **08 — Authoritative pricing & idempotent order creation** (awaiting owner prompt) |
+| Current stage | **08 — Authoritative order creation, snapshots & idempotency: COMPLETE** |
+| Next stage | **09 — Order state machine & atomic fulfillment** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001 + 0002 + **0003** (inventory integrity) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, **inventory adjustments and ledger**. No orders, fulfillment or UI screens yet. |
+| Schema | Migrations 0001 + 0002 + 0003 + **0004** (order finalization guards) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, **pending-order creation and own-order reads**. No fulfillment, administrator order handling or UI screens yet. |
 
 ## Stage log
 
@@ -22,10 +22,127 @@
 | 04 | ✅ Done (authentication) | Commit `50ed3fa` |
 | 05 | ✅ Done (merchant lifecycle) | Commit `c2c5a31` |
 | 06 | ✅ Done (products + catalog) | Commit `0437953` |
-| 07 | ✅ Done (inventory + ledger) | 359/359 tests ×3 clean-copy runs, typecheck clean, mutation checks with attribution, audit 0 — below |
-| 08–18 | ⏳ Not started | — |
+| 07 | ✅ Done (inventory + ledger) | Commit `105f672` |
+| 08 | ✅ Done (order creation + own-order reads) | 391/391 tests ×3 clean-copy runs, typecheck clean, 40 mutations with attribution, audit 0 — below |
+| 09–18 | ⏳ Not started | — |
 
-## Stage 07 — what was built
+## Stage 08 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| Finalization guards | `migrations/0004_order_finalization.sql` | Creation event (`NULL → pending`) accepted once, by the creator, for a pending v1 order with 1–100 items, `subtotal = Σ line totals` and uniform demo flag; no items after it; no transition/state change before it |
+| Order endpoints | `src/server/services/orders.ts`, `routes/orders.ts` | `POST /api/v1/orders`, `GET /api/v1/orders`, `GET /api/v1/orders/:id` — own merchant only (administrators: own approved profile) |
+| Atomic creation | `services/orders.ts` | re-validate (session, approval, `access_version`) → idempotency (per merchant, digest) → product rules → BigInt amounts → minimum order → header, items, creation event, audit — one transaction |
+| Rules | `services/orders.ts` | strict schema (expected price + pack size per line), collection limit first, 32 KiB body; unavailable/demo/mixed/price/packaging/minimum/stock/amount/minimum-order errors; no stock counts disclosed; no stock/ledger/product change |
+| Reads | `services/orders.ts` | finalized own orders only; newest first by `(created_at, id)`; HMAC cursors bound to user, merchant, state filter; identical 404 for foreign/unfinished/unknown; snapshots only; no digest |
+| Errors / audit / limits | `shared/errors.ts`, `services/audit.ts`, `auth/rate-limit.ts` | `ACCESS_CHANGED`, `PRODUCT_UNAVAILABLE`, `PRICE_CHANGED`, `PACKAGING_CHANGED`, `INSUFFICIENT_STOCK`, `MINIMUM_QUANTITY_NOT_MET`, `MINIMUM_ORDER_NOT_MET`, `MIXED_DEMO_ITEMS`, `DEMO_NOT_ALLOWED`, `AMOUNT_LIMIT_EXCEEDED`; `order.created`; `order_create_account` 30 / 10 min |
+| Fixtures | `tests/helpers/database.ts` | `insertOrder({ finalize })` writes the creation event under the same rules; default stays an unfinished (invisible) fixture |
+
+Financial rule: `line = price × cartons`; `subtotal = Σ`; `taxBase = subtotal (+ shipping if taxable)`;
+`tax = ⌊(taxBase × bps + 5000) / 10000⌋` (half-up); `total = subtotal + shipping + tax`; subtotal/total
+> 1e13 rejected (never clamped); minimum order on the subtotal. Exact enforcement boundary: DATABASE.md §13.
+
+## Checks run in stage 08 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Full suite (stages 01–08) | `npm run check` (typecheck + build + `npm test`) | ✅ **391 tests, 97 suites, 391 pass, 0 fail** |
+| — orders (HTTP + unit) / schema (+4 tests for 0004) | `node --test <file>` | ✅ 28 / 37 |
+| Regression tests adjusted | schema (state-transition test finalizes its fixture order first — required by 0004); auth-security and server (stage boundary: own-order routes now exist; admin order routes still 404) | No protection removed or weakened |
+| Clean reproduction ×3 | tracked + new files → `npm ci` → typecheck + `npm test` ×3 | ✅ 0 type errors; 391/391 each run |
+| Dependency audit | `npm audit` | ✅ 0 vulnerabilities; package.json/lockfile unchanged |
+| Immutable migrations | `git diff` 0001–0003 | ✅ unchanged |
+| Browser QA | — | NOT RUN (no UI) |
+| Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
+| Multi-process concurrent order creation | — | NOT RUN (single process by design (exclusive instance lock, T25); concurrency tested in-process on `BEGIN IMMEDIATE`; the `UNIQUE(merchant_id, request_key)` index is the cross-connection backstop, exercised by mutation M05) |
+
+### Mutation evidence (40 scripted edits, each restored; orders or schema test file)
+| Mutation | Result | Attribution |
+|---|---|---|
+| M01 no approval re-check at commit | caught | **by another layer**: the access-version comparison (409 `ACCESS_CHANGED` instead of 403). Every status change advances `access_version` (0002), so this check cannot be isolated |
+| M02 no access_version comparison | caught | ABA slow-body test |
+| M03 no commit-time re-validation | caught | slow-body logout test (order was created) |
+| M04 replay ignores digest | caught | changed-content 409 test |
+| M05 no idempotency lookup | caught | retry/concurrency tests; **data protected** by `UNIQUE(merchant_id, request_key)` (500 instead of replay) |
+| M06 digest not order-independent | caught | reordered-retry test |
+| M07 / M08 inactive category / product accepted | caught | unavailable-product test |
+| M09 production demo allowed | caught | production demo test |
+| M10 no mixed-demo check | caught (expected 422) | **data protected** by the 0004 demo guard (500) |
+| M37 mixed-demo removed in service AND 0004 | caught | mixed order was created |
+| M11 / M12 no price / packaging check | caught | stale-terms test |
+| M13 no minimum quantity | caught | minimum test |
+| M14 / M15 stock ignores reserved / no stock check | caught | insufficient-stock tests (fixture reservation) |
+| M16 tax truncates | caught | half-up test |
+| M17 shipping always taxed | caught | financial test |
+| M18 no amount-limit check | caught (expected 422) | **data protected** by the subtotal/total CHECKs (500) |
+| M19 total limit only on subtotal | caught | shipping/tax pushing total over 1e13 |
+| M20 minimum order on total | caught | minimum-order test |
+| M21 pricing uses the client's expected price | **survived** | **equivalent while the price check holds**: an order is only accepted when the expected price equals the server price (M11 shows that check is tested) |
+| M22 / M23 / M24 list without finalized / merchant filter, detail without merchant filter | caught | reads tests |
+| M25 cursor scope ignores filter | caught | cursor-binding test |
+| M26 no order rate limit | caught | abuse-limit test |
+| M27 no collection pre-check | caught (after strengthening) | first run **survived** because zod 4 checks the array length before elements; test now asserts the limit is reported before any other invalid field |
+| M28 duplicate lines accepted | caught | duplicate-line test |
+| M29 / M30 non-strict line / body schema | caught | unexpected-field tests |
+| M31 no creation event | caught | committed order unreadable (500) — the marker is what makes orders visible |
+| M32 no audit | caught | audit test |
+| M33 / M34 / M38 / M39 / M40 0004 subtotal / demo / once / creator-pending / transition guards off | caught | SQL tests (first attempt of M33/M34 was an invalid SQL edit and is not counted) |
+| M35 / M36 0004 items-frozen / state-change guards off | caught | SQL tests |
+
+### Required tests → evidence (real HTTP unless noted)
+| Requirement | Test |
+|---|---|
+| Own merchant only; ids in body/headers; admin own profile | ids rejected (400), headers ignored, foreign read 404, admin order uses admin profile |
+| Anonymous / CSRF / pending / suspended | 401 / 403 / 403 / 401, nothing written |
+| Strict schema | 12 server-owned top-level fields, 7 line fields, 15 type/range variants (strings, fractions, 2^53, unsafe, null), 1e400 and NaN raw bodies, duplicates, empty, uppercase/non-v4 key, note length/type/control/bidi |
+| Collection limit before validation; body limit; 100 lines | 101 → single `items` error (also with other invalid fields); 33 KiB → 413; 100 lines accepted in order |
+| Unavailable products | missing / inactive / inactive category: identical bodies |
+| Price tampering / stale price / packaging | lower expected price → 409 with current terms; server price used |
+| Minimum quantity; stock; reservations | 4 < 5 → 422; 8 > 7 → 409 status only (no counts); pending orders reserve nothing; fixture-reserved stock unavailable |
+| No stock side effects | product row and ledger unchanged after creation |
+| Demo | mixed 422, client `isDemo` 400, demo order flagged; production → `DEMO_NOT_ALLOWED` |
+| Tax rounding / shipping / limits / minimum order | 6163.92→6164, 7213.92→7214, 0.5→1, 0.497→0; BigInt unit (> 2^53); exactly 1e13 accepted, +1 line/shipping/tax rejected; minimum on subtotal |
+| Snapshots | product rename/price/pack, profile address, settings change → detail identical |
+| Idempotency | identical retry after price/stock/profile/settings changes → 200 same order; reordered lines → replay; 5 changed variants → 409; failed attempts leave key usable; same key other merchant → new order; 8 concurrent identical → one 201, seven 200, one order |
+| Eligibility at commit | slow body: logout 401, return to review 403, suspend→approve (ABA) 409 |
+| Atomicity / audit | injected audit failure → 500, no header/items/events, key reusable; audit metadata minimal |
+| Reads / IDOR / pagination | foreign/unknown/unfinished identical 404; strict query; 7 orders in 3 pages with tied timestamps; cursor refused for other user, other filter, tampered MAC; no PATCH/PUT/DELETE (405) |
+| Rate limit | 31st attempt in 10 min → 429 with Retry-After; other merchant unaffected; window reset |
+| Database (SQL) | 0004: once/creator, subtotal mismatch, demo mismatch, items frozen, no transition/state change before creation |
+
+## Limitations (known)
+- **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
+- Stock availability at creation is a check, not a reservation: a pending order can be confirmable later or not (stage 09 re-checks atomically).
+- Exact availability can be bounded by repeated order attempts (T57); slowed by the per-merchant limit, not eliminated.
+- The tax rounding rule, minimum order and price/stock checks are service-enforced; the database guarantees the arithmetic identities and finalization consistency (DATABASE.md §13).
+- Order summary/print view deferred to stage 14 (D-097). No administrator order endpoints yet (stage 09). No UI yet (stages 10–12).
+- Tax/shipping defaults are implementation defaults (0), not a legal tax determination; configure before production.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 09.
+
+## Files changed in stage 08 (all under `alkhayr-b2b/`)
+New: `migrations/0004_order_finalization.sql`, `src/server/services/orders.ts`, `src/server/routes/orders.ts`,
+`tests/integration/orders.test.ts`.
+Modified: `src/server/app.ts`, `src/server/auth/rate-limit.ts`, `src/server/services/audit.ts`, `src/shared/errors.ts`,
+`tests/helpers/database.ts`, `tests/integration/{auth-security,server}.test.ts`, `tests/unit/database-schema.test.ts`,
+`migrations/README.md`, `README.md`, `docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
+Not touched: migrations 0001–0003, dependencies/lockfile, web UI, repository-root files.
+
+## How to continue
+Next: send **PROMPT 09**. Confirmation must re-check availability and write `reserve` ledger rows + linked
+product updates (`last_ledger_id`, `version + 1`) per order line inside the transition transaction;
+cancel/ship write `release`/`ship` rows. Transitions must insert an `order_events` row (0004 requires the
+creation event first) and update `orders.state`/`version` with `WHERE version = expectedVersion`. Reuse
+`revalidateAtCommit`, strict schemas, and the stage-07 inventory module.
+
+---
+
+## Stage 07 record (retained)
+
+### What was built
 | Area | Files | Summary |
 |---|---|---|
 | Activation gap closed | `migrations/0003_inventory_integrity.sql` | INSERT trigger: products must be inserted inactive with zero stock; defaulted `active = 1` inserts are rejected (default unchanged, no table rebuild) |
@@ -36,25 +153,25 @@
 | Errors / audit | `shared/errors.ts`, `services/audit.ts` | `IDEMPOTENCY_KEY_REUSED`, `NO_CHANGE`, `INVENTORY_NEGATIVE`, `INVENTORY_BELOW_RESERVED`, `INVENTORY_LIMIT`; `inventory.adjusted` |
 | Fixtures | `tests/helpers/database.ts` | `insertProduct` follows the valid lifecycle; `fixtureAdjustStock`, `fixtureReserve` (test-only, ledger-linked, reservation against a fixture order) |
 
-### Inventory model (documented)
+#### Inventory model (documented)
 `on_hand` = physical cartons allocated to this portal; `reserved` = confirmed/preparing commitments
 (stage 09 only); `available = on_hand − reserved` (computed). The portal does not know about sales in
 other programs — the business must allocate and periodically reconcile portal stock (operator guide).
 Traders still see only the status (0 → out of stock, 1–10 → limited, > 10 → available, threshold
 configurable). Not purchasing, costing, warehouses, expiry batches or accounting.
 
-### Enforcement boundary
+#### Enforcement boundary
 Database (every write path): stock CHECKs, 1:1 ledger pairing with matching deltas/balances/version,
 append-only ledger, inactive zero-stock inserts, version +1 per update. Service (supported transaction):
 authorization, reasons, idempotency, expectedVersion, no manual reservation changes (also blocked by the
 ledger CHECK for receipt/correction rows), Arabic errors. Details: DATABASE.md §12.
 
-### Stage-09 boundary
+#### Stage-09 boundary
 Order confirm/cancel/ship will write `reserve`/`release`/`ship` ledger rows per order line and the linked
 product updates inside the order-transition transaction, through the same module. No reservation endpoint
 or placeholder exists.
 
-## Checks run in stage 07 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 07 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -68,7 +185,7 @@ or placeholder exists.
 | Browser QA | — | NOT RUN (no UI) |
 | Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
 
-### Mutation evidence (15 single + 1 double; inventory, schema and product test files)
+#### Mutation evidence (15 single + 1 double; inventory, schema and product test files)
 | Mutation | Result | Detected by the changed control's test / blocked by another layer |
 |---|---|---|
 | No idempotency lookup | caught (2) | retry and lost-response tests (the per-admin unique index would also refuse the duplicate key → 500) |
@@ -88,7 +205,7 @@ or placeholder exists.
 | 0003 insert guard disabled | caught (2) | SQL and HTTP database-protection tests |
 | 0003 ledger-pairing trigger disabled | caught (3) | SQL tests (raw stock update accepted) |
 
-### Required tests → evidence (real HTTP unless noted)
+#### Required tests → evidence (real HTTP unless noted)
 | Requirement | Test |
 |---|---|
 | Anonymous/trader/pending/suspended denied | list, ledger, adjustment → 401/403/403/401 |
@@ -113,7 +230,7 @@ or placeholder exists.
 | Trader status, thresholds 0/1/10/11 | out_of_stock / low_stock / low_stock / normal / out_of_stock; no counts in catalog |
 | Existing protections | full stage 01–06 suites pass |
 
-## Limitations (known)
+### Limitations at the end of stage 07
 - **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
 - Portal stock must be allocated/reconciled by the business; no automatic synchronization with other sales channels.
 - Database pairing does not prove the history of products stocked before 0003 (none in a fresh pilot) and does not check that the ledger actor is an administrator (service-enforced).
@@ -121,25 +238,13 @@ or placeholder exists.
 - Reservations exist only as test fixtures until stage 09.
 - Not purchasing, costing, multiple warehouses, expiry batches or accounting.
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 08.
-
-## Files changed in stage 07 (all under `alkhayr-b2b/`)
+### Files changed in stage 07 (all under `alkhayr-b2b/`)
 New: `migrations/0003_inventory_integrity.sql`, `src/server/services/inventory.ts`, `src/server/routes/admin-inventory.ts`,
 `tests/integration/inventory.test.ts`.
 Modified: `src/server/app.ts`, `src/server/services/{audit,products}.ts`, `src/shared/errors.ts`, `tests/helpers/database.ts`,
 `tests/integration/{auth-security,products}.test.ts`, `tests/unit/{database-schema,database-transaction}.test.ts`,
 `migrations/README.md`, `README.md`, `docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
 Not touched: migrations 0001/0002, dependencies/lockfile, web UI, repository-root files.
-
-## How to continue
-Next: send **PROMPT 08**. Order creation must not reserve stock (pending orders only snapshot); stage 09
-reservations must go through ledger rows + linked product updates (`last_ledger_id`, `version + 1`) inside
-the transition transaction; reuse `revalidateAtCommit`, client-version WHERE guards, strict schemas and
-the idempotency pattern (key + canonical digest, replay before version checks).
 
 ---
 

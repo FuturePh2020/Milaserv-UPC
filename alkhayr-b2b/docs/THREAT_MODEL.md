@@ -22,14 +22,14 @@ third-party content rendered by the browser only (never fetched server-side).
 | T1 | Credential stuffing / brute force on login | external | scrypt; per-account (5/15 min) + per-IP (20/15 min) limits applied before hashing; one generic failure; admin TOTP | 03/04 ✅ |
 | T2 | Admin TOTP replay or race | external w/ observed code | `verifyTotp` returns the accepted step (03 ✅); enrollment step stored as baseline (03 ✅); atomic `last_otp_step` update at login (04) | 03/04 |
 | T3 | Self-registration as admin / mass assignment of role, status, prices | trader/visitor | strict schemas reject unknown fields (tested: role, status, ids, totp, hash); registration creates pending traders only; admin only via CLI | 04 ✅ (profile edits: 05) |
-| T4 | IDOR: trader reads another's orders/profile | approved trader | profile selected only by session (no ids/params accepted); 404 for foreign ids; signed cursors | 05 ✅ profile (orders: 08) |
-| T5 | Pending/suspended trader sees prices or orders | trader | guards read live status per request (`requireApproved`); suspended accounts have no valid session | 04 ✅ guards (routes: 06–09) |
+| T4 | IDOR: trader reads another's orders/profile | approved trader | profile and orders selected only by session (no ids/params accepted); 404 for foreign ids; signed cursors | 05 ✅ profile · 08 ✅ orders |
+| T5 | Pending/suspended trader sees prices or orders | trader | guards read live status per request (`requireApproved`); suspended accounts have no valid session; order reads/creation approved-only | 04 ✅ guards · 06/08 ✅ routes (admin orders: 09) |
 | T6 | CSRF / cross-site mutation | malicious site | SameSite=Strict, exact Origin, Fetch Metadata, session-bound CSRF, pre-login CSRF, JSON-only | 04 ✅ |
 | T7 | Session theft/fixation | external | HttpOnly `__Host-` cookie, rotation destroying any presented session, duplicate-cookie rejection, idle/absolute expiry, hash-only storage, cap 5 | 04 ✅ |
 | T8 | Forged identity headers (ChatGPT/role headers) | external | headers ignored; identity only from session + live rows | 04 ✅ |
-| T9 | Price tampering in order request | trader | server-authoritative pricing; client prices only for stale detection | 08 |
+| T9 | Price tampering in order request | trader | server-authoritative pricing; client prices/packaging only for stale detection (409 with current terms); strict schema rejects totals/tax/shipping | 08 ✅ |
 | T10 | Overselling via concurrent confirmations | admins concurrently | BEGIN IMMEDIATE, guarded UPDATE `available >= qty`, all-or-nothing | 09 |
-| T11 | Double order on retry/double click | trader/network | idempotency key + digest | 08 |
+| T11 | Double order on retry/double click | trader/network | per-merchant idempotency key + canonical digest; replay before current-state rules; serialized writes | 08 ✅ |
 | T12 | Stale admin form overwrites stock/price | admin | expectedVersion pre-check + WHERE expectedVersion; version +1 on every update incl. stock (trigger) | 06/07 ✅ |
 | T13 | SQL injection via search/sort | any | bound parameters, fixed sort/column maps, strict query parsing | 05/06 ✅ |
 | T14 | Stored XSS via product names, notes, addresses | admin/trader | React escaping, no `dangerouslySetInnerHTML`, strict CSP | 10–12 |
@@ -81,3 +81,8 @@ third-party content rendered by the browser only (never fetched server-side).
 | T53 | Manual adjustment used to alter reservations or push on_hand below commitments | admin error / attacker with admin session | strict schemas without reserved; reserved floor check; ledger and products CHECKs | 07 ✅ |
 | T54 | Product created already active or stocked, bypassing review and ledger | bug / future import path | 0003 insert trigger (inactive, zero stock) | 07 ✅ (database) |
 | T55 | Portal stock diverges from stock sold through other channels | business process | documented: the business allocates/reconciles portal stock; no automatic sync | 07 (documented, operational) |
+| T56 | Order for another merchant / admin acting for a trader through the order API | trader / admin | merchant only from the session; strict schema rejects ids; headers ignored; no admin order routes before 09 | 08 ✅ |
+| T57 | Stock probing through order attempts (binary search on quantities) | approved trader | errors carry status only, never counts; per-merchant 30 attempts / 10 min — **residual**: bounds remain inferable slowly | 08 (residual, documented) |
+| T58 | Partial order visible or inconsistent (header without items, wrong subtotal, mixed demo) | bug / other write path | one transaction; creation event as finalization marker guarded by 0004; reads finalized only | 08 ✅ |
+| T59 | Money overflow / rounding manipulation | trader | BigInt, half-up rule, limits rejected not clamped; database total/tax CHECKs | 08 ✅ |
+| T60 | Approval revoked/restored (ABA) while an order body is in flight | concurrent admin action | commit-time session + approval + `access_version` comparison | 08 ✅ |

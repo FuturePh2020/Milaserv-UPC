@@ -223,3 +223,37 @@ transaction. There is no separate stock implementation and no reservation endpoi
 
 Test fixtures (`tests/helpers/database.ts`: `insertProduct`, `fixtureAdjustStock`, `fixtureReserve`)
 follow these same database rules through a test-only connection; they are never part of the application.
+
+## 13. Migration 0004 — order finalization guards (stage 08)
+An order is written in one transaction: header (`orders`) → items (`order_items`) → **creation event**
+(`order_events`, `NULL → pending`) → audit. The creation event is the **finalization marker**: the API lists
+and shows only orders that have it, so a header or items without it are never visible.
+
+| Trigger | Rule (every write path) |
+|---|---|
+| `order_events_creation_guard` | A creation event (`old_state IS NULL`) is accepted only once per order; only when the order is `pending` at version 1 and `actor_user_id` is the order's `created_by_user_id`; only when the order has 1–100 items; only when `subtotal_cents = SUM(order_items.line_total_cents)`; and only when every item's product has `products.is_demo = orders.is_demo`. |
+| `order_events_transition_requires_creation` | No later event (`old_state IS NOT NULL`) before the creation event. |
+| `order_items_frozen_after_creation` | No item can be added once the creation event exists (0001 already forbids item UPDATE/DELETE). |
+| `orders_state_change_requires_creation` | `orders.state` cannot change before the creation event. |
+
+**Enforcement boundary (exact):**
+- *Database-enforced (0001 + 0004), any write path:* per-line `line_total = unit_price × cartons`; integral
+  cents/cartons and ranges; `tax_base = subtotal (+ shipping if taxable)`; `tax ≤ tax_base`;
+  `total = subtotal + tax + shipping`; subtotal 1…1e13; per-merchant unique `request_key`; snapshot
+  immutability; append-only items and events; legal transitions; and, at finalization, the header/item
+  agreement and demo uniformity above.
+- *Service-enforced only (supported transaction `services/orders.ts`):* who may order (approved, own
+  merchant, re-checked at commit with `access_version`), idempotency digest comparison, product
+  active/category active, expected price and packaging, minimum quantity, available stock at creation
+  (not a reservation), the production demo refusal, the tax **rounding rule** (half-up; the database only
+  checks `tax ≤ base`), the total limit (`total ≤ 1e13`; the database bounds the subtotal), the minimum
+  order, and that buyer/product snapshot values equal the current rows at creation.
+- The database does **not** prove that an unfinalized header was never written by some other path; it
+  guarantees that such a header can never be finalized inconsistently, never gains items after
+  finalization, never changes state, and is invisible to the API.
+
+**Stock:** order creation writes no ledger row and changes no product (pending orders reserve nothing);
+stage 09 reserves at confirmation through the 0003 ledger pairing.
+
+**Fixtures:** `insertOrder` creates unfinished orders by default (invisible to the API); `finalize: true`
+writes the creation event under the same rules.
