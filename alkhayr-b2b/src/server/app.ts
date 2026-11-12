@@ -8,6 +8,7 @@ import { sendError } from './http/response.ts';
 import { methodNotAllowed, Router } from './http/router.ts';
 import { applySecurityHeaders } from './http/security-headers.ts';
 import type { StaticFiles } from './http/static-files.ts';
+import type { ReadinessProbe } from './database/readiness.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 
 export interface AppState {
@@ -22,9 +23,15 @@ export interface App {
 
 const API_PREFIX = /^\/api(\/|$)/;
 
-export function createApp(config: AppConfig, log: Logger, staticFiles: StaticFiles): App {
+export interface AppDependencies {
+  readonly staticFiles: StaticFiles;
+  readonly readiness: ReadinessProbe;
+}
+
+export function createApp(config: AppConfig, log: Logger, deps: AppDependencies): App {
+  const { staticFiles } = deps;
   const router = new Router();
-  registerHealthRoutes(router);
+  registerHealthRoutes(router, deps.readiness);
   // Business routes under /api/v1 are registered by later stages.
 
   const state: AppState = { shuttingDown: false };

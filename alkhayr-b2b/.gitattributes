@@ -1,0 +1,2 @@
+# Migration checksums are computed over exact bytes: never convert line endings.
+*.sql text eol=lf

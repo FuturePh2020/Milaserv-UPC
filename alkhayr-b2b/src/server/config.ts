@@ -21,6 +21,8 @@ export interface AppConfig {
   /** Expected Host header value derived from appOrigin (lowercase, includes non-default port). */
   readonly expectedHost: string;
   readonly dataDir: string;
+  /** SQLite database file inside dataDir (WAL/SHM files live next to it). */
+  readonly databasePath: string;
   readonly backupDir: string;
   /** Raw secret bytes; null only outside production (features needing them must refuse). */
   readonly appSecret: Buffer | null;
@@ -75,6 +77,8 @@ const envSchema = z.object({
   HTTP_KEEP_ALIVE_TIMEOUT_MS: intInRange(1000, 120_000, 5_000),
   SHUTDOWN_GRACE_MS: intInRange(1000, 120_000, 10_000),
 });
+
+export const DATABASE_FILENAME = 'alkhayr.db';
 
 const PLACEHOLDER_PATTERN = /change[_-]?me|replace[_-]?me|placeholder|example|your[_-]?secret|^secret$|^password$|^x+$/i;
 const MIN_SECRET_BYTES = 32;
@@ -182,6 +186,7 @@ export function loadConfig(env: NodeJS.ProcessEnv, options: LoadConfigOptions): 
     appOrigin: origin.origin,
     expectedHost: origin.host,
     dataDir,
+    databasePath: path.join(dataDir, DATABASE_FILENAME),
     backupDir,
     appSecret: secrets.APP_SECRET,
     backupKey: secrets.BACKUP_KEY,

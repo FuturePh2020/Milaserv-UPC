@@ -43,7 +43,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | T22 | Dependency compromise | supply chain | minimal deps, lockfile, audit, no runtime CDN | 01/16 |
 | T23 | Spoofed client IP to evade rate limits | external | XFF trusted only from configured proxy IPs | 04/17 |
 | T24 | Direct access to Node port bypassing proxy | external | bind to 127.0.0.1 / internal network; compose exposes proxy only; Host check | 17 |
-| T25 | Running two app instances on one SQLite file / NFS corruption | operator | documented single-instance constraint; startup lock file | 02/17 |
+| T25 | Running two app instances on one SQLite file / NFS corruption | operator | exclusive instance lock (OS-released), network-filesystem refusal, documented constraint | 02 ✅ |
 | T26 | Loss of only admin (lost TOTP device) | operator | CLI reset-mfa on trusted host; cannot suspend sole admin via UI | 03/05/15 |
 
 ## Accepted / residual risks (initial)
@@ -52,3 +52,6 @@ third-party content rendered by the browser only (never fetched server-side).
 - Login rate limiting allows temporary targeted lockout (availability vs. brute-force trade-off).
 - Trader cart drafts in localStorage are readable by anyone with access to the device browser
   (contain no credentials or prices of record).
+| T27 | Schema changed or FKs disabled through an injected/buggy query on the HTTP path | bug / attacker with SQL injection | runtime connection authorizer denies DDL, ATTACH, PRAGMA writes, SAVEPOINT; parameters only | 02 ✅ |
+| T28 | Silent data loss or reset on startup/upgrade | operator error / bug | server never creates/migrates; explicit CLI; checksum + newer-schema guards; atomic migrations; `--confirm-backup` | 02 ✅ |
+| T29 | History tampering through ordinary UPDATE/DELETE | insider / bug | append-only and immutability triggers; RESTRICT foreign keys | 02 ✅ (database level) |

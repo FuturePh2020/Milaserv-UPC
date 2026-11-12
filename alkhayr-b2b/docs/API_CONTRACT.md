@@ -1,6 +1,6 @@
 # ALKHAYR — HTTP API Contract (v1)
 
-Status: **Specified in stage 00. Implemented so far: `GET /healthz` (stage 01) and the error envelope, 404/405 handling, request-target and Host validation.** Each feature stage updates the
+Status: **Specified in stage 00. Implemented so far: `GET /healthz` (stage 01), `GET /readyz` (stage 02), the error envelope, 404/405 handling, request-target and Host validation. No business endpoint exists yet.** Each feature stage updates the
 "Implemented in" column only after its tests pass.
 
 ## 1. Conventions
@@ -41,7 +41,7 @@ Status: **Specified in stage 00. Implemented so far: `GET /healthz` (stage 01) a
 | 428 | `RECENT_AUTH_REQUIRED` | admin must re-enter password + TOTP (D-008) |
 | 429 | `RATE_LIMITED` | includes `Retry-After` |
 | 500 | `INTERNAL` | no stack traces or SQL in body |
-| 503 | `UNAVAILABLE` | shutting down / DB busy beyond timeout |
+| 503 | `UNAVAILABLE`, `NOT_READY` | shutting down / DB busy beyond timeout; `NOT_READY` from `/readyz` only (with `Retry-After: 5`) |
 
 ## 3. Endpoints
 
@@ -49,7 +49,8 @@ Auth column: V=visitor, P=pending trader, A=approved trader, D=admin; R = recent
 
 | Method & path | Auth | Purpose | Stage |
 |---|---|---|---|
-| GET `/healthz` | V | `{status:"ok"}` only; DB reachability added in stage 02; no versions/paths/uptime | **01 ✅** |
+| GET `/healthz` | V | Liveness: `{status:"ok"}`; no database access; no versions/paths/uptime | **01 ✅** |
+| GET `/readyz` | V | Readiness: `200 {status:"ready"}` when the configured database file is open, unchanged (same inode), answers a query and is at the required schema version; otherwise `503 NOT_READY` error envelope. Reveals no path, SQL, version, configuration or data. | **02 ✅** |
 | GET `/api/v1/auth/csrf` | V | session-bound token, or signed 10-min pre-login challenge | 04 |
 | POST `/api/v1/auth/register` | V | creates **pending trader only**; generic duplicate response | 04 |
 | POST `/api/v1/auth/login` | V | `{username,password,totp?}`; rotates session; sets `__Host-alkhayr_session` | 04 |
@@ -80,7 +81,7 @@ Auth column: V=visitor, P=pending trader, A=approved trader, D=admin; R = recent
 | GET `/api/v1/admin/exports/orders.csv` | D R | formula-safe CSV, bounded (≤ 10,000 rows per request, date range) | 13 |
 | GET `/api/v1/admin/audit` | D | audit log, cursor | 12 |
 
-No backup, restore, admin-creation, password-reset or MFA-reset HTTP endpoints exist (CLI only).
+No database-maintenance (init/migrate/status), backup, restore, admin-creation, password-reset or MFA-reset HTTP endpoints exist; these are operator CLI commands (`dist/server/cli.js`). HTTP requests never create or alter schema (runtime connection authorizer, DATABASE.md §1).
 No legacy `action`-style endpoint (BUILD_NEW, no old client).
 
 ## 4. Status transitions (POST …/transitions)

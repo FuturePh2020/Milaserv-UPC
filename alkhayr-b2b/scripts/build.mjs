@@ -27,8 +27,9 @@ const ALLOWED_TYPES = {
 export function serverOptions({ outDir }) {
   return {
     absWorkingDir: projectRoot,
-    entryPoints: ['src/server/main.ts'],
-    outfile: path.join(outDir, 'server', 'main.js'),
+    // HTTP server and trusted-operator CLI, each bundled standalone.
+    entryPoints: { main: 'src/server/main.ts', cli: 'src/server/cli/index.ts' },
+    outdir: path.join(outDir, 'server'),
     bundle: true,
     platform: 'node',
     format: 'esm',

@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -14,29 +15,53 @@ export const CANARY = `CANARY-${randomBytes(12).toString('hex')}`;
 export interface TempApp {
   root: string;
   distDir: string;
+  migrationsDir: string;
+  databasePath: string;
   cleanup(): Promise<void>;
 }
 
 /**
- * Builds the real application into a disposable app root that also contains
- * sensitive-looking files (.env, database, source, package.json) holding a
- * canary, so tests can prove none of them is reachable over HTTP.
+ * Builds the real application into a disposable app root laid out like a
+ * release (dist/ + migrations/, no node_modules, no .git), initializes its
+ * database through the real CLI, and plants a canary in sensitive-looking files
+ * (.env, package.json, source) and in the database itself, so tests can prove
+ * none of them is reachable over HTTP.
  */
-export async function createTempApp(): Promise<TempApp> {
+export async function createTempApp(options: { initDb?: boolean } = {}): Promise<TempApp> {
   const root = await mkdtemp(path.join(tmpdir(), 'alkhayr-test-'));
   const distDir = path.join(root, 'dist');
+  const migrationsDir = path.join(root, 'migrations');
+  const databasePath = path.join(root, 'data', 'alkhayr.db');
   const buildModule = (await import(path.join(projectRoot, 'scripts', 'build.mjs'))) as {
     build(opts: { dev?: boolean; outDir: string }): Promise<unknown>;
   };
   await buildModule.build({ dev: false, outDir: distDir });
+  await cp(path.join(projectRoot, 'migrations'), migrationsDir, { recursive: true });
   await writeFile(path.join(root, '.env'), `APP_SECRET=${CANARY}\n`);
   await writeFile(path.join(root, 'package.json'), JSON.stringify({ name: CANARY }));
-  await mkdir(path.join(root, 'data'), { recursive: true });
-  await writeFile(path.join(root, 'data', 'alkhayr.db'), CANARY);
   await mkdir(path.join(root, 'src', 'server'), { recursive: true });
   await writeFile(path.join(root, 'src', 'server', 'main.ts'), `// ${CANARY}`);
   await writeFile(path.join(distDir, 'web', 'secret.txt'), CANARY); // present in web dir but NOT in manifest
-  return { root, distDir, cleanup: () => rm(root, { recursive: true, force: true }) };
+  const app: TempApp = { root, distDir, migrationsDir, databasePath, cleanup: () => rm(root, { recursive: true, force: true }) };
+  if (options.initDb !== false) {
+    const init = await runCli(app, ['db:init']);
+    if (init.code !== 0) throw new Error(`db:init failed: ${init.stdout}\n${init.stderr}`);
+    // Canary inside the database (company name), to detect any file leak.
+    const db = new DatabaseSync(databasePath);
+    db.prepare('UPDATE business_settings SET company_name = ?, version = version + 1 WHERE id = 1').run(CANARY);
+    db.close();
+  }
+  return app;
+}
+
+/** Runs the bundled operator CLI of a temp app. */
+export function runCli(app: TempApp, args: string[], env: NodeJS.ProcessEnv = baseEnv()): Promise<{ code: number | null; stdout: string; stderr: string }> {
+  const child = spawn(process.execPath, [path.join(app.distDir, 'server', 'cli.js'), ...args], { cwd: app.root, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let stdout = '';
+  let stderr = '';
+  child.stdout.setEncoding('utf8').on('data', (d: string) => (stdout += d));
+  child.stderr.setEncoding('utf8').on('data', (d: string) => (stderr += d));
+  return new Promise((resolve) => child.once('exit', (code) => resolve({ code, stdout, stderr })));
 }
 
 export interface RunningServer {

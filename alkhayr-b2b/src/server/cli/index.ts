@@ -1,0 +1,194 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { ConfigError, loadConfig, type AppConfig } from '../config.ts';
+import { openDatabase } from '../database/connection.ts';
+import { DatabaseError } from '../database/errors.ts';
+import { acquireInstanceLock } from '../database/instance-lock.ts';
+import { applyMigrations, inspectSchema, loadMigrations, quickCheck, type Migration } from '../database/migrations.ts';
+import { OPERATOR_COMMANDS } from '../database/runtime.ts';
+
+/**
+ * Trusted-operator command line. Runs on the server host only; nothing here is
+ * reachable over HTTP. Later stages add setup-admin, reset-password,
+ * reset-mfa, backup and restore.
+ */
+
+const USAGE = `ALKHAYR operator CLI
+
+Usage: node dist/server/cli.js <command> [options]
+
+Commands:
+  db:status                    Show schema version, pending migrations and integrity (read-only).
+  db:init                      Create a NEW database and apply all migrations.
+                               Refuses if a database with any schema already exists.
+  db:migrate --confirm-backup  Apply pending migrations to an existing database.
+                               The server must be stopped. --confirm-backup affirms that a
+                               verified, restorable backup of the current database exists.
+  help                         Show this help.
+
+Configuration comes from the environment (and .env via the npm scripts): DATA_DIR etc.
+Exit codes: 0 success, 1 failure, 2 usage error.`;
+
+interface Io {
+  out(line: string): void;
+  err(line: string): void;
+}
+
+export interface CliContext {
+  config: AppConfig;
+  migrationsDir: string;
+  io: Io;
+  now?: () => number;
+}
+
+function describePending(pending: readonly Migration[]): string {
+  return pending.map((m) => m.filename).join(', ');
+}
+
+function dbStatus(ctx: CliContext): number {
+  const migrations = loadMigrations(ctx.migrationsDir);
+  if (!existsSync(ctx.config.databasePath)) {
+    ctx.io.out(JSON.stringify({ initialized: false, latestVersion: migrations.length, hint: OPERATOR_COMMANDS.init }, null, 2));
+    return 0;
+  }
+  const db = openDatabase(ctx.config.databasePath, { mustExist: true });
+  try {
+    const state = inspectSchema(db, migrations);
+    const problems = state.kind === 'uninitialized' ? [] : quickCheck(db);
+    ctx.io.out(
+      JSON.stringify(
+        {
+          initialized: state.kind !== 'uninitialized',
+          schemaVersion: state.kind === 'uninitialized' ? 0 : state.version,
+          latestVersion: state.latestKnown,
+          pending: state.kind === 'pending' ? state.pending.map((m) => m.filename) : [],
+          integrity: problems.length === 0 ? 'ok' : `${problems.length} problem(s)`,
+          journalMode: (db.prepare('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode,
+        },
+        null,
+        2,
+      ),
+    );
+    return problems.length === 0 ? 0 : 1;
+  } finally {
+    db.close();
+  }
+}
+
+function dbInit(ctx: CliContext): number {
+  const migrations = loadMigrations(ctx.migrationsDir);
+  const lock = acquireInstanceLock(ctx.config.dataDir, 'db:init');
+  try {
+    const db = openDatabase(ctx.config.databasePath, { mustExist: false });
+    try {
+      const state = inspectSchema(db, migrations);
+      if (state.kind !== 'uninitialized') {
+        ctx.io.err(
+          `Refusing to initialize: a database with schema version ${state.version} already exists. Nothing was changed.\n` +
+            `Use ${OPERATOR_COMMANDS.status} to inspect it${state.kind === 'pending' ? ` or ${OPERATOR_COMMANDS.migrate} to upgrade it` : ''}.`,
+        );
+        return 1;
+      }
+      const result = applyMigrations(db, migrations, ctx.now);
+      ctx.io.out(`Database initialized at schema version ${result.toVersion} (${result.applied.join(', ')}).`);
+      ctx.io.out('No users or business data were created. Create the administrator with the stage-03 setup command.');
+      return 0;
+    } finally {
+      db.close();
+    }
+  } finally {
+    lock.release();
+  }
+}
+
+function dbMigrate(ctx: CliContext, args: readonly string[]): number {
+  const migrations = loadMigrations(ctx.migrationsDir);
+  if (!existsSync(ctx.config.databasePath)) {
+    ctx.io.err(`No database found. Initialize a new one with: ${OPERATOR_COMMANDS.init}`);
+    return 1;
+  }
+  const lock = acquireInstanceLock(ctx.config.dataDir, 'db:migrate (stop the server first)');
+  try {
+    const db = openDatabase(ctx.config.databasePath, { mustExist: true });
+    try {
+      const state = inspectSchema(db, migrations);
+      if (state.kind === 'uninitialized') {
+        ctx.io.err(`The database has no schema. Use ${OPERATOR_COMMANDS.init} instead.`);
+        return 1;
+      }
+      if (state.kind === 'current') {
+        ctx.io.out(`Database is up to date at schema version ${state.version}. Nothing to do.`);
+        return 0;
+      }
+      if (!args.includes('--confirm-backup')) {
+        ctx.io.err(
+          `Pending migrations: ${describePending(state.pending)} (version ${state.version} -> ${state.latestKnown}).\n` +
+            'Migrations change an existing database. Stop the server, take a backup and verify it can be restored, then re-run with --confirm-backup.',
+        );
+        return 1;
+      }
+      const problems = quickCheck(db);
+      if (problems.length > 0) {
+        ctx.io.err('SQLite quick_check failed; refusing to migrate a damaged database. Restore from a verified backup.');
+        return 1;
+      }
+      const result = applyMigrations(db, migrations, ctx.now);
+      ctx.io.out(`Migrated schema version ${result.fromVersion} -> ${result.toVersion} (${result.applied.join(', ')}).`);
+      return 0;
+    } finally {
+      db.close();
+    }
+  } finally {
+    lock.release();
+  }
+}
+
+export function runCli(argv: readonly string[], ctx: CliContext): number {
+  const [command, ...args] = argv;
+  try {
+    switch (command) {
+      case 'db:status':
+        return dbStatus(ctx);
+      case 'db:init':
+        return dbInit(ctx);
+      case 'db:migrate':
+        return dbMigrate(ctx, args);
+      case 'help':
+      case '--help':
+      case '-h':
+        ctx.io.out(USAGE);
+        return 0;
+      default:
+        ctx.io.err(USAGE);
+        return 2;
+    }
+  } catch (err) {
+    if (err instanceof DatabaseError) {
+      ctx.io.err(`Error [${err.code}]: ${err.message}`);
+      return 1;
+    }
+    throw err;
+  }
+}
+
+function main(): void {
+  process.umask(0o077);
+  const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const appRoot = path.resolve(distDir, '..');
+  const io: Io = { out: (l) => process.stdout.write(l + '\n'), err: (l) => process.stderr.write(l + '\n') };
+  let config: AppConfig;
+  try {
+    config = loadConfig(process.env, { baseDir: appRoot, staticRoot: path.join(distDir, 'web') });
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      io.err(`Invalid configuration:\n- ${err.issues.join('\n- ')}`);
+      process.exit(1);
+    }
+    throw err;
+  }
+  process.exitCode = runCli(process.argv.slice(2), { config, migrationsDir: path.join(appRoot, 'migrations'), io });
+}
+
+// Only run when executed as the CLI bundle (not when imported by tests).
+if (process.argv[1] && path.basename(process.argv[1]) === 'cli.js') main();

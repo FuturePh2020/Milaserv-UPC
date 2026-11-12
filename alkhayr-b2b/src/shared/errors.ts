@@ -17,6 +17,7 @@ export const ERROR_CATALOG = {
   RATE_LIMITED: { status: 429, messageAr: 'عدد المحاولات كبير. حاول مرة أخرى لاحقًا.' },
   INTERNAL: { status: 500, messageAr: 'حدث خطأ غير متوقع في الخادم. حاول مرة أخرى لاحقًا.' },
   UNAVAILABLE: { status: 503, messageAr: 'الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.' },
+  NOT_READY: { status: 503, messageAr: 'الخدمة غير جاهزة لاستقبال الطلبات حاليًا.' },
 } as const satisfies Record<string, { status: number; messageAr: string }>;
 
 export type ErrorCode = keyof typeof ERROR_CATALOG;

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { createApp } from './app.ts';
 import { ConfigError, describeConfig, loadConfig } from './config.ts';
 import { createStaticFiles } from './http/static-files.ts';
+import { openRuntimeDatabase } from './database/runtime.ts';
 import { createLogger } from './logger.ts';
 
 const REQUIRED_NODE_MAJOR = 24;
@@ -15,7 +16,10 @@ function main(): void {
     process.exit(1);
   }
 
-  // Bundled layout: <appRoot>/dist/server/main.js and <appRoot>/dist/web/.
+  // Files created by this process (database, WAL/SHM, locks) are private to its user.
+  process.umask(0o077);
+
+  // Bundled layout: <appRoot>/dist/server/main.js, <appRoot>/dist/web/, <appRoot>/migrations/.
   const distDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const appRoot = path.resolve(distDir, '..');
   const webRoot = path.join(distDir, 'web');
@@ -33,7 +37,9 @@ function main(): void {
 
   const log = createLogger(config.logLevel);
   const staticFiles = createStaticFiles(webRoot, log, { reloadOnChange: config.nodeEnv === 'development' });
-  const app = createApp(config, log, staticFiles);
+  // Requires an existing, fully migrated database; never creates or migrates one.
+  const database = openRuntimeDatabase(config, path.join(appRoot, 'migrations'));
+  const app = createApp(config, log, { staticFiles, readiness: database.readiness });
 
   const server = createServer(
     {
@@ -60,12 +66,19 @@ function main(): void {
     const force = setTimeout(() => {
       log.warn('shutdown_forced', { reason: 'grace period elapsed' });
       server.closeAllConnections();
+      database.close();
       process.exit(1);
     }, config.http.shutdownGraceMs);
     force.unref();
     server.close((err) => {
       if (err) {
         log.error('shutdown_error', { error: err });
+        process.exit(1);
+      }
+      try {
+        database.close();
+      } catch (closeErr) {
+        log.error('database_close_error', { error: closeErr instanceof Error ? closeErr : String(closeErr) });
         process.exit(1);
       }
       log.info('shutdown_complete');
@@ -93,7 +106,7 @@ function main(): void {
   server.listen(config.port, config.host, () => {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : config.port;
-    log.info('listening', { ...describeConfig(config), port, webAssets: staticFiles.available });
+    log.info('listening', { ...describeConfig(config), port, webAssets: staticFiles.available, schemaVersion: database.schemaVersion });
   });
 }
 
@@ -102,6 +115,8 @@ try {
 } catch (err) {
   // Fail closed on any startup error (e.g. tampered web assets) with a structured, secret-free message.
   const message = err instanceof Error ? err.message : String(err);
-  process.stderr.write(`${JSON.stringify({ time: new Date().toISOString(), level: 'error', event: 'startup_failed', message })}\n`);
+  const rawCode = (err as { code?: unknown } | null)?.code;
+  const code = typeof rawCode === 'string' ? rawCode : undefined;
+  process.stderr.write(`${JSON.stringify({ time: new Date().toISOString(), level: 'error', event: 'startup_failed', code, message })}\n`);
   process.exit(1);
 }

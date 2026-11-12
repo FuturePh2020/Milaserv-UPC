@@ -3,117 +3,145 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **01 — Project foundation & reproducible build: COMPLETE** |
-| Next stage | **02 — Database, constraints & safe migrations** (awaiting owner prompt) |
+| Current stage | **02 — Database, constraints & safe migrations: COMPLETE** |
+| Next stage | **03 — Security primitives & administrator bootstrap** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
-| Runtime | Node.js 24.22.1 (`/opt/node24/bin` in this container; default `node` here is 22 and is refused) |
-| Application | Real Node HTTP server + React SPA shell. **No database, authentication, catalog, orders or business data yet.** |
+| Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via built-in `node:sqlite` |
+| Application | Node HTTP server + React shell + SQLite schema/migrations/CLI. **No authentication, users, catalog, orders or business endpoints yet.** |
 
 ## Stage log
 
 | Stage | Status | Evidence |
 |---|---|---|
 | 00 | ✅ Done (spec + capability probe) | Commit `2427e9e` |
-| 01 | ✅ Done | 98/98 tests, typecheck clean, clean `npm ci` reproduction, Chromium check, `npm audit` 0 — details below |
-| 02–18 | ⏳ Not started | — |
+| 01 | ✅ Done (foundation) | Commit `f6ac774` |
+| 02 | ✅ Done (database) | 180/180 tests (incl. all stage-01 regression tests), typecheck clean, clean-copy reproduction, mutation checks — below |
+| 03–18 | ⏳ Not started | — |
 
-## Owner decisions received for stage 01 (all applied)
-| Topic | Decision | Where |
-|---|---|---|
-| Categories (Q-1) | `chocolate` شيكولاتة · `candy` كاندي · `wafers_biscuits` ويفر وبسكويت · `snacks_nuts` سناكس ومكسرات | D-020, `src/shared/categories.ts`, SPEC §5.8, DATABASE products.category |
-| Tax & shipping (Q-3) | 0 bps default; tax base = goods subtotal; shipping untaxed by default; shipping 0; all configurable; snapshotted per order; not a legal tax statement | D-009, `src/shared/constants.ts`, SPEC §5.1, DATABASE business_settings/orders |
-| Low stock (Q-4) | Based on available; 0 = out, 1–10 = low, >10 = normal; threshold configurable; no auto-replenishment | D-016, `src/shared/stock-status.ts`, SPEC §5.10 |
-| Location (Q-2) | Self-contained `alkhayr-b2b/`, no nested repo, unrelated files preserved | D-021 |
+## Stage 02 — what was built
+- **Schema** `migrations/0001_initial.sql`: 13 STRICT tables (the 12 contract tables + `product_categories`, D-029), 19 indexes, 20 triggers; `application_id` 'AKHR'. Details in `DATABASE.md`.
+- **Initial configuration only**: the 4 approved categories; settings shipping 0, tax 0 bps, shipping untaxed, minimum 0, low-stock threshold 10 (available stock); company fields NULL. **No users, passwords, sessions, products, orders, balances or audit rows** (tested).
+- **Connection** `src/server/database/connection.ts`: WAL, FK on (verified), busy timeout 5 s, `synchronous=FULL`, `trusted_schema=OFF`, `secure_delete`, defensive mode, no extensions; dir 0700 / files 0600; network-filesystem refusal; stale-WAL refusal; `mustExist` never creates.
+- **Runtime authorizer** (D-033): the server's connection cannot run DDL, ATTACH, VACUUM/VACUUM INTO, SAVEPOINT or PRAGMA writes.
+- **Single instance** `instance-lock.ts` (D-032).
+- **Migrations** `migrations.ts`: ordered/contiguous, SHA-256 checksums, `user_version` + history guard, newer-schema/foreign-file/no-history refusal, each migration atomic with its history row, FK check before commit, transaction control/ATTACH denied inside migration files.
+- **Transactions** `transaction.ts`: `writeTransaction` (BEGIN IMMEDIATE), `readTransaction`; nested → refused; async callback → rolled back; busy → `DatabaseBusyError`.
+- **Readiness** `readiness.ts` + `GET /readyz` (200 `{status:"ready"}` / 503 `NOT_READY`); `/healthz` stays liveness-only.
+- **Startup** `runtime.ts` + `main.ts`: lock → open existing DB → schema must be current → `quick_check` → reopen with authorizer; refuses with exact operator commands; closes DB and releases lock on shutdown; `umask 077`.
+- **Operator CLI** `src/server/cli/index.ts` → `dist/server/cli.js`: `db:status`, `db:init`, `db:migrate --confirm-backup`, `help`. npm scripts `db:status|db:init|db:migrate`.
+- **Docs**: `DATABASE.md` (rewritten to match implementation), new `MIGRATION.md` (operator procedures + Arabic summary), `API_CONTRACT.md` (`/readyz`, `NOT_READY`), `DECISIONS.md` (D-004 accepted; D-029…D-039), `SECURITY.md`, `THREAT_MODEL.md` (T25 done; T27–T29), `migrations/README.md`, `README.md`.
 
-## Stage 01 — what was built
-- **Toolchain** (D-022): pinned exact versions, lockfile v3 with integrity. Runtime: react 19.3.1, react-dom 19.3.1, zod 4.6.7. Dev: typescript 7.0.2, esbuild 0.28.2, @types/node 24.19.2, @types/react(-dom) 19.3.0. No Next/Vinext/ChatGPT/Express.
-- **Build** (D-023): `scripts/build.mjs` bundles `dist/server/main.js` and hashed SPA assets, generates `dist/web/index.html` and the static allow-list manifest; fails if browser output references `process.env` or contains a non-allow-listed file type.
-- **Server**: `src/server/main.ts` (Node version guard, config, timeouts, graceful SIGTERM/SIGINT shutdown with grace period, fail-closed startup), `app.ts` (request id, security headers, request-target parsing, Host check, router, static, error envelope, access log), `config.ts` (zod-validated typed config), `logger.ts` (JSON lines, redaction), `http/*` (router, errors, response, request-target, streaming JSON body reader, security headers, static files), `routes/health.ts`.
-- **Shared**: categories, limits & business defaults, stock status, Arabic error catalog.
-- **Web**: Arabic RTL `index.html`, React 19 entry, hash router, typed API client with distinct failure states (no token storage), provisional tokens/styles, logo. The page states honestly that login/catalog/orders are not enabled and shows the **real** `/healthz` result. No fake login, metrics or persistence.
-- **Repo hygiene**: `.gitignore`, `.dockerignore`, `.env.example` (empty secrets), `.npmrc` (engine-strict, save-exact), `.nvmrc`.
+### Schema and constraint decisions (summary)
+| Requirement | Implementation |
+|---|---|
+| Integer money/quantities, no fractions | STRICT INTEGER columns reject REAL values (tested on prices, stock, reserved, pack, minimum, cartons, tax, shipping, ledger deltas). Text numerals are converted by SQLite (D-037) → services must validate types. |
+| `on_hand ≥ reserved ≥ 0`; available computed | Named CHECKs `products_reserved_nonnegative`, `products_reserved_le_on_hand`; no available column (tested) |
+| Positive price/pack/minimum | CHECK ranges (price 1…1e8, pack 1…1e4, minimum 1…1e5) |
+| Case-insensitive usernames | lowercase-only CHECK + `UNIQUE COLLATE NOCASE` |
+| Nonempty barcodes unique, TEXT, leading zeros | TEXT + partial unique index; `''` rejected (NULL = none) (D-036) |
+| One product line per order | PK `(order_id, product_id)` |
+| `UNIQUE(merchant_id, request_key)` + digest | named constraint `orders_request_key_scoped`; `request_digest` SHA-256 hex CHECK |
+| Token hashes only | `sessions.token_hash` = 64 lowercase hex CHECK; `csrf_secret` dropped (D-030) |
+| Versions for optimistic concurrency | `version` on products, merchants, orders, settings; triggers require +1 per UPDATE |
+| Snapshots independent of master data | buyer/item/price/tax/shipping columns copied into orders/order_items; trigger blocks changing them (tested after product/merchant/settings edits) |
+| No cascading deletes of history | all history FKs `ON DELETE RESTRICT`; append-only triggers; only `sessions` cascades with an unreferenced user |
 
-## Commands (run from `alkhayr-b2b/`, with Node 24 on PATH)
+## Commands (from `alkhayr-b2b/`, Node 24 on PATH)
 | Purpose | Command |
 |---|---|
-| Install (reproducible) | `npm ci` |
-| Dev loop (watch + auto-restart; reads `.env` if present) | `npm run dev` → http://localhost:3000 |
-| Production build | `npm run build` |
-| Start built server | `npm start` (reads `.env` if present; production needs `NODE_ENV=production`, https `APP_ORIGIN`, `APP_SECRET`, `BACKUP_KEY`) |
-| Type check | `npm run typecheck` |
-| Tests (builds first) | `npm test` |
-| All checks | `npm run check` |
+| Install | `npm ci` |
+| Build | `npm run build` (bundles `dist/server/main.js`, `dist/server/cli.js`, web assets) |
+| Initialize database (once) | `npm run db:init` |
+| Status / upgrade | `npm run db:status` · `npm run db:migrate -- --confirm-backup` (server stopped) |
+| Start | `npm start` · Dev: `npm run dev` (needs `npm run db:init` once first) |
+| Checks | `npm run typecheck` · `npm test` · `npm run check` |
+| Release form | `node dist/server/cli.js <command>` · `node dist/server/main.js` (needs `dist/` + `migrations/` only) |
 
-Reproducible startup: `cp .env.example .env` → `npm ci` → `npm run build` → `npm start`. Generate secrets locally with
-`node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"` (twice, different values).
+Fresh local setup: `cp .env.example .env && npm ci && npm run build && npm run db:init && npm start`.
 
-## Checks run in stage 01 (exact results, 2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+## Checks run in stage 02 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
-| Type check | `npm run typecheck` | ✅ no errors (server+shared+tests project; web+shared project) |
-| Build | `npm run build` | ✅ ~140 ms; outputs: `/` (index.html), `main-*.js` 230,884 B, `main-*.css` 1,698 B, logo 76,528 B |
-| Tests | `npm test` | ✅ **98 tests, 13 suites, 98 pass, 0 fail** (~4 s) |
-| Mutation sanity | Disabled Host check + added SPA fallback, ran integration tests | ✅ 24 tests failed as expected; restored → 62/62 integration pass |
-| Clean reproduction | Copied tracked files only (no `.git`, no `node_modules`), `npm ci`, typecheck, `npm test` | ✅ 98/98 (first run exposed 2 tests depending on a git checkout; fixed to be self-contained, then 98/98) |
-| Engine guard | `npm ci` with Node 22.23.4 | ✅ refused: `EBADENGINE` |
-| Dependency audit | `npm audit` (registry.npmjs.org; sends dependency metadata to the registry) | ✅ 0 vulnerabilities, 57 packages (5 prod, 53 dev, 46 optional) — point in time, not a guarantee, no OS/container scan |
-| Browser QA | Playwright Chromium, 360×740 and 1366×860 against built server | ✅ `dir=rtl`, `lang=ar`, logo loaded, health status «الخادم يعمل.», no horizontal scroll, 0 console errors/CSP violations/failed requests, 0 storage keys, no cookies; `#/unknown-route` shows «الصفحة غير موجودة». Screenshots inspected (not committed). |
-| Dev loop | `npm run dev` | ✅ health 200; editing `App.tsx` triggered web rebuild; page 200 |
-| Manual smoke | curl `/healthz`, `/`, `/api/v1/nope`, `--path-as-is /assets/../.env`, foreign Host | ✅ 200 / 200 / 404 JSON / 400 / 400 |
-| Docker image build/run | — | ⛔ **NOT RUN** (stage 17; Docker Hub pulls returned 429 in stage 00) |
-| Production behind HTTPS proxy / real host | — | ⛔ **NOT RUN** (no hosting in this environment) |
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Build | `npm run build` | ✅ server + CLI + web bundles |
+| Full test suite (stage 01 + 02) | `npm test` | ✅ **180 tests, 31 suites, 180 pass, 0 fail** |
+| — database unit: connection / migrations / schema / transactions | `node --test tests/unit/database-*.test.ts` | ✅ 10 / 13 / 31 / 7 |
+| — database integration (real built CLI + server) | `node --test tests/integration/database.test.ts` | ✅ 12 |
+| Mutation checks | no-op runtime authorizer; skipped checksum check; COMMIT instead of ROLLBACK | ✅ caught by 1 / 1 / 3 failing tests; restored → 61/61 DB unit tests pass |
+| Clean reproduction | tracked files only (no `.git`, no `node_modules`) → `npm ci` → `npm run check` | ✅ 180/180 |
+| Experimental-warning check | `db:init` + server start | ✅ no `ExperimentalWarning` from `node:sqlite` |
+| Manual smoke | server w/o DB; init; init again; migrate (no-op); status; server; `/readyz`; 2nd server; migrate while running; status while running | ✅ exit 1 `DATABASE_MISSING` / 0 / 1 refused / 0 / 0 / ready / `INSTANCE_LOCKED` / `INSTANCE_LOCKED` / 0 |
+| `VACUUM` / `VACUUM INTO` on runtime connection | probe + regression test | ✅ denied; no copy written |
+| Dependency audit | `npm audit` | ✅ 0 findings (57 packages); lockfile unchanged in stage 02 |
+| Browser QA | — | NOT RUN in stage 02 (no UI change; stage-01 check stands) |
+| Docker / hosted HTTPS / real host disk | — | ⛔ **NOT RUN** (stage 17; no hosting here) |
+| Supplied real database migration | — | N/A — none supplied (BUILD_NEW); nothing destructive was run on any real data |
 
-### Acceptance criteria → evidence
-| Criterion | Evidence |
+### Acceptance → evidence
+| Required test | Where |
 |---|---|
-| Builds and starts | build + server start in every integration test; dev loop; production-mode start test |
-| Real page and health respond | `GET /` serves built Arabic RTL page; every manifest asset served with type/ETag/304; `/healthz` = `{"status":"ok"}`, `no-store`, HEAD ok |
-| Unknown endpoints → appropriate errors | `/api`, `/api/v1`, unknown API (GET/POST/DELETE) → JSON 404; `/catalog`, `/index.html`, `/favicon.ico`, `/assets/missing.js` → 404 (no SPA fallback); wrong method → 405 + `Allow`; >2048-byte URL → 414 |
-| `.env`, source, database paths rejected | 29 attempts against a temp app root containing canary `.env`, `data/alkhayr.db`, `src/server/main.ts`, `package.json` and an unlisted file inside `dist/web` (plain, `..`, `%2e%2e`, `%2f`, `%5c`, backslash, `%00`, `//`, absolute-form, `.git`, `node_modules`, manifest, server bundle and map) → 400/404 JSON, canary never returned |
-| No fake auth / metrics / mock persistence | no auth endpoints exist (POST `/api/v1/auth/login` → 404); page shows only real health; source scan test for ChatGPT/OpenAI/preview stack and token storage |
-| Secrets out of source/bundle | `.gitignore`/`.dockerignore` tests; `.env.example` placeholder test; bundle canary + `process.env` checks; config errors and logs never echo secret values |
-| Timeouts & graceful shutdown | header timeout 1 s → `408` and close; SIGTERM → `shutdown_complete`, exit 0, including with a keep-alive connection open |
+| Fresh database and repeat migrations | migrations: fresh init, no-op re-run (data kept), racing connection; integration: clean release init, init-again refused, migrate no-op |
+| Migration checksum tampering | migrations: content + rename; integration: server and `db:status` refuse |
+| Unsupported newer schema | migrations: history + user_version; integration: server refuses `SCHEMA_TOO_NEW` |
+| Failed migration rollback | migrations: SQL error mid-file, self-COMMIT, ATTACH, deferred FK violation → still v1, nothing recorded |
+| Foreign-key violations | schema: merchant→user, product→category, order→merchant/product, delete referenced user/product |
+| Invalid roles and statuses | schema: role, admin w/o TOTP, merchant status, order state/insert state, ledger kind |
+| Duplicate usernames with different casing | schema: `trader.one` vs `TRADER.ONE` / `Trader.One` |
+| Duplicate nonempty barcodes, leading zeros | schema: `000123` kept as text, duplicate rejected, `00123` distinct, NULLs allowed, `''` rejected |
+| Invalid/fractional quantities and money | schema: products, orders, items, settings, ledger |
+| Reserved exceeding total | schema: insert and update paths |
+| Scoped duplicate request keys | schema: same merchant rejected, other merchant allowed |
+| Transaction rollback across tables | transactions: users+merchants+products+orders+items+events+ledger+audit rolled back; constraint failure in a later statement; nested; async; busy |
+| Database unavailability / readiness failure | connection: moved/replaced/closed DB; integration: `/readyz` 503 (no leaks) and recovery, `/healthz` still 200 |
+| DB, WAL/SHM, source, secret files not fetchable | server exposure suite (+WAL/SHM/lock/backup paths) and integration test with a canary verified inside the real DB files |
+| Initialization from a clean release without Git | integration: temp root with only `dist/` + `migrations/` (asserted no `.git`/`node_modules`) |
+| HTTP never alters schema; startup never resets | integration: schema fingerprint and data unchanged across two server runs with requests; connection: authorizer denies 16 statements |
 
 ## Limitations (known, intentional at this stage)
-- No database: `/healthz` reports process liveness only; DB reachability is added in stage 02. `DATA_DIR`/`BACKUP_DIR` are validated but unused.
-- `readJsonBody` is implemented and unit-tested, but no route accepts a body yet.
-- `APP_SECRET`/`BACKUP_KEY` are validated but not used yet (key derivation in stage 03). Optional outside production.
-- Server timeouts are checked every 1 s (`connectionsCheckingInterval`), so timeouts fire up to ~1 s late.
-- Styling and fonts are provisional (system Arabic font stack); the design system is stage 10.
-- `npm run dev` rebuilds and restarts but does not live-reload the browser.
-- The esbuild `postinstall` script is not run (D-027); the platform binary package is used directly.
-- Container image, HTTPS proxy, real hosting: NOT RUN (stage 17).
+- No business services or repositories yet; test fixtures write rows directly. Business rules (pricing, idempotency, stock movements) arrive in stages 05–09; the database enforces invariants as a second line.
+- SQLite STRICT converts numeric text/booleans to INTEGER (D-037): API-level type validation is required in later stages.
+- Order `subtotal = Σ line totals` and ledger-vs-balance consistency are cross-row rules enforced by services (stages 07–09), not by the schema.
+- `db:migrate --confirm-backup` relies on the operator's affirmation until stage 15 adds encrypted backup/restore.
+- Network-filesystem detection uses Linux `statfs` magic numbers; on other OSes it is skipped. FUSE/virtiofs mounts (e.g. Docker Desktop bind mounts) are not refused — documented as unsupported in MIGRATION.md.
+- Audit-log purge command and rate-limit cleanup are not implemented yet (stages 04/15).
+- Readiness checks file identity and schema version, not full integrity (`quick_check` runs at startup and in `db:status`).
+- `npm run dev` requires `npm run db:init` once; the server never auto-initializes (D-031).
 
 ## Open questions
-None blocking. (Q-1…Q-4 answered by the owner — see table above.)
+None.
 
 ## Remaining blockers
-None for stage 02.
+None for stage 03.
 
-## Files changed in stage 01 (all under `alkhayr-b2b/`)
-New: `package.json`, `package-lock.json`, `.npmrc`, `.nvmrc`, `.gitignore`, `.dockerignore`, `.env.example`,
-`tsconfig.json`, `tsconfig.server.json`, `tsconfig.web.json`, `scripts/build.mjs`, `scripts/dev.mjs`,
-`migrations/README.md`, `public/index.html`, `public/assets/brand/alkhayr-logo-480.png`,
-`src/server/{main,app,config,logger}.ts`, `src/server/http/{errors,request-body,request-target,response,router,security-headers,static-files}.ts`,
-`src/server/routes/health.ts`, `src/shared/{categories,constants,errors,stock-status}.ts`,
-`src/web/{main.tsx,App.tsx,router.tsx,assets.d.ts}`, `src/web/api/{client,contracts}.ts`, `src/web/styles/{tokens,globals}.css`,
-`tests/helpers/server.ts`, `tests/integration/server.test.ts`, `tests/security/repository-hygiene.test.ts`,
-`tests/unit/{config,logger,request-body,request-target,router,shared}.test.ts`.
-Updated: `README.md`, `docs/SPEC.md`, `docs/DATABASE.md`, `docs/API_CONTRACT.md`, `docs/SECURITY.md`, `docs/DECISIONS.md` (D-003/006/009/016 accepted; D-020…D-028 added), `docs/PROJECT_STATE.md`.
-Not touched: repository-root `README.md`, `Dashboard.jsx`, other branches.
+## Files changed in stage 02 (all under `alkhayr-b2b/`)
+New: `.gitattributes`, `migrations/0001_initial.sql`, `docs/MIGRATION.md`,
+`src/server/database/{connection,errors,instance-lock,migrations,readiness,runtime,transaction}.ts`, `src/server/cli/index.ts`,
+`tests/helpers/database.ts`, `tests/unit/database-{connection,migrations,schema,transaction}.test.ts`, `tests/integration/database.test.ts`.
+Modified: `package.json` (db scripts), `scripts/build.mjs` (CLI bundle), `src/server/{main,app,config}.ts`, `src/server/routes/health.ts`,
+`src/shared/errors.ts` (`NOT_READY`), `tests/helpers/server.ts` (release-shaped temp app with real DB + canary), `tests/integration/server.test.ts`
+(isolated app for multi-server tests; DB/WAL/SHM exposure paths), `migrations/README.md`, `README.md`,
+`docs/{DATABASE,API_CONTRACT,DECISIONS,SECURITY,THREAT_MODEL,PROJECT_STATE}.md`.
+Not touched: dependencies/lockfile, web UI, repository-root files, other branches.
 
 ## How to continue
-Next: send **PROMPT 02** (database). A resumed session should read this file, SPEC.md, DATABASE.md,
-API_CONTRACT.md, SECURITY.md and DECISIONS.md, run `npm ci && npm run check` with Node 24, then take
-the stage prompt from `docs/BLUEPRINT_AR.md`. Stage 02 must make the products.category CHECK match
-`src/shared/categories.ts` and seed business_settings from `BUSINESS_SETTING_DEFAULTS`.
+Next: send **PROMPT 03** (security primitives & admin bootstrap CLI). A resumed session should read this
+file, SPEC.md, DATABASE.md, API_CONTRACT.md, SECURITY.md, DECISIONS.md and MIGRATION.md, then run
+`npm ci && npm run check` with Node 24. Stage 03 must: create admins through a new CLI command using
+`writeTransaction` (admin row requires `totp_ciphertext`), never add a migration-time seed user, map FK
+errors with `isForeignKeyError`, and keep hashing outside transactions.
 
 ---
 
+## Stage 01 record (retained)
+Foundation: pinned toolchain (react 19.3.1, zod 4.6.7, typescript 7.0.2, esbuild 0.28.2), Node HTTP server
+with typed config, Host/request-target validation, Arabic error envelope, security headers, timeouts,
+graceful shutdown, allow-listed checksum-verified static assets, Arabic RTL React shell. Verified: 98/98
+tests, mutation check, clean `npm ci` reproduction, Chromium mobile/desktop check, `npm audit` 0. Owner
+decisions D-009, D-016, D-020, D-021 recorded.
+
 ## Stage 00 record (retained)
-- Blueprint read in full (742 lines), preserved verbatim as `docs/BLUEPRINT_AR.md` (SHA-256 `e6333a36…f8d5`).
-- Supplied source: repo `main` had only `README.md` and `Dashboard.jsx` (an unrelated HR/tasks dashboard with mock data); other branches had no ALKHAYR code → BUILD_NEW.
-- Logo stored unchanged: `assets/brand/alkhayr-logo-original.png` (1890×832 RGBA, SHA-256 `289a177d…f794`).
-- Capability probe: Node 22.23.4 default + Node 24.22.1 available; real HTTP server OK; `node:sqlite` WAL persisted across processes (SQLite 3.53.4); better-sqlite3 also works; scrypt N=2^17 ≈ 342 ms; AES-256-GCM OK; `node --test` OK; npm registry and git push OK; Docker CLI present, daemon startable, Docker Hub pulls 429 → image builds unverified; Chromium/Playwright available; 4 vCPU / 16 GB RAM.
-- **Hosting for end users is not available here** — deliverables are portable source + Node/Docker release for external hosting.
+Blueprint preserved as `docs/BLUEPRINT_AR.md`; BUILD_NEW (repo held only an unrelated `Dashboard.jsx`);
+logo stored unchanged; capability probe: Node 24.22.1, `node:sqlite` WAL persistence, scrypt, AES-GCM,
+`node --test`, npm, git push all working; Docker daemon startable but Docker Hub pulls 429 (image builds
+unverified); **no end-user hosting in this environment**.

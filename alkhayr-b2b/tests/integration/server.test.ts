@@ -31,6 +31,9 @@ function assertErrorEnvelope(res: { status: number; headers: Record<string, unkn
 }
 
 let app: TempApp;
+// Separate app root (own data directory) for tests that start additional servers:
+// only one server may use a data directory at a time (single-instance lock).
+let isolatedApp: TempApp;
 let server: RunningServer;
 let manifest: { files: Record<string, { file: string; type: string }> };
 
@@ -38,11 +41,13 @@ before(async () => {
   app = await createTempApp();
   manifest = JSON.parse(await readFile(path.join(app.distDir, 'web', '.static-manifest.json'), 'utf8'));
   server = await startServer(app);
+  isolatedApp = await createTempApp();
 });
 
 after(async () => {
   await server?.stop();
   await app?.cleanup();
+  await isolatedApp?.cleanup();
 });
 
 describe('real page and static assets', () => {
@@ -166,7 +171,16 @@ describe('filesystem exposure attempts are rejected', () => {
     '/dist/server/main.js',
     '/dist/server/main.js.map',
     '/data/alkhayr.db',
+    '/data/alkhayr.db-wal',
+    '/data/alkhayr.db-shm',
+    '/data/alkhayr.instance.lock',
     '/alkhayr.db',
+    '/alkhayr.db-wal',
+    '/alkhayr.db-shm',
+    '/assets/alkhayr.db',
+    '/backups/alkhayr.enc',
+    '/data/',
+    '/migrations/',
     '/.static-manifest.json',
     '/assets/.static-manifest.json',
     '/secret.txt',
@@ -234,7 +248,7 @@ describe('logging hygiene', () => {
 
 describe('timeouts and shutdown', () => {
   test('incomplete request headers are dropped after HTTP_HEADERS_TIMEOUT_MS', async () => {
-    const slow = await startServer(app, baseEnv({ HTTP_HEADERS_TIMEOUT_MS: '1000', HTTP_REQUEST_TIMEOUT_MS: '2000' }));
+    const slow = await startServer(isolatedApp, baseEnv({ HTTP_HEADERS_TIMEOUT_MS: '1000', HTTP_REQUEST_TIMEOUT_MS: '2000' }));
     try {
       const started = Date.now();
       const result = await new Promise<{ data: string; ms: number }>((resolve, reject) => {
@@ -253,7 +267,7 @@ describe('timeouts and shutdown', () => {
   });
 
   test('SIGTERM shuts down gracefully with exit code 0', async () => {
-    const s = await startServer(app);
+    const s = await startServer(isolatedApp);
     const ok = await rawRequest(s.port, { path: '/healthz' });
     assert.equal(ok.status, 200);
     const code = await s.stop('SIGTERM');
@@ -263,7 +277,7 @@ describe('timeouts and shutdown', () => {
   });
 
   test('SIGTERM waits for an in-flight keep-alive connection to finish', async () => {
-    const s = await startServer(app, baseEnv({ SHUTDOWN_GRACE_MS: '3000' }));
+    const s = await startServer(isolatedApp, baseEnv({ SHUTDOWN_GRACE_MS: '3000' }));
     const res = await rawRequest(s.port, { path: '/', headers: { Connection: 'keep-alive' } });
     assert.equal(res.status, 200);
     assert.equal(await s.stop('SIGTERM'), 0);
@@ -301,7 +315,7 @@ describe('production configuration fails closed', () => {
   test('valid production config starts, sends HSTS, and logs no secret', async () => {
     const appSecret = secret();
     const backupKey = secret();
-    const s = await startServer(app, baseEnv({ NODE_ENV: 'production', APP_ORIGIN: `https://${TEST_HOST}`, APP_SECRET: appSecret, BACKUP_KEY: backupKey }));
+    const s = await startServer(isolatedApp, baseEnv({ NODE_ENV: 'production', APP_ORIGIN: `https://${TEST_HOST}`, APP_SECRET: appSecret, BACKUP_KEY: backupKey }));
     try {
       const res = await rawRequest(s.port, { path: '/healthz' });
       assert.equal(res.status, 200);
