@@ -1,6 +1,6 @@
 # ALKHAYR B2B — Product Specification (Stage 00 contract)
 
-Status: **Contract established in stage 00. No feature code exists yet.**
+Status: **Contract established in stage 00; owner decisions applied in stage 01. Only the technical foundation (stage 01) is implemented.**
 Source of truth hierarchy: this file + DATABASE.md + API_CONTRACT.md + SECURITY.md override chat history.
 The original Arabic blueprint is preserved verbatim in `docs/BLUEPRINT_AR.md`. Where this file is
 more specific than the blueprint, the resolution is recorded in `DECISIONS.md`.
@@ -80,8 +80,13 @@ Hiding a button in React is not authorization; every endpoint checks independent
 - Prices, totals, tax and shipping are computed **only on the server**.
 - Limits: carton price 1 … 100,000,000 piasters (≤ 1,000,000 EGP); order total ≤ 10^13 piasters
   (well inside `Number.MAX_SAFE_INTEGER`); any overflow → `422 AMOUNT_LIMIT_EXCEEDED`.
-- Tax: `tax = round_half_up(subtotal × tax_bps / 10000)`; tax base = goods subtotal only (D-009).
-  `total = subtotal + tax + shipping`. `tax_bps` in 0…10000.
+- Tax (owner decision, D-009): `tax_base = subtotal + (shipping_taxable ? shipping : 0)`;
+  `tax = round_half_up(tax_base × tax_bps / 10000)` using BigInt; `total = subtotal + tax + shipping`.
+  `tax_bps` 0…10000. **Pilot defaults: `tax_bps = 0`, `shipping_cents = 0`, `shipping_taxable = false`
+  (tax base = goods subtotal only).** All three are configurable by an authorized administrator.
+  These are implementation defaults — **not** a declaration of legal tax treatment or exemption. The
+  business must confirm and configure the applicable treatment before production. Every order
+  snapshots `tax_bps`, `shipping_cents`, `shipping_taxable` and `tax_base_cents`.
 - Minimum order compares against the goods subtotal (before tax/shipping).
 - Display: Egyptian pound, Arabic-Indic or Western digits per UI decision in stage 10, always 2 decimals, label «ج.م».
 
@@ -134,10 +139,24 @@ order (200); same key + different content → `409 IDEMPOTENCY_KEY_REUSED`.
 No physical deletion of products, merchants or users that have orders or ledger rows; use
 `active=0` / `status='suspended'`. Ledger, order events and audit rows are append-only.
 
-### 5.8 Categories
-The catalog uses a controlled list of **four** initial categories. The blueprint references
-"the blueprint's four initial categories" but never names them — **open question Q-1** (see
-PROJECT_STATE.md). Blocking for stage 06 only.
+### 5.8 Categories (owner decision, stage 01)
+| id (stored) | Arabic label (UI) |
+|---|---|
+| `chocolate` | شيكولاتة |
+| `candy` | كاندي |
+| `wafers_biscuits` | ويفر وبسكويت |
+| `snacks_nuts` | سناكس ومكسرات |
+
+Defined once in `src/shared/categories.ts`; code and storage use the id, only the UI shows the label.
+These are the *initial* categories: no other module may hardcode labels. The stage-02 migration
+CHECK constraint must list exactly these ids (guarded by a test).
+
+### 5.10 Stock status (owner decision, stage 01)
+Based on **available** stock (`on_hand − reserved`), never on total:
+`available = 0` → out of stock (غير متوفر); `1 ≤ available ≤ threshold` → low stock (كمية محدودة);
+`available > threshold` → normal (متوفر). Default threshold **10 cartons**, configurable in business
+settings (`low_stock_threshold_cartons`). Implemented as `src/shared/stock-status.ts`. No automatic
+purchasing or replenishment features.
 
 ### 5.9 Demo data
 `products.is_demo` / `orders.is_demo`. Demo seeding is disabled in production. An order may not mix

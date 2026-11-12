@@ -1,0 +1,21 @@
+/* Provisional design tokens (stage 10 finalizes the design system).
+   Palette per D-011: cream surfaces, warm red primary, logo blue as accent. */
+:root {
+  --color-surface: #fbf6ee;
+  --color-surface-raised: #ffffff;
+  --color-border: #e8dccb;
+  --color-text: #2a211c;
+  --color-text-muted: #6b5d52;
+  --color-primary: #b3121b;
+  --color-primary-strong: #8e0e15;
+  --color-accent: #1f5fae;
+  --color-success: #2f6b3a;
+  --color-danger: #a1131a;
+  --radius-md: 12px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 16px;
+  --space-4: 24px;
+  --space-5: 40px;
+  --font-body: 'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', Arial, sans-serif;
+}

@@ -1,6 +1,6 @@
 # ALKHAYR — Database Contract
 
-Status: **Specified in stage 00; not yet implemented.** Stage 02 turns this into
+Status: **Specified in stage 00 (owner decisions applied in stage 01); not yet implemented.** Stage 02 turns this into
 `migrations/0001_initial.sql` and tests it. Any deviation must be recorded here and in DECISIONS.md.
 
 ## 1. Engine and connection policy
@@ -69,7 +69,7 @@ login transaction).
 | id | TEXT PK | UUID |
 | name | TEXT NOT NULL | 2–160 chars |
 | brand | TEXT NOT NULL | 1–80 chars |
-| category | TEXT NOT NULL | CHECK IN (four controlled codes — **Q-1**) |
+| category | TEXT NOT NULL | CHECK IN ('chocolate','candy','wafers_biscuits','snacks_nuts') — must equal `src/shared/categories.ts` |
 | barcode | TEXT NULL | digits/letters as text, leading zeros preserved, ≤ 32; partial UNIQUE index where `barcode IS NOT NULL AND barcode <> ''` |
 | image_url | TEXT NULL | `https://` only, no userinfo, ≤ 2048 |
 | price_cents | INTEGER NOT NULL | CHECK 1 … 100000000 (carton price) |
@@ -95,6 +95,8 @@ Indexes: barcode partial unique; `(active, category, name)`; `(brand)`.
 | state | TEXT NOT NULL | CHECK IN ('pending','confirmed','preparing','shipped','delivered','cancelled') |
 | subtotal_cents, tax_cents, shipping_cents, total_cents | INTEGER NOT NULL | ≥ 0; CHECK total = subtotal + tax + shipping |
 | tax_bps | INTEGER NOT NULL | 0 … 10000 (snapshot) |
+| shipping_taxable | INTEGER NOT NULL | 0/1 (snapshot) |
+| tax_base_cents | INTEGER NOT NULL | subtotal + (shipping_taxable ? shipping : 0) (snapshot) |
 | minimum_order_cents | INTEGER NOT NULL | snapshot |
 | buyer_business_name, buyer_contact_name, buyer_phone, buyer_governorate, buyer_address | TEXT NOT NULL | snapshot |
 | note | TEXT NULL | ≤ 500 chars |
@@ -157,10 +159,12 @@ Expired rows purged opportunistically (bounded batch of 500) and on a timer.
 
 ### business_settings (single row, id = 1)
 `id INTEGER PK CHECK(id=1), company_name, company_phone, company_email NULL, company_address,
-shipping_cents INTEGER CHECK 0…10000000, tax_bps INTEGER CHECK 0…10000,
-minimum_order_cents INTEGER CHECK 0…1000000000, version INTEGER, updated_at, updated_by NULL`.
-Created by migration with neutral placeholders that the operator must set (no statutory tax assumed;
-default `tax_bps=0`, `shipping_cents=0`, `minimum_order_cents=0`).
+shipping_cents INTEGER CHECK 0…10000000, shipping_taxable INTEGER CHECK IN (0,1),
+tax_bps INTEGER CHECK 0…10000, minimum_order_cents INTEGER CHECK 0…1000000000,
+low_stock_threshold_cartons INTEGER CHECK 0…100000, version INTEGER, updated_at, updated_by NULL`.
+Created by migration with the pilot defaults from `src/shared/constants.ts`: `tax_bps=0`,
+`shipping_cents=0`, `shipping_taxable=0`, `minimum_order_cents=0`, `low_stock_threshold_cartons=10`.
+These are implementation defaults, not legal tax treatment; the operator must confirm them.
 
 ### schema_migrations
 `version INTEGER PK, name TEXT, checksum TEXT (SHA-256 of file), applied_at INTEGER`.

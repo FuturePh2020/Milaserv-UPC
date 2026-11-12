@@ -84,6 +84,16 @@ SQLite itself is **not** encrypted at rest; disk encryption is a hosting respons
 - No claim of "zero vulnerabilities" without a dated scan; scans do not cover OS images unless run.
 
 ## 12. Verification status
-| Control | Implemented | Tested |
+| Control | Implemented | Tested (stage) |
 |---|---|---|
-| All of the above | ✘ (stage 00 = specification only) | ✘ |
+| Security headers / CSP without `unsafe-*` | ✅ | ✅ 01 integration + Chromium: no CSP violations |
+| No CORS | ✅ (no CORS headers emitted) | ✅ 01 |
+| Static allow-list, traversal/encoded-path rejection, no SPA fallback | ✅ | ✅ 01 (29 exposure attempts incl. canary `.env`, DB, source, package.json) |
+| Host header validation | ✅ | ✅ 01 |
+| Streaming JSON body limit / content type | ✅ (helper; no body-accepting route yet) | ✅ 01 unit |
+| Server timeouts (headers/request/keep-alive), max header size | ✅ | ✅ 01 (header timeout → 408 + close) |
+| Production config fails closed (https origin, secrets) | ✅ | ✅ 01 |
+| Secret-free logs (cookies/authorization/query excluded) | ✅ | ✅ 01 |
+| No server env in browser bundle | ✅ (build fails on `process.env` in web output) | ✅ 01 |
+| Passwords, TOTP, sessions, CSRF, rate limits, audit | ✘ | ✘ (stages 03–04) |
+| Dependency audit | — | `npm audit` 2026-11-12, registry.npmjs.org, 57 packages (5 prod / 53 dev / 46 optional): 0 findings. Point-in-time only; not a container/OS scan. |

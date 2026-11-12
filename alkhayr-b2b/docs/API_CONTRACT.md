@@ -1,6 +1,6 @@
 # ALKHAYR — HTTP API Contract (v1)
 
-Status: **Specified in stage 00; no endpoint implemented yet.** Each feature stage updates the
+Status: **Specified in stage 00. Implemented so far: `GET /healthz` (stage 01) and the error envelope, 404/405 handling, request-target and Host validation.** Each feature stage updates the
 "Implemented in" column only after its tests pass.
 
 ## 1. Conventions
@@ -17,7 +17,9 @@ Status: **Specified in stage 00; no endpoint implemented yet.** Each feature sta
 - Optimistic concurrency: mutable resources expose `version`; updates require `expectedVersion`.
 - Mutations (POST/PATCH/DELETE) require: `X-CSRF-Token` header, exact `Origin` == `APP_ORIGIN`,
   `Content-Type: application/json`.
-- Unknown `/api/*` path → 404 JSON (never the SPA index).
+- Unknown `/api/*` path → 404 JSON (never the SPA index). Unknown non-API paths → 404 JSON too:
+  there is no index.html fallback (hash routing). Static files: only entries in the build manifest.
+- Every request's `Host` header must equal the host of `APP_ORIGIN` (case-insensitive).
 
 ## 2. Error envelope
 ```json
@@ -26,12 +28,14 @@ Status: **Specified in stage 00; no endpoint implemented yet.** Each feature sta
 ```
 | HTTP | code(s) | meaning |
 |---|---|---|
-| 400 | `BAD_REQUEST`, `VALIDATION_FAILED`, `INVALID_JSON` | malformed or invalid input |
+| 400 | `BAD_REQUEST`, `VALIDATION_FAILED`, `INVALID_JSON`, `HOST_REJECTED` | malformed input, traversal/encoded-separator paths, absolute-form targets, Host ≠ APP_ORIGIN host |
 | 401 | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED` | no/invalid session or failed login (generic) |
 | 403 | `FORBIDDEN`, `CSRF_FAILED`, `ORIGIN_REJECTED`, `ACCOUNT_PENDING`, `ACCOUNT_SUSPENDED` | authenticated but not allowed |
 | 404 | `NOT_FOUND` | also used for resources the caller may not see (no existence leak) |
 | 409 | `VERSION_CONFLICT`, `ORDER_STATE_CONFLICT`, `INSUFFICIENT_STOCK`, `PRICE_CHANGED`, `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE` | concurrency/business conflict; body includes current state where safe |
-| 413 | `PAYLOAD_TOO_LARGE` | body limit exceeded while streaming |
+| 405 | `METHOD_NOT_ALLOWED` | known path, wrong method; `Allow` header set |
+| 413 | `PAYLOAD_TOO_LARGE` | body limit exceeded while streaming (`Connection: close`) |
+| 414 | `URI_TOO_LONG` | request target > 2048 bytes |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | |
 | 422 | `BUSINESS_RULE`, `MINIMUM_ORDER_NOT_MET`, `AMOUNT_LIMIT_EXCEEDED`, `MIXED_DEMO_ITEMS`, `CATALOG_LIMIT` | valid shape, violates rule |
 | 428 | `RECENT_AUTH_REQUIRED` | admin must re-enter password + TOTP (D-008) |
@@ -45,7 +49,7 @@ Auth column: V=visitor, P=pending trader, A=approved trader, D=admin; R = recent
 
 | Method & path | Auth | Purpose | Stage |
 |---|---|---|---|
-| GET `/healthz` | V | `{status:"ok"}` + DB reachability; no versions/paths | 01 |
+| GET `/healthz` | V | `{status:"ok"}` only; DB reachability added in stage 02; no versions/paths/uptime | **01 ✅** |
 | GET `/api/v1/auth/csrf` | V | session-bound token, or signed 10-min pre-login challenge | 04 |
 | POST `/api/v1/auth/register` | V | creates **pending trader only**; generic duplicate response | 04 |
 | POST `/api/v1/auth/login` | V | `{username,password,totp?}`; rotates session; sets `__Host-alkhayr_session` | 04 |
