@@ -1,6 +1,6 @@
 # ALKHAYR — Database Contract
 
-Status: **Implemented in stage 02; stage 03 needed no schema change (see §8)** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
+Status: **Implemented in stage 02; stages 03 and 04 needed no schema change (see §8–§9)** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
 `db:status` / `db:init` / `db:migrate`). The SQL file is the authoritative schema; this document
 explains it. Operator procedures: [`MIGRATION.md`](MIGRATION.md).
 
@@ -140,3 +140,12 @@ no migration was added and 0001 was not modified.
 | `auth_users.last_otp_step` | Last accepted TOTP time step. `setup-admin` stores the step proven during enrollment, so that code cannot be replayed at first login. Stage 04 advances it with `UPDATE … WHERE last_otp_step IS NULL OR last_otp_step < ?` |
 | `auth_users.password_changed_at` | Set at creation; used by stage 04 to invalidate sessions after password changes |
 | `audit_logs` (`admin.bootstrap`) | actor = new admin, target `user`/id, metadata `{"method":"cli","mfa":"totp"}` only |
+
+## 9. Use by authentication (stage 04; no migration required)
+| Table / column | Use |
+|---|---|
+| `sessions` | One row per signed-in browser: `token_hash` = SHA-256 of the cookie token; `auth_at` = last full credential check (recent-auth guard); `last_seen_at` touched at most once a minute by a conditional UPDATE; `password_changed_at` copied at login and compared on every request. Rows are deleted on logout, password change, expiry (on sight and by the 60-s sweeper) and when the 5-per-account cap evicts the oldest. |
+| `rate_limits` | `key` = HMAC-SHA256(rate-limit key, bucket + identifier) hex — never a raw IP/username; fixed windows; ≤ 100 000 live rows (then expired purge, then a shared overflow counter per bucket); expired rows swept every 60 s. |
+| `audit_logs` | Actions `auth.register`, `auth.register_duplicate`, `auth.login`, `auth.login_failed`, `auth.logout`, `auth.password_changed`, `auth.password_change_failed`; allow-listed metadata only; `ip_hmac` = HMAC(ip key, client IP). Same 365-day minimum retention (D-014). |
+| `auth_users.last_otp_step` | Advanced inside the login / password-change transaction with `WHERE last_otp_step IS NULL OR last_otp_step < ?`; zero affected rows = replay → rejected. |
+| `auth_users.password_changed_at` | Strictly increased on password change; sessions with an older copy are invalid. |

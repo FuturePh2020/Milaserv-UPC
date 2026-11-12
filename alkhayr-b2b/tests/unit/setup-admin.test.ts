@@ -149,7 +149,7 @@ describe('setup-admin: successful enrollment', () => {
     }
     // The password is never written to operator output.
     assert.ok(!r.prompter.output.join('\n').includes(PASSWORD));
-    assert.ok(r.prompter.output.some((l) => /Web login is NOT available yet/.test(l)), 'does not claim login works');
+    assert.ok(r.prompter.output.some((l) => /wait for the NEXT 30-second code/.test(l)), 'explains the replay baseline');
   });
 
   test('re-prompts for weak or mismatched passwords; a code from the next period is accepted (±1 window)', async () => {

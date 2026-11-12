@@ -75,8 +75,13 @@ export interface RunningServer {
 
 export const TEST_HOST = 'alkhayr.test';
 
+/** Disposable per-process fixture secrets (tests only; never used anywhere else). */
+export const FIXTURE_APP_SECRET = randomBytes(32).toString('base64url');
+export const FIXTURE_BACKUP_KEY = randomBytes(32).toString('base64url');
+
 export function baseEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   // Do not inherit the developer's environment (could contain real secrets).
+  // Pass APP_SECRET: '' (empty = unset) to test missing-secret behaviour.
   return {
     PATH: process.env.PATH ?? '',
     NODE_ENV: 'test',
@@ -84,6 +89,8 @@ export function baseEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
     PORT: '0',
     APP_ORIGIN: `http://${TEST_HOST}`,
     LOG_LEVEL: 'info',
+    APP_SECRET: FIXTURE_APP_SECRET,
+    BACKUP_KEY: FIXTURE_BACKUP_KEY,
     ...extra,
   };
 }

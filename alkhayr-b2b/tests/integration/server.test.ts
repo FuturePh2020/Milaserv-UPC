@@ -138,14 +138,22 @@ describe('unknown endpoints', () => {
     ['GET', '/api/v1/does-not-exist'],
     ['GET', '/api/v1'],
     ['GET', '/api'],
-    ['POST', '/api/v1/auth/login'],
+    ['POST', '/api/v1/orders'],
     ['DELETE', '/api/v1/products/1'],
     ['GET', '/api/v1/admin/backup'],
+    ['POST', '/api/v1/admin/restore'],
   ] as const) {
     test(`${method} ${p} -> JSON 404, never index.html`, async () => {
-      assertErrorEnvelope(await rawRequest(server.port, { method, path: p }), 404, 'NOT_FOUND');
+      // Mutations must come from the configured origin even to learn that a path does not exist.
+      const headers: Record<string, string> = method === 'GET' ? {} : { Origin: `http://${TEST_HOST}` };
+      assertErrorEnvelope(await rawRequest(server.port, { method, path: p, headers }), 404, 'NOT_FOUND');
     });
   }
+
+  test('an API mutation without the configured Origin is refused before routing', async () => {
+    assertErrorEnvelope(await rawRequest(server.port, { method: 'DELETE', path: '/api/v1/products/1' }), 403, 'ORIGIN_REJECTED');
+    assertErrorEnvelope(await rawRequest(server.port, { method: 'POST', path: '/api/v1/orders', headers: { Origin: 'https://evil.example' } }), 403, 'ORIGIN_REJECTED');
+  });
 
   for (const p of ['/catalog', '/index.html', '/admin', '/favicon.ico', '/assets/', '/assets/missing.js']) {
     test(`GET ${p} -> 404 (no SPA fallback)`, async () => {
@@ -290,6 +298,14 @@ describe('timeouts and shutdown', () => {
   });
 });
 
+describe('APP_SECRET is required to run the server in every mode (stage 04)', () => {
+  test('development/test without APP_SECRET -> exit 1 APP_SECRET_REQUIRED, no fallback key', async () => {
+    const r = await runUntilExit(app, baseEnv({ APP_SECRET: '', BACKUP_KEY: '' }));
+    assert.equal(r.code, 1);
+    assert.match(r.stderr, /"code":"APP_SECRET_REQUIRED"/);
+  });
+});
+
 describe('production configuration fails closed', () => {
   const secret = () => randomBytes(32).toString('base64url');
 
@@ -302,7 +318,7 @@ describe('production configuration fails closed', () => {
   });
 
   test('missing secrets in production -> exit 1', async () => {
-    const r = await runUntilExit(app, baseEnv({ NODE_ENV: 'production', APP_ORIGIN: 'https://portal.example.test' }));
+    const r = await runUntilExit(app, baseEnv({ NODE_ENV: 'production', APP_ORIGIN: 'https://portal.example.test', APP_SECRET: '', BACKUP_KEY: '' }));
     assert.equal(r.code, 1);
     assert.match(r.stderr, /APP_SECRET is required in production/);
     assert.match(r.stderr, /BACKUP_KEY is required in production/);

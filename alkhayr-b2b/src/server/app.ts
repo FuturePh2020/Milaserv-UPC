@@ -10,6 +10,12 @@ import { applySecurityHeaders } from './http/security-headers.ts';
 import type { StaticFiles } from './http/static-files.ts';
 import type { ReadinessProbe } from './database/readiness.ts';
 import { registerHealthRoutes } from './routes/health.ts';
+import { registerAuthRoutes } from './routes/auth.ts';
+import type { AppServices } from './context.ts';
+import { rateLimitIdentity, resolveClientIp, trustedProxySet } from './http/client-ip.ts';
+import { assertApiRequestBoundary } from './http/request-guards.ts';
+import { PasswordHasherBusyError } from './auth/passwords.ts';
+import { DatabaseBusyError } from './database/errors.ts';
 
 export interface AppState {
   shuttingDown: boolean;
@@ -26,12 +32,15 @@ const API_PREFIX = /^\/api(\/|$)/;
 export interface AppDependencies {
   readonly staticFiles: StaticFiles;
   readonly readiness: ReadinessProbe;
+  readonly services: AppServices;
 }
 
 export function createApp(config: AppConfig, log: Logger, deps: AppDependencies): App {
-  const { staticFiles } = deps;
+  const { staticFiles, services } = deps;
+  const trusted = trustedProxySet(config.trustProxy);
   const router = new Router();
   registerHealthRoutes(router, deps.readiness);
+  registerAuthRoutes(router);
   // Business routes under /api/v1 are registered by later stages.
 
   const state: AppState = { shuttingDown: false };
@@ -49,9 +58,16 @@ export function createApp(config: AppConfig, log: Logger, deps: AppDependencies)
     if (host !== config.expectedHost) throw new AppError('HOST_REJECTED');
 
     const method = req.method ?? 'GET';
+    const clientIp = resolveClientIp(req.socket.remoteAddress, req.headers['x-forwarded-for'], trusted);
+    if (API_PREFIX.test(pathname)) {
+      // Cross-site and foreign-origin requests are refused before any work is done.
+      assertApiRequestBoundary(req, config);
+      const limit = services.rateLimiter.consume('api_ip', rateLimitIdentity(clientIp));
+      if (!limit.allowed) throw new AppError('RATE_LIMITED', { headers: { 'Retry-After': String(limit.retryAfterSeconds) } });
+    }
     const match = router.match(method, pathname);
     if (match.kind === 'matched') {
-      await match.handler({ req, res, requestId, pathname, query, params: match.params, config, log });
+      await match.handler({ req, res, requestId, pathname, query, params: match.params, config, log, clientIp, services });
       return;
     }
     if (match.kind === 'method_not_allowed') throw methodNotAllowed(match.allow);
@@ -81,6 +97,9 @@ export function createApp(config: AppConfig, log: Logger, deps: AppDependencies)
     } catch (err) {
       if (isAppError(err)) {
         sendError(res, requestId, err.code, err);
+      } else if (err instanceof PasswordHasherBusyError || err instanceof DatabaseBusyError) {
+        log.warn('capacity_exceeded', { requestId, reason: err.name });
+        sendError(res, requestId, 'UNAVAILABLE', new AppError('UNAVAILABLE', { headers: { 'Retry-After': '5' } }));
       } else {
         log.error('unhandled_request_error', { requestId, error: err instanceof Error ? err : String(err) });
         sendError(res, requestId, 'INTERNAL');

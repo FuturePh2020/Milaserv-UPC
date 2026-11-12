@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AppConfig } from '../config.ts';
 import type { Logger } from '../logger.ts';
+import type { AppServices } from '../context.ts';
 import { AppError } from './errors.ts';
 
 export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
@@ -14,6 +15,9 @@ export interface RequestContext {
   readonly params: Readonly<Record<string, string>>;
   readonly config: AppConfig;
   readonly log: Logger;
+  /** Client address resolved per the TRUST_PROXY policy (http/client-ip.ts). */
+  readonly clientIp: string;
+  readonly services: AppServices;
 }
 
 export type Handler = (ctx: RequestContext) => void | Promise<void>;

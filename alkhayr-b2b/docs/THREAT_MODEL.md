@@ -19,14 +19,14 @@ third-party content rendered by the browser only (never fetched server-side).
 
 | # | Threat | Actor | Control | Stage |
 |---|---|---|---|---|
-| T1 | Credential stuffing / brute force on login | external | scrypt, per-account + per-IP rate limits, generic errors, admin TOTP | 03/04 |
+| T1 | Credential stuffing / brute force on login | external | scrypt; per-account (5/15 min) + per-IP (20/15 min) limits applied before hashing; one generic failure; admin TOTP | 03/04 ✅ |
 | T2 | Admin TOTP replay or race | external w/ observed code | `verifyTotp` returns the accepted step (03 ✅); enrollment step stored as baseline (03 ✅); atomic `last_otp_step` update at login (04) | 03/04 |
-| T3 | Self-registration as admin / mass assignment of role, status, prices | trader/visitor | strict schemas reject unknown fields; role only via CLI | 04/05 |
+| T3 | Self-registration as admin / mass assignment of role, status, prices | trader/visitor | strict schemas reject unknown fields (tested: role, status, ids, totp, hash); registration creates pending traders only; admin only via CLI | 04 ✅ (profile edits: 05) |
 | T4 | IDOR: trader reads another's orders/profile | approved trader | ownership in SQL WHERE, 404 for foreign IDs, signed cursors | 05/08 |
-| T5 | Pending/suspended trader sees prices or orders | trader | per-request status check; suspension revokes sessions | 05 |
-| T6 | CSRF / cross-site mutation | malicious site | SameSite=Strict, exact Origin, CSRF token, JSON-only | 04 |
-| T7 | Session theft/fixation | external | HttpOnly __Host cookie, rotation on login, idle/absolute expiry, hash-only storage | 04 |
-| T8 | Forged identity headers (ChatGPT/role headers) | external | headers ignored; identity only from session | 04 |
+| T5 | Pending/suspended trader sees prices or orders | trader | guards read live status per request (`requireApproved`); suspended accounts have no valid session | 04 ✅ guards (routes: 06–09) |
+| T6 | CSRF / cross-site mutation | malicious site | SameSite=Strict, exact Origin, Fetch Metadata, session-bound CSRF, pre-login CSRF, JSON-only | 04 ✅ |
+| T7 | Session theft/fixation | external | HttpOnly `__Host-` cookie, rotation destroying any presented session, duplicate-cookie rejection, idle/absolute expiry, hash-only storage, cap 5 | 04 ✅ |
+| T8 | Forged identity headers (ChatGPT/role headers) | external | headers ignored; identity only from session + live rows | 04 ✅ |
 | T9 | Price tampering in order request | trader | server-authoritative pricing; client prices only for stale detection | 08 |
 | T10 | Overselling via concurrent confirmations | admins concurrently | BEGIN IMMEDIATE, guarded UPDATE `available >= qty`, all-or-nothing | 09 |
 | T11 | Double order on retry/double click | trader/network | idempotency key + digest | 08 |
@@ -35,13 +35,13 @@ third-party content rendered by the browser only (never fetched server-side).
 | T14 | Stored XSS via product names, notes, addresses | admin/trader | React escaping, no `dangerouslySetInnerHTML`, strict CSP | 10–12 |
 | T15 | Malicious image URLs (javascript:, credentials, tracking) | admin | https-only validation, no userinfo, no-referrer, CSP img-src | 06 |
 | T16 | CSV formula injection in exports | trader-controlled text | prefix `'` for cells starting (after trim/BOM/control) with = + - @ ; quote escaping | 13 |
-| T17 | Oversized/abusive bodies, slowloris | external | streaming body limit, collection caps, server timeouts, proxy limits | 01/04 |
+| T17 | Oversized/abusive bodies, slowloris | external | streaming body limit (auth 8 KiB), server timeouts, general per-IP API limit; proxy limits (17) | 01/04 ✅ |
 | T18 | Static file traversal (.env, DB, source) | external | explicit asset allow-list; data dir outside web root | 01 |
-| T19 | Secrets leaked in logs/responses | bug | redaction, response schemas, tests scanning logs | 04/16 |
+| T19 | Secrets leaked in logs/responses | bug | redaction, explicit response shapes, tests scanning logs, audit rows and responses for passwords/hashes/tokens/codes | 04 ✅ (re-review 16) |
 | T20 | Backup theft / tampering | host compromise / storage provider | AES-256-GCM with independent key, authenticated header, no HTTP endpoint | 15 |
 | T21 | Restore reintroduces live sessions or mixes WAL | operator error | new target path only, sessions revoked, integrity checks | 15 |
 | T22 | Dependency compromise | supply chain | minimal deps, lockfile, audit, no runtime CDN | 01/16 |
-| T23 | Spoofed client IP to evade rate limits | external | XFF trusted only from configured proxy IPs | 04/17 |
+| T23 | Spoofed client IP to evade rate limits | external | XFF trusted only from configured proxy IPs, right-to-left; IPv6 /64 grouping | 04 ✅ (deployment wiring: 17) |
 | T24 | Direct access to Node port bypassing proxy | external | bind to 127.0.0.1 / internal network; compose exposes proxy only; Host check | 17 |
 | T25 | Running two app instances on one SQLite file / NFS corruption | operator | exclusive instance lock (OS-released), network-filesystem refusal, documented constraint | 02 ✅ |
 | T26 | Loss of only admin (lost TOTP device) | operator | CLI reset-mfa on trusted host (15); cannot suspend sole admin via UI (05); setup-admin refuses a second bootstrap (03 ✅) | 03/05/15 |
@@ -61,3 +61,9 @@ third-party content rendered by the browser only (never fetched server-side).
 | T33 | Wrong/rotated APP_SECRET silently disables or resets admin MFA | operator error | startup refuses (`MFA_KEY_MISMATCH`); nothing replaced | 03 ✅ |
 | T34 | Rogue or accidental admin creation (second bootstrap, trader promotion, web setup route) | operator / attacker | local TTY-only CLI with instance lock; refuses if an admin exists; never promotes; no HTTP route | 03 ✅ |
 | T35 | Password captured via shell history, process list or terminal echo | local observer | no CLI argument accepted; hidden raw-mode input; refused on non-TTY stdin | 03 ✅ (PTY-tested) |
+| T36 | Login oracle: distinguishing missing / wrong password / suspended / MFA-needed accounts | external | one `INVALID_CREDENTIALS` body for all; dummy scrypt for unknown users; TOTP sent with the login (no "MFA required" step); identical registration response for duplicates | 04 ✅ |
+| T37 | Hashing-queue exhaustion (CPU/RAM DoS through login) | external | rate limits before hashing; 2 running/32 queued cap; 503 + Retry-After | 04 ✅ |
+| T38 | Stale verification wins a race (reset/suspension/password change during login or password change) | concurrent actor | commit transaction re-reads hash, `password_changed_at`, status, session; conditional updates | 04 ✅ (gated-race tests) |
+| T39 | Concurrent TOTP replay | attacker with an observed code | `UPDATE … WHERE last_otp_step < step` must affect 1 row inside the session-creating transaction | 04 ✅ |
+| T40 | Targeted login lockout (availability) | external | accepted trade-off: 15-minute windows, no permanent lockout; monitoring of `rate_limited` events | 04 (documented) |
+| T41 | Rate-limit key spraying (many IPs/usernames) to grow storage | external | HMAC keys, 100 000-row cap with expired purge and shared overflow counter; periodic sweep | 04 ✅ |

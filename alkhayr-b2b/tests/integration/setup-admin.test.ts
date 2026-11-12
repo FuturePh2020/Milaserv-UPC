@@ -93,7 +93,7 @@ describe('setup-admin in a real pseudo-terminal', () => {
     assert.match(r.transcript, /Secret: ([A-Z2-7]{4} ){7}[A-Z2-7]{4}/);
     assert.match(r.transcript, /otpauth:\/\/totp\/ALKHAYR:pty\.admin\?secret=/);
     assert.match(r.transcript, /Do NOT paste it into online QR-code generators/);
-    assert.match(r.transcript, /Web login is NOT available yet/);
+    assert.match(r.transcript, /wait for the NEXT 30-second code/);
     const secretB32 = /Secret: ([A-Z2-7 ]+)\r?\n/.exec(r.transcript)![1]!.replace(/ /g, '');
 
     // Database holds only the hash and the encrypted secret.
@@ -111,8 +111,9 @@ describe('setup-admin in a real pseudo-terminal', () => {
         const res = await rawRequest(s.port, { path: p });
         assert.ok(!res.body.includes(PASSWORD) && !res.body.includes(secretB32), p);
       }
+      // Since stage 04 login exists, but never without the configured Origin, a pre-login CSRF token and a TOTP code.
       const login = await rawRequest(s.port, { method: 'POST', path: '/api/v1/auth/login', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'pty.admin', password: PASSWORD }) });
-      assert.equal(login.status, 404, 'login is not implemented before stage 04 and must not pretend to work');
+      assert.equal(login.status, 403);
       assert.equal(login.headers['set-cookie'], undefined);
     } finally {
       await s.stop();
@@ -133,7 +134,7 @@ describe('setup-admin in a real pseudo-terminal', () => {
     assert.equal(wrong.code, 1);
     assert.match(wrong.stderr, /"code":"MFA_KEY_MISMATCH"/);
     assert.match(wrong.stderr, /Restore the original APP_SECRET/);
-    const none = await runUntilExit(app, baseEnv());
+    const none = await runUntilExit(app, baseEnv({ APP_SECRET: '', BACKUP_KEY: '' }));
     assert.equal(none.code, 1);
     assert.match(none.stderr, /"code":"APP_SECRET_REQUIRED"/);
     assert.deepEqual(readFileSync(app.databasePath), before, 'database unchanged by refused startups');

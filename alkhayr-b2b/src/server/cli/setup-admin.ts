@@ -165,7 +165,8 @@ export async function setupAdmin(ctx: SetupAdminContext): Promise<number> {
         randomUUID(),
       );
       p.say(`\nAdministrator "${username}" created with MFA enrollment confirmed.`);
-      p.say('Web login is NOT available yet: it is implemented in stage 04. Start the server with `npm start`.');
+      p.say('Start the server and sign in with the username, password and a code from the authenticator app.');
+      p.say('The code used for enrollment cannot be used again: wait for the NEXT 30-second code before the first sign-in.');
       return 0;
     } catch (err) {
       if (err instanceof CancelledError) {

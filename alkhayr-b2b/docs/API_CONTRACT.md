@@ -1,22 +1,31 @@
 # ALKHAYR — HTTP API Contract (v1)
 
-Status: **Specified in stage 00. Implemented so far: `GET /healthz` (stage 01), `GET /readyz` (stage 02), the error envelope, 404/405 handling, request-target and Host validation. No business endpoint exists yet.** Each feature stage updates the
+Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, and the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04). No catalog/order/admin business endpoint exists yet.** Each feature stage updates the
 "Implemented in" column only after its tests pass.
 
 ## 1. Conventions
 - Business routes under `/api/v1`. JSON only (`Content-Type: application/json; charset=utf-8`),
   except CSV export.
 - Every response carries `X-Request-Id`; error bodies include it.
-- Never returned anywhere: password_hash, TOTP secret/ciphertext, session token, csrf secret,
-  APP_SECRET/BACKUP_KEY, raw IP.
+- Never returned anywhere: password_hash, TOTP secret/ciphertext, raw session token, keys,
+  APP_SECRET/BACKUP_KEY, raw IP. (CSRF tokens are returned by design; they are HMACs, not secrets of record.)
 - IDs are UUIDs. Money fields end in `Cents` and are integers (piasters).
 - Unknown JSON fields are **rejected** (`strict` schemas) — prevents mass assignment of
   `role`, `status`, `merchantId`, prices, totals.
 - Pagination: cursor-based. `?limit=` (1–100, default 25) and opaque `cursor` (base64url of
   `createdAt|id`, HMAC-signed and bound to the caller). Response: `{ items, nextCursor|null }`.
 - Optimistic concurrency: mutable resources expose `version`; updates require `expectedVersion`.
-- Mutations (POST/PATCH/DELETE) require: `X-CSRF-Token` header, exact `Origin` == `APP_ORIGIN`,
-  `Content-Type: application/json`.
+- **Request boundary for every `/api/*` request** (before routing): if `Sec-Fetch-Site` is sent it must be
+  `same-origin` (`none` also allowed for GET/HEAD) → else `403 ORIGIN_REJECTED`; the general per-IP limit
+  applies (`429`).
+- **Mutations (POST/PATCH/PUT/DELETE)** additionally require: `Origin` exactly equal to `APP_ORIGIN`
+  (missing → 403), `Content-Type: application/json` (415), a body within the route limit (413; auth routes
+  8 KiB), and `X-CSRF-Token`: the **pre-login token** for `/auth/login` and `/auth/register`, the
+  **session-bound token** for every authenticated mutation (`403 CSRF_FAILED`). Plain same-origin GETs need
+  no Origin. No CORS headers are ever sent.
+- Authentication is **only** the session cookie (`__Host-alkhayr_session` in production,
+  `alkhayr_session` in development/test). Headers such as `X-User-Role`, `X-Merchant-Id`, `Authorization`
+  or ChatGPT/OpenAI identity headers are ignored.
 - Unknown `/api/*` path → 404 JSON (never the SPA index). Unknown non-API paths → 404 JSON too:
   there is no index.html fallback (hash routing). Static files: only entries in the build manifest.
 - Every request's `Host` header must equal the host of `APP_ORIGIN` (case-insensitive).
@@ -29,19 +38,24 @@ Status: **Specified in stage 00. Implemented so far: `GET /healthz` (stage 01), 
 | HTTP | code(s) | meaning |
 |---|---|---|
 | 400 | `BAD_REQUEST`, `VALIDATION_FAILED`, `INVALID_JSON`, `HOST_REJECTED` | malformed input, traversal/encoded-separator paths, absolute-form targets, Host ≠ APP_ORIGIN host |
-| 401 | `UNAUTHENTICATED`, `INVALID_CREDENTIALS`, `SESSION_EXPIRED` | no/invalid session or failed login (generic) |
-| 403 | `FORBIDDEN`, `CSRF_FAILED`, `ORIGIN_REJECTED`, `ACCOUNT_PENDING`, `ACCOUNT_SUSPENDED` | authenticated but not allowed |
+| 401 | `UNAUTHENTICATED` | no valid session (missing, expired, idle, revoked, suspended account, password changed) — UI: go to login |
+| 401 | `INVALID_CREDENTIALS` | **every** login failure (unknown user, wrong password, wrong/missing/replayed TOTP, suspended, stale) — one identical body |
+| 403 | `FORBIDDEN` | signed in but wrong role |
+| 403 | `ACCOUNT_PENDING` | signed-in trader not yet approved |
+| 403 | `CSRF_FAILED` / `ORIGIN_REJECTED` | missing/invalid CSRF token / foreign Origin or cross-site Fetch Metadata — UI: reload CSRF token |
+| 403 | `REAUTH_FAILED` | password change: current password or administrator TOTP wrong |
 | 404 | `NOT_FOUND` | also used for resources the caller may not see (no existence leak) |
 | 409 | `VERSION_CONFLICT`, `ORDER_STATE_CONFLICT`, `INSUFFICIENT_STOCK`, `PRICE_CHANGED`, `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE` | concurrency/business conflict; body includes current state where safe |
+| 409 | `CREDENTIALS_CHANGED` | password change lost a race with another credential change — UI: sign in again |
 | 405 | `METHOD_NOT_ALLOWED` | known path, wrong method; `Allow` header set |
 | 413 | `PAYLOAD_TOO_LARGE` | body limit exceeded while streaming (`Connection: close`) |
 | 414 | `URI_TOO_LONG` | request target > 2048 bytes |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | |
 | 422 | `BUSINESS_RULE`, `MINIMUM_ORDER_NOT_MET`, `AMOUNT_LIMIT_EXCEEDED`, `MIXED_DEMO_ITEMS`, `CATALOG_LIMIT` | valid shape, violates rule |
-| 428 | `RECENT_AUTH_REQUIRED` | admin must re-enter password + TOTP (D-008) |
+| 428 | `RECENT_AUTH_REQUIRED` | administrator credentials older than 15 min for a privileged operation — UI: sign in again (`POST /auth/login` with password + fresh TOTP), then retry (D-008, D-052) |
 | 429 | `RATE_LIMITED` | includes `Retry-After` |
 | 500 | `INTERNAL` | no stack traces or SQL in body |
-| 503 | `UNAVAILABLE`, `NOT_READY` | shutting down / DB busy beyond timeout; `NOT_READY` from `/readyz` only (with `Retry-After: 5`) |
+| 503 | `UNAVAILABLE`, `NOT_READY` | shutting down / DB busy / password-hashing capacity exceeded (`Retry-After: 5`); `NOT_READY` from `/readyz` only |
 
 ## 3. Endpoints
 
@@ -51,13 +65,16 @@ Auth column: V=visitor, P=pending trader, A=approved trader, D=admin; R = recent
 |---|---|---|---|
 | GET `/healthz` | V | Liveness: `{status:"ok"}`; no database access; no versions/paths/uptime | **01 ✅** |
 | GET `/readyz` | V | Readiness: `200 {status:"ready"}` when the configured database file is open, unchanged (same inode), answers a query and is at the required schema version; otherwise `503 NOT_READY` error envelope. Reveals no path, SQL, version, configuration or data. | **02 ✅** |
-| GET `/api/v1/auth/csrf` | V | session-bound token, or signed 10-min pre-login challenge | 04 |
-| POST `/api/v1/auth/register` | V | creates **pending trader only**; generic duplicate response | 04 |
-| POST `/api/v1/auth/login` | V | `{username,password,totp?}`; rotates session; sets `__Host-alkhayr_session` | 04 |
-| POST `/api/v1/auth/logout` | P/A/D | revoke session; 200 only if revocation committed | 04 |
-| GET `/api/v1/auth/me` | P/A/D | `{user:{id,username,role}, merchant:{status,…}, session:{idleExpiresAt,recentAuthUntil}}` | 04 |
-| POST `/api/v1/auth/password` | P/A/D | current pw (+TOTP admin) + new pw; revokes **all** sessions | 04 |
-| POST `/api/v1/auth/reauth` | D | password + TOTP → refresh `auth_at` | 04 |
+| GET `/api/v1/auth/csrf` | V/P/A/D | `{authenticated, csrfToken: session token or null, preLoginToken, preLoginExpiresAt}`; sets the 10-min pre-session cookie if absent | **04 ✅** |
+| POST `/api/v1/auth/register` | V (pre-login token) | `{username, password, businessName, contactName, phone, governorate, address, email?}` (strict). **Always `202 {status:"received", message}`** for new and duplicate usernames; creates a pending trader + profile; no session, no messages sent. Limit 5/h/IP | **04 ✅** |
+| POST `/api/v1/auth/login` | V (pre-login token) | `{username, password, totp?}` (`totp` for administrators). 200 → `{user:{id,username,role}, merchant:{status}, session:{expiresAt, idleTimeoutMinutes}, csrfToken}` + new session cookie; any presented session is destroyed; pre-session cookie cleared. Failure → `401 INVALID_CREDENTIALS`. Limits 20/15 min/IP, 5/15 min/username | **04 ✅** |
+| POST `/api/v1/auth/logout` | session token if a valid session exists | Revokes the session, expires the cookie → `200 {loggedOut:true}`. If revocation cannot be committed → error (500/503), cookie kept, session still valid. Without a valid session: clears cookie, 200 | **04 ✅** |
+| GET `/api/v1/auth/me` | P/A/D | `{user, merchant:{id,status,businessName,contactName,email,phone,governorate,address,version}, session:{absoluteExpiresAt, idleExpiresAt, recentAuthUntil|null}, csrfToken}` | **04 ✅** |
+| POST `/api/v1/auth/password` | P/A/D (session token) | `{currentPassword, newPassword, totp?}` (fresh TOTP for administrators). 200 → `{passwordChanged:true, sessionsRevoked, reloginRequired:true}`; **all** sessions of the account revoked, cookie expired. Limit 5/15 min/account | **04 ✅** |
+
+There is no `/auth/reauth` endpoint: re-authentication is a normal login (D-052). There is no
+account-existence lookup, password-reset, MFA-reset or verification-email endpoint.
+
 | GET/PATCH `/api/v1/merchant/profile` | P/A/D | own profile only; PATCH needs expectedVersion | 05 |
 | GET `/api/v1/products` | A/D | catalog: `q, category, brand, sort∈{name,price_asc,price_desc,newest}`, cursor | 06 |
 | GET `/api/v1/products/:id` | A/D | active product detail (trader sees `available` only if > 0 policy — stage 06) | 06 |

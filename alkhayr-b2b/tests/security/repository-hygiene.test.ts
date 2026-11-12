@@ -64,7 +64,8 @@ test('no ChatGPT/OpenAI identity, preview framework or mock-auth code in the sou
     .filter((f) => /\.(ts|tsx|mjs|js|html)$/.test(f));
   assert.ok(files.length > 5);
   for (const f of files) {
-    const text = read(f);
+    // Scan code, not comments (comments may name what is refused, e.g. "ChatGPT identity headers are never consulted").
+    const text = read(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
     assert.ok(!/openai|chatgpt|x-openai|vinext|next\/|localStorage\.setItem\(['"](token|session)/i.test(text), f);
   }
 });

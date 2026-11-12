@@ -1,8 +1,8 @@
 # ALKHAYR — Security Policy (contract)
 
 Status: **Policy defined in stage 00; controls implemented so far are listed in §12 with the stage
-that tested them (stage 03: password hashing, TOTP, secret encryption, administrator bootstrap).**
-Login, sessions, CSRF and rate limits are stage 04 and are NOT implemented yet. Historical results from
+that tested them (03: password hashing, TOTP, secret encryption, administrator bootstrap; 04: login,
+registration, sessions, CSRF, request boundaries, rate limits, authorization guards).** Historical results from
 the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this codebase.
 
 ## 1. Prohibited in every build
@@ -53,8 +53,9 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Rejections: `MALFORMED` (layout/non-canonical encoding/too long), `UNSUPPORTED_VERSION`, `TRUNCATED`,
   `AUTH_FAILED` (wrong key/AAD/tampering). No partial plaintext is ever returned.
 - Configuration: production refuses to start with missing, placeholder, low-entropy, short or identical
-  secrets (stage 01). Outside production APP_SECRET may be absent, but every feature needing a key
-  (setup-admin, server start with administrators present) then fails closed. No fallback key is generated.
+  secrets (stage 01). Since stage 04 the **server requires APP_SECRET in every mode** (sessions, CSRF,
+  rate-limit keys and MFA depend on it); only the database CLI commands run without it. No fallback key
+  is ever generated.
 - **Key mismatch:** if an administrator's MFA secret cannot be decrypted with the configured APP_SECRET,
   the server refuses to start (`MFA_KEY_MISMATCH`, or `APP_SECRET_REQUIRED` if none is set) and tells the
   operator to restore the original key. It never replaces the secret, disables MFA or resets the account.
@@ -71,30 +72,62 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   Cancellation (Ctrl-C/Ctrl-D), failed proof, conflicts or errors save nothing.
 - Hidden input enters raw mode before the prompt is displayed (no echo; Ctrl-C handled, not a signal).
 
-## 5. Sessions & cookies
-- Token: 32 random bytes (base64url); DB stores SHA-256 only.
-- Cookie (production): `__Host-alkhayr_session`; `Secure; HttpOnly; SameSite=Strict; Path=/`; no Domain.
-  Development over plain http://localhost uses `alkhayr_session` without Secure (dev only, D-007).
-- Idle: admin 15 min, trader 30 min. Absolute: 8 h. Max 5 per user (oldest evicted).
-- Rotation on login; all sessions revoked on password change/reset, suspension, MFA reset, restore.
-- Admin mutations require `auth_at` within 15 min → else `428 RECENT_AUTH_REQUIRED`.
-- Session validity also requires `sessions.password_changed_at == auth_users.password_changed_at`
-  and merchant not suspended (checked on every request).
+## 5. Sessions & cookies (implemented stage 04: `src/server/auth/sessions.ts`, `cookies.ts`)
+- Token: 32 CSPRNG bytes (base64url, 256 bits), sent only in the cookie; the database stores only
+  SHA-256(token). Tokens never appear in JSON, URLs, logs or browser storage.
+- Cookie (production): `__Host-alkhayr_session`; `Path=/; HttpOnly; SameSite=Strict; Max-Age=28800; Secure`;
+  no Domain. Development/test over plain http use `alkhayr_session` without Secure (D-007).
+  A cookie name appearing twice in a request is treated as absent (anti cookie-tossing).
+- Validity is re-checked on **every** request against server time and current rows: absolute 8 h;
+  idle 15 min (admin) / 30 min (trader); `sessions.password_changed_at = auth_users.password_changed_at`;
+  merchant profile present and not suspended. Invalid sessions are deleted and the cookie expired.
+- Idle touch: `last_seen_at` is written at most once per minute (effective idle precision ≈ 1 min) by a
+  conditional UPDATE that re-checks expiry, so a session can never be revived.
+- Login rotates: a new token is always issued and any presented session (valid or not, any account)
+  is deleted. At most 5 sessions per account: the login transaction drops expired ones and keeps the
+  4 newest before inserting (serialized by BEGIN IMMEDIATE, so concurrent logins cannot exceed 5).
+- Password change revokes **all** sessions of the account (including the current one).
+  Suspension takes effect on the next request (session lookup refuses it; stage 05 also deletes rows).
+- Privileged administrator operations call `requireRecentAdminAuth`: credentials (password + TOTP)
+  verified within 15 min (`auth_at`), else `428 RECENT_AUTH_REQUIRED`; the remedy is a normal login.
 
-## 6. CSRF & origin
-- Session-bound token: HMAC(csrfKey, raw session token) — nothing CSRF-related is stored (D-030). Pre-login: signed challenge (10 min) bound
-  to a pre-session cookie, required for login/register.
-- Every mutation: exact `Origin` match with `APP_ORIGIN` (missing Origin → reject), CSRF header,
-  `application/json` content type. `Host` must equal the configured host.
+## 6. CSRF, origin and fetch metadata (implemented stage 04: `auth/csrf.ts`, `http/request-guards.ts`)
+- Session token `s1.` + HMAC-SHA256(csrfKey, "session\0" + raw session token): bound to one session,
+  different per session, nothing stored (D-030).
+- Pre-login token `p1.<expiry>.` + HMAC(csrfKey, "prelogin\0" + nonce + "\0" + expiry), bound to the random
+  10-minute pre-session cookie (`__Host-alkhayr_presession`), accepted only by login/registration,
+  never as a session token; it grants no authentication. Lifetime cannot be extended by the client.
+- Every `/api` request: `Sec-Fetch-Site`, when present, must be `same-origin` (or `none` for GET/HEAD).
+- Every mutation: `Origin` must equal `APP_ORIGIN` exactly (missing → refused); `application/json` only;
+  CSRF header as above. `Host` must equal the configured host for every request. No CORS.
 
-## 7. Request hardening
-- Body limit enforced while streaming (default 64 KiB, import 2 MiB) → 413.
-- Collection length checks before detailed validation (items ≤ 100, import rows ≤ 1000).
+## 7. Request hardening and abuse limits (implemented stage 04: `auth/rate-limit.ts`, `http/client-ip.ts`)
+- Body limit enforced while streaming (auth routes 8 KiB, default 64 KiB, import 2 MiB later) → 413.
 - Server timeouts: `headersTimeout` 15 s, `requestTimeout` 30 s, keep-alive 5 s; max header 16 KiB.
-- Rate limits (durable, SQLite): login 5/15 min per account + 20/15 min per IP; register 5/h per IP;
-  general API 300/min per session; CSV import 10/h per admin. Values configurable; trade-off: a
-  determined attacker can lock a username's login temporarily (documented availability trade-off).
-- `TRUST_PROXY` lists exact proxy IPs; X-Forwarded-For used only when the socket peer is one of them.
+- Order of work on login/registration: boundary → general limit → bounded body → strict schema → CSRF →
+  login/registration limits → only then scrypt (which has its own 2-running/32-queued cap → 503).
+- Durable fixed-window counters in `rate_limits`, keyed by HMAC(rate-limit key, bucket + identifier)
+  (no raw IP/username/password stored):
+
+  | Bucket | Limit | Identifier |
+  |---|---|---|
+  | `login_ip` | 20 / 15 min | client IP (IPv6: /64) |
+  | `login_account` | 5 / 15 min | normalized username (existing or not); reset on successful login |
+  | `register_ip` | 5 / hour | client IP |
+  | `password_account` | 5 / 15 min | account |
+  | `api_ip` | 300 / min | client IP, every `/api` request |
+
+  Denied attempts do not extend the window; `429` carries `Retry-After` (seconds to window end).
+- Bounded growth: at 100 000 live rows, expired rows are purged; if still full, new identities share
+  one restrictive overflow counter per bucket. A background sweep (every 60 s, 5 000 rows per pass)
+  removes expired counters and sessions.
+- **Availability trade-off:** anyone can exhaust a username's 5 attempts per 15 minutes and so delay
+  that user's login (no permanent lockout; nothing reveals whether the account exists). Per-IP limits
+  apply to all users behind one NAT/proxy address. Operators should watch `rate_limited` log events.
+- `TRUST_PROXY`: exact proxy IPs. `X-Forwarded-For` is honoured only when the TCP peer is one of them,
+  read right-to-left skipping trusted hops; malformed data → the peer address. Otherwise the socket
+  address is used, so direct clients cannot spoof their address. The app port must not be reachable
+  except through that proxy (stage 17).
 
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
@@ -109,7 +142,11 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Not-owned resources return 404.
 
 ## 10. Logging & audit
-- No passwords, tokens, cookies, CSRF values, TOTP codes, secrets or login bodies in logs.
+- No passwords, tokens, cookies, CSRF values, TOTP codes, secrets or login bodies in logs (tested).
+- Authentication audit actions (stage 04): `auth.register`, `auth.register_duplicate`, `auth.login`,
+  `auth.login_failed` (internal `reason`: unknown_user, bad_password, mfa_failed, suspended,
+  stale_credentials, otp_replay, …), `auth.logout`, `auth.password_changed`, `auth.password_change_failed`.
+  Reasons are stored for operators only and never returned to clients.
 - IP stored only as HMAC(ipKey, ip). Audit retention: at least 365 days — younger rows cannot be deleted (database trigger), older rows only by an explicit operator purge, never automatically (D-014). Rate-limit rows are disposable (≤ 30 days).
 - Audit metadata uses allow-listed keys per action.
 
@@ -142,5 +179,14 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | AES-256-GCM envelope, HKDF purpose keys, AAD binding | ✅ | ✅ 03 |
 | Startup refuses undecryptable admin MFA secrets | ✅ | ✅ 03 (unit + real server start) |
 | Local admin bootstrap, atomic, no plaintext at rest/in output | ✅ | ✅ 03 (in-process + real PTY) |
-| Login, sessions, CSRF, rate limits, MFA replay enforcement in DB | ✘ | ✘ (stage 04) |
+| Login/registration with generic failures; dummy verification for unknown users | ✅ | ✅ 04 (HTTP) |
+| Admin TOTP at login; atomic `last_otp_step` (concurrent replay: one success) | ✅ | ✅ 04 (HTTP, gated race) |
+| Credential/suspension re-check at commit (login and password change) | ✅ | ✅ 04 (HTTP, gated races) |
+| Sessions: hash-only, rotation, fixation, idle/absolute expiry, cap 5, no revival | ✅ | ✅ 04 |
+| `__Host-` Secure/HttpOnly/SameSite=Strict cookies (production) | ✅ | ✅ 04 (in-process + bundled process) |
+| CSRF session-bound + pre-login; Origin; Fetch Metadata; content type; body size | ✅ | ✅ 04 |
+| Durable bounded rate limits before hashing; proxy trust | ✅ | ✅ 04 (unit + HTTP) |
+| Authorization guards (session, approval, admin, recent auth, ownership) | ✅ | ✅ 04 (test-only routes) |
+| Logout/password change revoke sessions; honest failure reporting | ✅ | ✅ 04 |
+| APP_SECRET required to start the server in every mode | ✅ | ✅ 04 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

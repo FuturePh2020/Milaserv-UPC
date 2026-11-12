@@ -6,6 +6,11 @@ import { ConfigError, describeConfig, loadConfig } from './config.ts';
 import { createStaticFiles } from './http/static-files.ts';
 import { openRuntimeDatabase } from './database/runtime.ts';
 import { createLogger } from './logger.ts';
+import { deriveServerKeys } from './auth/keys.ts';
+import { PasswordHasher } from './auth/passwords.ts';
+import { RateLimiter } from './auth/rate-limit.ts';
+import { sweepExpiredSessions } from './auth/sessions.ts';
+import { writeTransaction } from './database/transaction.ts';
 
 const REQUIRED_NODE_MAJOR = 24;
 
@@ -36,10 +41,27 @@ function main(): void {
   }
 
   const log = createLogger(config.logLevel);
+  // Sessions, CSRF, rate limits and MFA all need APP_SECRET-derived keys: no fallback, in any mode.
+  const keys = deriveServerKeys(config.appSecret);
   const staticFiles = createStaticFiles(webRoot, log, { reloadOnChange: config.nodeEnv === 'development' });
   // Requires an existing, fully migrated database; never creates or migrates one.
   const database = openRuntimeDatabase(config, path.join(appRoot, 'migrations'));
-  const app = createApp(config, log, { staticFiles, readiness: database.readiness });
+  const now = () => Date.now();
+  const rateLimiter = new RateLimiter(database.db, keys.rateLimit, now);
+  const services = { db: database.db, now, hasher: new PasswordHasher(), keys, rateLimiter };
+  const app = createApp(config, log, { staticFiles, readiness: database.readiness, services });
+
+  // Bounded periodic cleanup of expired rate-limit counters and sessions.
+  const sweeper = setInterval(() => {
+    try {
+      const counters = rateLimiter.sweep();
+      const sessions = writeTransaction(database.db, () => sweepExpiredSessions(database.db, now()));
+      if (counters + sessions > 0) log.debug('sweep', { counters, sessions });
+    } catch (err) {
+      log.warn('sweep_failed', { error: err instanceof Error ? err : String(err) });
+    }
+  }, 60_000);
+  sweeper.unref();
 
   const server = createServer(
     {
@@ -62,6 +84,7 @@ function main(): void {
     if (shuttingDown) return;
     shuttingDown = true;
     app.state.shuttingDown = true;
+    clearInterval(sweeper);
     log.info('shutdown_started', { signal, graceMs: config.http.shutdownGraceMs });
     const force = setTimeout(() => {
       log.warn('shutdown_forced', { reason: 'grace period elapsed' });
