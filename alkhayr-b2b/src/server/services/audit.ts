@@ -18,6 +18,9 @@ const METADATA_ALLOW_LIST: Readonly<Record<string, readonly string[]>> = {
   /** Field NAMES only (comma-separated), never values. */
   'merchant.profile_updated': ['fields', 'version'],
   'merchant.status_changed': ['from', 'to', 'reason', 'sessions_revoked', 'version'],
+  'product.created': ['version', 'category', 'price_to', 'active_to', 'is_demo'],
+  /** Changed field NAMES; price and activation transitions explicitly; never the full body. */
+  'product.updated': ['fields', 'version', 'price_from', 'price_to', 'active_from', 'active_to'],
 };
 
 export type AuditAction = keyof typeof METADATA_ALLOW_LIST;

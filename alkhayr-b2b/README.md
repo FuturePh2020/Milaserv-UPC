@@ -2,10 +2,11 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 05 complete — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Stage 06 complete — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
-review/approval/suspension). No catalog, inventory, ordering or sign-in UI yet. See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+review/approval/suspension), product administration and the approved catalog. No inventory
+movements, ordering or UI screens yet. See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
 
 ## Quick start (Node.js 24.22.1 required)
 ```sh

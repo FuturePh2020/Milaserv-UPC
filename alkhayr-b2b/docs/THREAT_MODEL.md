@@ -30,10 +30,10 @@ third-party content rendered by the browser only (never fetched server-side).
 | T9 | Price tampering in order request | trader | server-authoritative pricing; client prices only for stale detection | 08 |
 | T10 | Overselling via concurrent confirmations | admins concurrently | BEGIN IMMEDIATE, guarded UPDATE `available >= qty`, all-or-nothing | 09 |
 | T11 | Double order on retry/double click | trader/network | idempotency key + digest | 08 |
-| T12 | Stale admin form overwrites stock/price | admin | expectedVersion, version bump on stock change | 06/07 |
-| T13 | SQL injection via search/sort | any | parameters + allow-lists | 06 |
+| T12 | Stale admin form overwrites stock/price | admin | expectedVersion pre-check + WHERE expectedVersion; version +1 on every update incl. stock (trigger) | 06 ✅ (stock writes: 07) |
+| T13 | SQL injection via search/sort | any | bound parameters, fixed sort/column maps, strict query parsing | 05/06 ✅ |
 | T14 | Stored XSS via product names, notes, addresses | admin/trader | React escaping, no `dangerouslySetInnerHTML`, strict CSP | 10–12 |
-| T15 | Malicious image URLs (javascript:, credentials, tracking) | admin | https-only validation, no userinfo, no-referrer, CSP img-src | 06 |
+| T15 | Malicious image URLs (javascript:, credentials, tracking) | admin | https-only, no userinfo (even empty), canonical storage, never fetched server-side, no-referrer, CSP img-src | 06 ✅ |
 | T16 | CSV formula injection in exports | trader-controlled text | prefix `'` for cells starting (after trim/BOM/control) with = + - @ ; quote escaping | 13 |
 | T17 | Oversized/abusive bodies, slowloris | external | streaming body limit (auth 8 KiB), server timeouts, general per-IP API limit; proxy limits (17) | 01/04 ✅ |
 | T18 | Static file traversal (.env, DB, source) | external | explicit asset allow-list; data dir outside web root | 01 |
@@ -72,3 +72,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | T44 | Suspension reported but sessions still valid (partial failure) | storage failure | state change, revocation and audit in one transaction; injected failures roll back all | 05 ✅ |
 | T45 | Privilege change through merchant controls (promote trader, demote/suspend admin) | admin error / attacker with admin session | strict schemas (no role field), `ADMIN_ACCOUNT_PROTECTED`, no role/password/MFA endpoints | 05 ✅ |
 | T46 | Data harvesting through admin search/pagination | trader / forged cursor | admin-only, strict params, escaped LIKE, HMAC cursors bound to admin/sort/filters, limit ≤ 100 | 05 ✅ |
+| T47 | Prices/catalog exposed to unapproved users or inactive items disclosed | visitor / pending trader | live approval guard, active-only queries, identical 404, no stock numbers to traders | 06 ✅ |
+| T48 | Catalog flooding beyond the 5000 cap | admin error / race | cap counted inside the serialized create transaction | 06 ✅ |
+| T49 | Stock changed through metadata endpoints (bypassing the ledger) | admin / attacker with admin session | strict schemas without stock fields; creation fixed at zero; stock only via stage-07 service | 06 ✅ |
+| T50 | Server-side request forgery through image URLs | admin | server never fetches URLs; no proxy or upload | 06 ✅ (by design) |

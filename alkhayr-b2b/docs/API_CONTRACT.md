@@ -1,6 +1,6 @@
 # ALKHAYR — HTTP API Contract (v1)
 
-Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04), and the merchant lifecycle endpoints `/api/v1/merchant/profile` and `/api/v1/admin/merchants…` (05). No catalog, inventory or order endpoint exists yet.** Each feature stage updates the
+Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04), the merchant lifecycle endpoints (05), and product administration plus the approved catalog (06). No inventory or order endpoint exists yet.** Each feature stage updates the
 "Implemented in" column only after its tests pass.
 
 ## 1. Conventions
@@ -58,7 +58,8 @@ Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /
 | 413 | `PAYLOAD_TOO_LARGE` | body limit exceeded while streaming (`Connection: close`) |
 | 414 | `URI_TOO_LONG` | request target > 2048 bytes |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | |
-| 422 | `BUSINESS_RULE`, `MINIMUM_ORDER_NOT_MET`, `AMOUNT_LIMIT_EXCEEDED`, `MIXED_DEMO_ITEMS`, `CATALOG_LIMIT` | valid shape, violates rule |
+| 422 | `BUSINESS_RULE`, `MINIMUM_ORDER_NOT_MET`, `AMOUNT_LIMIT_EXCEEDED`, `MIXED_DEMO_ITEMS`, `CATALOG_LIMIT` | valid shape, violates rule (`CATALOG_LIMIT`: 5000 products reached) |
+| 409 | `DUPLICATE` | unique value already used (e.g. product barcode); `details.fields[0].path` names the field |
 | 428 | `RECENT_AUTH_REQUIRED` | administrator credentials older than 15 min for a privileged operation — UI: sign in again (`POST /auth/login` with password + fresh TOTP), then retry (D-008, D-052) |
 | 429 | `RATE_LIMITED` | includes `Retry-After` |
 | 500 | `INTERNAL` | no stack traces or SQL in body |
@@ -84,8 +85,9 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 
 | GET `/api/v1/merchant/profile` | P/A/D | `{profile:{id,status,businessName,contactName,email,phone,governorate,address,version,updatedAt}}` of the session's own merchant. **No query parameters accepted** (400); no id in the path. | **05 ✅** |
 | PATCH `/api/v1/merchant/profile` | P/A/D (session token) | `{expectedVersion, businessName?, contactName?, email? (""/null clears), phone?, governorate?, address?}` (strict; at least one field). Same normalization as registration. Never changes status, role, credentials or access. 200 → `{profile}`; stale → `409 VERSION_CONFLICT` with `details.current.profile`. | **05 ✅** |
-| GET `/api/v1/products` | A/D | catalog: `q, category, brand, sort∈{name,price_asc,price_desc,newest}`, cursor | 06 |
-| GET `/api/v1/products/:id` | A/D | active product detail (trader sees `available` only if > 0 policy — stage 06) | 06 |
+| GET `/api/v1/products` | A/D (approved merchant or admin) | Active products only. Query (strict): `q` (1–80; literal substring of name/brand, or exact barcode), `category` (id from the database), `brand` (exact), `sort∈{name,newest,price_asc,price_desc}` (default name), `limit` 1–100 (25), `cursor`. → `{items:[CatalogProduct], nextCursor}` | **06 ✅** |
+| GET `/api/v1/products/:id` | A/D | `{product: CatalogProduct}`; inactive, unknown and malformed ids → identical 404 | **06 ✅** |
+| GET `/api/v1/catalog/filters` | A/D | `{categories:[{id,labelAr,productCount}], brands:[{name,productCount}]}` — categories from `product_categories` (active), counts and brands only from active products (≤ 500 brands) | **06 ✅** |
 | POST `/api/v1/orders` | A/D | `{requestKey, note?, items:[{productId,cartons,expectedUnitPriceCents?}]}` | 08 |
 | GET `/api/v1/orders` | A/D | own orders, cursor | 08 |
 | GET `/api/v1/orders/:id` | A/D | own order + items + events | 08 |
@@ -93,8 +95,10 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 | GET `/api/v1/admin/merchants` | D (live admin session; recency not required, D-063) | Query (strict, each at most once): `status∈{pending,approved,suspended}`, `q` (1–80 chars; literal match on business/contact name, username, email, phone), `sort∈{newest,oldest,name}` (default newest), `limit` 1–100 (default 25), `cursor`. → `{items:[{…profile, username, role, createdAt, statusChangedAt}], nextCursor}`. Keyset pagination on (sort key, id); cursor HMAC-bound to admin, sort and filters. | **05 ✅** |
 | GET `/api/v1/admin/merchants/:id` | D | `{merchant, statusHistory:[{from,to,reason,at,actor}]}` (last 20). Unknown/malformed id → 404. | **05 ✅** |
 | PATCH `/api/v1/admin/merchants/:id` | D R (session token) | `{status, expectedVersion, reason?}` (strict). Transitions in §4a. → `{merchant, sessionsRevoked}`. Approval creates no session and sends nothing. Administrator targets → `403 ADMIN_ACCOUNT_PROTECTED`. | **05 ✅** |
-| GET/POST `/api/v1/admin/products` | D, POST R | list incl. inactive/demo; create (optional opening stock → ledger) | 06 |
-| PATCH `/api/v1/admin/products/:id` | D R | metadata/price/active with expectedVersion; **no stock fields** | 06 |
+| GET `/api/v1/admin/products` | D | All products. Query as the catalog plus `active∈{true,false}`, `demo∈{true,false}`, `sort` also `oldest` (default newest). → `{items:[AdminProduct], nextCursor}` | **06 ✅** |
+| GET `/api/v1/admin/products/:id` | D | `{product: AdminProduct}` | **06 ✅** |
+| POST `/api/v1/admin/products` | D R (session token) | Strict: `{name, brand, category, barcode?, imageUrl?, cartonPriceCents, packSize, minimumCartons, isDemo?}`. Server sets id, `active=false`, `on_hand=reserved=0`, version 1, timestamps. → `201 {product}`. Errors: `DUPLICATE` (barcode), `CATALOG_LIMIT`, `VALIDATION_FAILED` (incl. unknown/inactive category, `isDemo` in production). Opening stock is a stage-07 inventory operation. | **06 ✅** |
+| PATCH `/api/v1/admin/products/:id` | D R (session token) | Strict: `{expectedVersion, name?, brand?, category?, barcode? (null clears), imageUrl? (null clears), cartonPriceCents?, packSize?, minimumCartons?, active?}`. **No stock, reservation, demo, id, version or timestamp fields.** Changed fields only; version +1; nothing changed → 200 with the same version. Stale → `409 VERSION_CONFLICT` with `details.current.product`. No DELETE exists (405). | **06 ✅** |
 | POST `/api/v1/admin/products/import` | D R | normalized rows, mode, operationKey, stockPolicy | 13 |
 | GET `/api/v1/admin/inventory` | D | on_hand/reserved/available, low-stock filter | 07 |
 | POST `/api/v1/admin/inventory/:id/adjustments` | D R | `{kind∈{receipt,correction,set_total}, quantity, reason, externalRef?, expectedVersion, operationKey}` | 07 |
@@ -109,6 +113,12 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 
 No database-maintenance (init/migrate/status), backup, restore, admin-creation, password-reset or MFA-reset HTTP endpoints exist; these are operator CLI commands (`dist/server/cli.js`). HTTP requests never create or alter schema (runtime connection authorizer, DATABASE.md §1).
 No legacy `action`-style endpoint (BUILD_NEW, no old client).
+
+## 3a. Product representations (stage 06)
+- **CatalogProduct** (traders): `{id, name, brand, category:{id,labelAr}, barcode, imageUrl, cartonPriceCents, packSize, minimumCartons, availability:{status: out_of_stock|low_stock|normal, labelAr}, isDemo}`. No physical/reserved/available numbers, versions, timestamps or audit data. Status = `available` (on_hand − reserved, computed) against `business_settings.low_stock_threshold_cartons`.
+- **AdminProduct**: CatalogProduct fields minus `availability`, plus `active`, `stock:{onHand, reserved, available}` (available computed), `version`, `createdAt`, `updatedAt`.
+- Money is the integer **carton** price in piasters (`cartonPriceCents`). Per-piece price is not returned: it is informational, computed by the UI for display only (`cartonPriceCents / packSize`); orders are always in whole cartons.
+- `barcode`: `null` = none; `""` invalid; exact text (case and leading zeros kept). `imageUrl`: `null` or an https URL without credentials, stored canonically; the server never fetches it.
 
 ## 4a. Merchant status transitions (PATCH /api/v1/admin/merchants/:id)
 | from \ to | pending | approved | suspended |

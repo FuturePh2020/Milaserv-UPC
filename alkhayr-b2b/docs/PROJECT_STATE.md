@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **05 — Merchant lifecycle, approval & profile ownership: COMPLETE** |
-| Next stage | **06 — Product management & approved catalog** (awaiting owner prompt) |
+| Current stage | **06 — Product management & approved catalog: COMPLETE** |
+| Next stage | **07 — Inventory, receipts, adjustments & ledger** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001 + **0002** (`merchants.access_version`) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication API, **merchant lifecycle API**. No catalog, inventory, orders or UI screens yet. |
+| Schema | Migrations 0001 + 0002 (no migration added in stage 06) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, **product administration and approved catalog**. No inventory movements, orders or UI screens yet. |
 
 ## Stage log
 
@@ -20,10 +20,134 @@
 | 02 | ✅ Done (database) | Commit `fa2fe06` |
 | 03 | ✅ Done (security primitives + setup-admin) | Commit `4894196` |
 | 04 | ✅ Done (authentication) | Commit `50ed3fa` |
-| 05 | ✅ Done (merchant lifecycle) | 321/321 tests ×3 clean-copy runs, typecheck clean, mutation checks, audit 0 — below |
-| 06–18 | ⏳ Not started | — |
+| 05 | ✅ Done (merchant lifecycle) | Commit `c2c5a31` |
+| 06 | ✅ Done (products + catalog) | 344/344 tests ×3 clean-copy runs, typecheck clean, mutation checks with safeguard attribution, audit 0 — below |
+| 07–18 | ⏳ Not started | — |
 
-## Stage 05 — clarifications requested
+## Stage 06 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| Admin endpoints | `src/server/services/products.ts`, `routes/admin-products.ts` | `GET/POST /api/v1/admin/products`, `GET/PATCH /api/v1/admin/products/:id`; no DELETE (405) |
+| Catalog | `services/products.ts`, `routes/products.ts` | `GET /api/v1/products`, `GET /api/v1/products/:id`, `GET /api/v1/catalog/filters` for approved merchants/admins |
+| Validation | `services/products.ts` | Strict create/update schemas; integers checked before SQLite; barcode null/exact/unique; DB category check; image URL policy; demo rules |
+| Inventory separation | `services/products.ts` | Create forces inactive + zero stock; no stock/reservation fields accepted; availability computed; trader sees status only |
+| Concurrency | `services/products.ts`, `services/merchants.ts` | Cap counted inside the serialized transaction; barcode pre-check + unique index; `expectedVersion` pre-check + `WHERE version = expectedVersion` (also applied to stage-05 merchant updates, D-077) |
+| Search | `src/server/http/search.ts` | Shared literal LIKE escaping (merchant search refactored to use it) |
+| Audit / errors | `services/audit.ts`, `shared/errors.ts` | `product.created`, `product.updated` (field names, version, price/activation transitions); `DUPLICATE`, `CATALOG_LIMIT` |
+
+### Defects found and fixed during this stage
+- `https://@host/…` image URLs were accepted (URL parser silently dropped an empty userinfo) → now refused (D-076).
+- Optimistic-concurrency WHERE clauses bound the just-read version instead of the client's `expectedVersion`, so they were not an independent second check (products and the stage-05 merchant updates) → fixed (D-077).
+
+## Checks run in stage 06 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Full suite (stages 01–06) | `npm test` | ✅ **344 tests, 80 suites, 344 pass, 0 fail** |
+| — products (HTTP) | `node --test tests/integration/products.test.ts` | ✅ 22 |
+| Regression tests adjusted | server (DELETE on a product path now 405 → asserted explicitly; 404 case moved to an inventory path), auth-security (stage-boundary list) | Intended behaviour of new routes only |
+| Clean reproduction ×3 | tracked files → `npm ci` → typecheck + `npm test` ×3 | ✅ 0 type errors; 344/344 each run |
+| Dependency audit | `npm audit` | ✅ 0 findings (57 packages); lockfile unchanged |
+| Migrations | `git diff` of `migrations/` | ✅ unchanged (none added) |
+| Browser QA | — | NOT RUN (no UI change) |
+| Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
+
+### Mutation evidence (accurate attribution)
+Single mutations against `tests/integration/products.test.ts` (13 real; 2 script placeholders not counted):
+
+| Mutation | Result | Detected by / blocked by |
+|---|---|---|
+| Catalog list includes inactive products | caught (1 fail) | visibility test |
+| Catalog detail ignores `active` | caught (2) | non-disclosure + deactivation tests |
+| Catalog returns admin record (stock numbers) | caught (1) | field allow-list test |
+| Catalog list without approval check | caught (1) | pending-access test |
+| No 5000 cap check | caught (1) | concurrent cap test |
+| No `expectedVersion` pre-check (before D-077) | caught (2) | stale-form/conflict tests — WHERE then bound the read version, so it did not block it |
+| Create schema not strict | caught (1) | mass-assignment test |
+| Create trusts start-of-request identity | caught (2) | slow-body logout / recency tests |
+| No category check on create | caught (1) | category test (FK would turn unknown ids into 500) |
+| No image URL validation | caught (1) | image policy test |
+| Demo allowed in production | caught (1) | production demo test |
+| No LIKE escaping | caught (1) | literal wildcard test |
+| **No barcode pre-check on create** | **survived** | **blocked by the independent database unique index `products_barcode_uq` + 409 mapping**; the pre-check itself was not detected |
+
+After D-077 (client version bound in WHERE):
+
+| Mutation | Result | Blocked by |
+|---|---|---|
+| Product: no `expectedVersion` pre-check | survived | independent `WHERE version = expectedVersion` guard |
+| Product: WHERE binds read version | survived | independent pre-check |
+| Merchant profile: no pre-check | survived | independent WHERE guard |
+| Merchant status: no pre-check | survived | independent WHERE guard |
+| Product: **both** layers removed | caught (2) | conflict/stale-form tests |
+| Merchant profile: **both** layers removed | caught (1) | stale-version test |
+| Barcode: pre-check **and** 409 mapping removed | caught (2) | duplicate/race tests (index still prevents the duplicate row; API answers 500) |
+
+### Required tests → evidence (real HTTP)
+| Requirement | Test |
+|---|---|
+| Anonymous/pending/suspended catalog access | 401/403/401 on list, detail and filters; no prices or names in pending responses |
+| Approved visibility, inactive non-disclosure | active only; field allow-list; identical 404 for inactive and unknown ids; inactive barcode not searchable |
+| Traders denied admin product operations | list, detail, create (with forged role header), patch → 403; anonymous → 401 |
+| Admin eligibility and recency | reads 200 after 16 min; create/patch 428; re-login → 200 |
+| Logout / recency lapse during parsing | slow-body create and patch after session deletion → 401; recency lapse mid-request → 428 |
+| Strict fields / mass assignment | 10 create and 8 update forbidden fields → 400, nothing written |
+| Integer cents, limits, coercion | numeric strings, fractions, booleans, null, 2^53, 1e400 (Infinity), bounds; stored typeof integer |
+| Barcode rules | null/omitted, `""`, leading space, number, 33 chars, `000123` vs `00123`, `ABC-1` vs `abc-1`, duplicates, update/clear |
+| Category references | unknown, wrong case, Arabic label, injection-like, inactive category |
+| Image URLs | http, javascript:, data:, credentials, empty userinfo, scheme-relative, ftp, spaces, backslash trick, file:, non-string; canonical storage |
+| Malicious names/search | script/SQL text stored and returned verbatim; injection search returns nothing; table intact |
+| Literal wildcards | `%`, `_`, `Choco_`, Latin case-insensitive, Arabic exact, exact barcode |
+| Filter/sort/cursor scope | 12 invalid params; brand/category filters; 4 sorts paginate to the full ordering; cursor bound to sort, filter, endpoint and user |
+| Concurrent duplicate barcode | [201, 409, 409] |
+| Concurrent creates at cap | 4998 + 3 concurrent → [201, 201, 422], total 5000 |
+| Conflicting edits | [200, 409] with current record; no-op keeps version |
+| Activation versions | price/activation audits with transitions; deactivation hides from catalog |
+| Atomic audit rollback | injected audit failure → 500, product unchanged, no product created |
+| Stock via metadata endpoints | rejected; creation starts at 0/0/0; test-only stock update makes admin forms stale (409) |
+| Demo/admin bypasses | demo refused in production, not convertible; no DELETE; no stock path |
+| Existing protections | full stage 01–05 suites pass |
+
+## Limitations (known)
+- **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
+- Inventory movements (opening stock, receipts, corrections) do not exist yet: every product has 0 stock and shows "غير متوفر" until stage 07.
+- Product images are hosted by the business; the server neither validates that the URL resolves nor stores images.
+- The 0001 column default `active = 1` remains; only the API's explicit `active = 0` makes new products inactive (any future insert path must do the same).
+- End-to-end proof that product edits leave order snapshots unchanged waits for stages 08–09.
+- Brand filter matches exact text; there is no brand normalization or merging.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 07.
+
+## Files changed in stage 06 (all under `alkhayr-b2b/`)
+New: `src/server/services/products.ts`, `src/server/routes/{products,admin-products}.ts`, `src/server/http/search.ts`,
+`tests/integration/products.test.ts`.
+Modified: `src/server/app.ts`, `src/server/services/{audit,merchants}.ts` (shared search helper; WHERE binds client version),
+`src/shared/errors.ts`, `tests/integration/{server,auth-security}.test.ts`, `README.md`,
+`docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,PROJECT_STATE}.md`.
+Not touched: migrations, dependencies/lockfile, web UI, repository-root files.
+
+## How to continue
+Next: send **PROMPT 07**. The inventory service must change `on_hand`/`reserved` only together with
+`version = version + 1` and an `inventory_ledger` row in the same transaction, bind the client's
+`expectedVersion`, use `revalidateAtCommit(ctx, auth, { admin: 'recent' })`, and keep products' stock
+untouched by the metadata endpoints.
+
+---
+
+## Stage 05 record (retained)
+
+> **Correction (stage 06):** the stage-05 text below calls the merchant profile's `WHERE version = ?`
+> an "independent layer". At that time it bound the version just read in the transaction, not the
+> client's `expectedVersion`, so it only guarded against changes between read and write; the stale-version
+> protection rested on the pre-check alone. The reported stage-05 mutation outcomes themselves were
+> correct. Since stage 06 (D-077) the WHERE clause binds the client's `expectedVersion` and is a genuine
+> second layer (verified by single and double mutations).
+
+### Clarifications requested
 | Topic | Answer | Where |
 |---|---|---|
 | `/auth/*` paths | Shorthand for the canonical `/api/v1/auth/*`. No unprefixed aliases exist or will be added; unprefixed paths are 404. | API_CONTRACT §1, D-061 |
@@ -31,7 +155,7 @@
 | Pseudonym keys | Keyed HMAC-SHA256 under HKDF(APP_SECRET) purpose keys (`rate_limit`, `ip`) since stage 04 — not enumerable plain hashes; no key transition needed. APP_SECRET rotation resets counters (documented). | SECURITY §7 |
 | Username-lockout availability risk | **Still open, not solved.** Carried to stage 16 and the release gate (stage 18). | SECURITY §7, THREAT_MODEL T40 |
 
-## Stage 05 — what was built
+### Stage 05 — what was built
 | Area | Files | Summary |
 |---|---|---|
 | Own profile | `src/server/services/merchants.ts`, `routes/merchant.ts` | `GET`/`PATCH /api/v1/merchant/profile`; session-only identity, no query params, strict editable fields, registration normalization, `expectedVersion` (409 with newer data), commit-time re-validation, audit with field names only |
@@ -42,7 +166,7 @@
 | Errors | `shared/errors.ts`, `http/errors.ts`, `http/response.ts` | `VERSION_CONFLICT`, `INVALID_STATE_TRANSITION`, `ADMIN_ACCOUNT_PROTECTED`; `details.current` |
 | Audit | `services/audit.ts` | `merchant.profile_updated` (field names, version), `merchant.status_changed` (from/to/reason/revoked/version) |
 
-## Checks run in stage 05 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 05 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -79,7 +203,7 @@
 | Rate limits survive restart | unit reopen; bundled process restart → 429 |
 | Existing protections | full stage 01–04 suites pass |
 
-## Limitations (known)
+### Limitations (known)
 - **Username-lockout availability risk is open** (SECURITY §7, T40) — for stage 16 and the release gate.
 - Administrator reads do not require recent authentication (D-063); only changes do.
 - No email/SMS notification of approval or suspension (none configured; nothing claims otherwise).
@@ -87,13 +211,7 @@
 - End-to-end proof that profile edits leave order snapshots unchanged waits for stages 08–09 (DB-level guarantee exists since 0001).
 - Existing pre-stage-05 databases must run `db:migrate` for 0002.
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 06.
-
-## Files changed in stage 05 (all under `alkhayr-b2b/`)
+### Files changed in stage 05 (all under `alkhayr-b2b/`)
 New: `migrations/0002_merchant_access_version.sql`, `src/server/services/merchants.ts`, `src/server/routes/{merchant,admin-merchants}.ts`,
 `src/server/http/{query,cursor}.ts`, `tests/integration/merchants.test.ts`.
 Modified: `src/server/{app.ts,auth/authorization.ts,http/errors.ts,http/response.ts,services/audit.ts,services/authentication.ts}`, `src/shared/errors.ts`,
@@ -101,13 +219,6 @@ Modified: `src/server/{app.ts,auth/authorization.ts,http/errors.ts,http/response
 `tests/unit/{auth-units,database-connection,database-migrations,database-schema,setup-admin}.test.ts`,
 `migrations/README.md`, `README.md`, `docs/{API_CONTRACT,DATABASE,DECISIONS,MIGRATION,SECURITY,THREAT_MODEL,PROJECT_STATE}.md`.
 Not touched: `migrations/0001_initial.sql`, dependencies/lockfile, web UI, repository-root files.
-
-## How to continue
-Next: send **PROMPT 06**. Reuse `requireApproved` for catalog reads, `requireRecentAdminAuth` + `revalidateAtCommit`
-for product mutations, `parseQuery` + `encodeCursor/decodeCursor` for lists, `VERSION_CONFLICT` with `details.current`,
-`LATEST_VERSION`/`nextMigrationFile` in tests, and append migrations (never edit 0001/0002).
-
----
 
 ## Stage 04 record (retained)
 

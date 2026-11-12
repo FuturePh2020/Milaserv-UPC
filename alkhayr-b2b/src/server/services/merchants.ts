@@ -6,6 +6,7 @@ import { writeTransaction } from '../database/transaction.ts';
 import { decodeCursor, encodeCursor } from '../http/cursor.ts';
 import { AppError } from '../http/errors.ts';
 import { parseQuery } from '../http/query.ts';
+import { likePattern } from '../http/search.ts';
 import { readJsonBody } from '../http/request-body.ts';
 import { sendJson } from '../http/response.ts';
 import type { RequestContext } from '../http/router.ts';
@@ -151,7 +152,7 @@ export async function patchOwnProfile(ctx: RequestContext): Promise<void> {
     // Status and access_version are deliberately absent: a profile edit never approves, unsuspends or promotes.
     const result = db
       .prepare(`UPDATE merchants SET ${assignments}, version = version + 1, updated_at = ? WHERE id = ? AND version = ?`)
-      .run(...values, Math.max(t, current.updated_at), current.id, current.version);
+      .run(...values, Math.max(t, current.updated_at), current.id, body.expectedVersion); // client's version: independent second check
     if (result.changes !== 1) throw new AppError('VERSION_CONFLICT', { current: { profile: ownProfile(current) } });
     writeAudit(db, {
       actorUserId: identity.userId,
@@ -193,9 +194,6 @@ const listQuerySchema = z.strictObject({
   cursor: z.string().max(2048).optional(),
 });
 
-function likePattern(text: string): string {
-  return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-}
 
 export function listMerchants(ctx: RequestContext): void {
   const auth = requireSession(ctx);
@@ -322,7 +320,7 @@ export async function changeMerchantStatus(ctx: RequestContext): Promise<void> {
     const t = Math.max(now(), target.updated_at);
     const updated = db
       .prepare('UPDATE merchants SET status = ?, access_version = access_version + 1, version = version + 1, status_changed_at = ?, updated_at = ? WHERE id = ? AND version = ?')
-      .run(body.status, t, t, target.id, target.version);
+      .run(body.status, t, t, target.id, body.expectedVersion); // client's version: independent second check
     if (updated.changes !== 1) throw new AppError('VERSION_CONFLICT', { current });
     const revoked = removesAccess(target.status, body.status) ? deleteUserSessions(db, target.user_id) : 0;
     writeAudit(db, {

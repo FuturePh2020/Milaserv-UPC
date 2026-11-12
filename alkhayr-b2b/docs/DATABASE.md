@@ -165,3 +165,24 @@ follows MIGRATION.md §2 (`db:migrate --confirm-backup`, server stopped). 0001 i
 Order snapshots: self-service profile edits update only `merchants`; orders keep their buyer snapshot
 (enforced by the `orders_snapshot_immutable` trigger since 0001). The end-to-end test with real orders
 is part of stages 08–09, when orders are created through the API.
+
+## 11. Use by product administration and the catalog (stage 06; no migration required)
+The 0001 `products` table already holds every field stage 06 needs; no migration was added and
+0001/0002 are unchanged.
+- **New products are inactive:** the column default is `active = 1` (0001, immutable), but the only
+  creation path (`POST /api/v1/admin/products`) always inserts `active = 0`, `on_hand = 0`,
+  `reserved = 0`, `version = 1`. Activation is an explicit, versioned, audited PATCH.
+- **Categories** are validated against `product_categories` (exists and `active = 1`) inside the write
+  transaction; the FK is the second line. There is no second category list in code for validation.
+- **Barcode:** absent = `NULL`; `''` rejected by the API (and by `products_barcode_format`); uniqueness
+  among non-NULL values via `products_barcode_uq` (exact text, BINARY collation → case-sensitive).
+- **Catalog cap (5000):** counted inside the `BEGIN IMMEDIATE` create transaction, so concurrent creates
+  cannot exceed it.
+- **Versions:** every UPDATE must advance `products.version` by exactly 1 (0001 trigger). This applies
+  to metadata, price and activation now, and to the stage 07–09 stock/reservation movements, so an
+  administrator form loaded before a stock movement is stale (tested with a test-only stock update).
+- **Available stock** is computed as `on_hand − reserved` in queries; it is never stored.
+- **Audit:** `product.created` (version, category, price_to, active_to, is_demo) and `product.updated`
+  (changed field names, version, price_from/price_to, active_from/active_to).
+- **Order snapshots:** product edits never touch `order_items` (0001 immutability triggers); the
+  end-to-end check with API-created orders is part of stages 08–09.

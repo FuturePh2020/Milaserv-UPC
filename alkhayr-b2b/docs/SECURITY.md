@@ -2,7 +2,7 @@
 
 Status: **Policy defined in stage 00; controls implemented so far are listed in §12 with the stage
 that tested them (03: password hashing, TOTP, secret encryption, administrator bootstrap; 04: login,
-registration, sessions, CSRF, request boundaries, rate limits, authorization guards; 05: merchant profile ownership, administrator review/approval, access versioning).** Historical results from
+registration, sessions, CSRF, request boundaries, rate limits, authorization guards; 05: merchant profile ownership, administrator review/approval, access versioning; 06: product administration and the approved catalog).** Historical results from
 the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this codebase.
 
 ## 1. Prohibited in every build
@@ -162,6 +162,32 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Audit: `merchant.profile_updated` stores changed field NAMES only; `merchant.status_changed` stores
   from/to, the administrator's reason, revoked-session count and version. No profile values or secrets.
 
+## 7b. Products and catalog (implemented stage 06)
+- Catalog reads (`/api/v1/products…`, `/api/v1/catalog/filters`) require a session whose merchant is
+  **approved** (checked live per request); pending → 403, suspended/anonymous → 401. Only active products
+  are returned; inactive and unknown ids give the identical 404. Traders never receive on_hand, reserved,
+  available numbers, versions, timestamps or audit data — only an availability status.
+- Product administration: reads need a live administrator session; create/update need recent
+  authentication (≤ 15 min) and the session CSRF token, all re-validated at commit (slow bodies tested).
+- Input types are validated by strict zod schemas **before** SQLite could coerce them: integers only
+  (no strings, booleans, fractions, NaN/±Infinity, unsafe integers), bounded lengths and ranges,
+  unknown fields rejected (stock, reservation, id, version, timestamps, demo on update).
+- Stock cannot be changed through product endpoints; creation starts at zero; stage 07 owns stock.
+- Optimistic concurrency uses two independent layers: an `expectedVersion` pre-check and an UPDATE
+  `WHERE version = <client expectedVersion>`; each alone blocks stale writes (mutation-tested). The same
+  binding was applied to the stage-05 merchant updates.
+- Barcode uniqueness: pre-check plus the database unique index (mapped to 409 `DUPLICATE`).
+- Image URLs: https only, no userinfo (`@` anywhere in the authority is refused), no whitespace or
+  backslashes, ≤ 2048 chars, stored canonically. **The server never fetches image URLs** (no proxy, no
+  download, no uploads). Images are hosted by the business; the UI must load them with
+  `referrerpolicy="no-referrer"` (the site-wide `Referrer-Policy: no-referrer` header already applies)
+  and show truthful placeholders when missing. CSP `img-src 'self' https: data:` limits schemes.
+- Demo products: only outside production, fixed at creation; never convertible to/from real.
+- No DELETE endpoints; products referenced by history are protected by `ON DELETE RESTRICT`.
+- Search and filters: bound parameters, fixed sort allow-list, literal LIKE (`%`, `_` escaped),
+  exact barcode/brand match, HMAC cursors bound to user, endpoint (catalog vs admin), sort and filters;
+  filter choices derived only from active products.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -228,5 +254,10 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Atomic status change + session revocation + audit (rollback on failure) | ✅ | ✅ 05 (injected failures) |
 | ABA protection (access_version) and commit-time re-validation | ✅ | ✅ 05 (gated races, slow bodies) |
 | Administrator accounts protected from merchant controls | ✅ | ✅ 05 |
+| Catalog visibility (approved only, active only, no stock numbers, non-disclosing 404) | ✅ | ✅ 06 (HTTP) |
+| Product mutation guards (admin, recency at commit, CSRF, strict types, no stock fields) | ✅ | ✅ 06 (HTTP, slow bodies) |
+| Barcode/null/uniqueness, category validation, image URL policy, demo rules | ✅ | ✅ 06 |
+| Catalog cap and duplicate barcode under concurrency | ✅ | ✅ 06 |
+| Two-layer optimistic concurrency (pre-check + WHERE expectedVersion) | ✅ | ✅ 06 (single and double mutations) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

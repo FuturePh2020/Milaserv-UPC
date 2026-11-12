@@ -139,7 +139,7 @@ describe('unknown endpoints', () => {
     ['GET', '/api/v1'],
     ['GET', '/api'],
     ['POST', '/api/v1/orders'],
-    ['DELETE', '/api/v1/products/1'],
+    ['DELETE', '/api/v1/admin/inventory/1'],
     ['GET', '/api/v1/admin/backup'],
     ['POST', '/api/v1/admin/restore'],
   ] as const) {
@@ -149,6 +149,14 @@ describe('unknown endpoints', () => {
       assertErrorEnvelope(await rawRequest(server.port, { method, path: p, headers }), 404, 'NOT_FOUND');
     });
   }
+
+  test('products have no DELETE: known paths answer 405 with Allow, never delete', async () => {
+    for (const p of ['/api/v1/products/2b0c2a8e-6e1e-4b55-9d0f-1f2a3b4c5d6e', '/api/v1/admin/products/2b0c2a8e-6e1e-4b55-9d0f-1f2a3b4c5d6e']) {
+      const res = await rawRequest(server.port, { method: 'DELETE', path: p, headers: { Origin: `http://${TEST_HOST}` } });
+      assertErrorEnvelope(res, 405, 'METHOD_NOT_ALLOWED');
+      assert.ok(!String(res.headers.allow).includes('DELETE'));
+    }
+  });
 
   test('an API mutation without the configured Origin is refused before routing', async () => {
     assertErrorEnvelope(await rawRequest(server.port, { method: 'DELETE', path: '/api/v1/products/1' }), 403, 'ORIGIN_REJECTED');
