@@ -165,7 +165,15 @@ export function sessionCsrf(token: string): SessionCsrfToken {
   return token as SessionCsrfToken;
 }
 
-/** Fresh UUID v4 for idempotency keys (one per intended action; reuse only for retries of it). */
+/**
+ * Fresh UUID v4 for idempotency keys (one per intended action; reuse only for retries of it).
+ * Built from crypto.getRandomValues (CSPRNG), which unlike crypto.randomUUID is also available
+ * outside secure contexts (e.g. a plain-HTTP intranet test host).
+ */
 export function newRequestKey(): string {
-  return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6]! & 0x0f) | 0x40; // version 4
+  b[8] = (b[8]! & 0x3f) | 0x80; // RFC 4122 variant
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }

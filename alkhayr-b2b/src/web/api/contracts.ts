@@ -223,3 +223,89 @@ export function isOrder(v: unknown): v is Order {
     Array.isArray(v.events)
   );
 }
+
+// ------------------------------------------------------------------ stage 11 contracts
+
+/** POST /auth/register — identical for new and duplicate usernames (no account discovery). */
+export interface RegisterResponse {
+  status: 'received';
+  message: string;
+}
+
+/** POST /auth/login */
+export interface LoginResponse {
+  user: { id: string; username: string; role: Role };
+  merchant: { status: MerchantStatus };
+  session: { expiresAt: number; idleTimeoutMinutes: number };
+  csrfToken: string;
+}
+
+/** POST /auth/password — every session of the account is revoked. */
+export interface PasswordChangeResponse {
+  passwordChanged: true;
+  sessionsRevoked: number;
+  reloginRequired: true;
+}
+
+/** GET/PATCH /merchant/profile */
+export interface OwnProfile {
+  id: string;
+  status: MerchantStatus;
+  businessName: string;
+  contactName: string;
+  email: string | null;
+  phone: string;
+  governorate: string;
+  address: string;
+  version: number;
+  updatedAt: number;
+}
+
+/** GET /catalog/filters */
+export interface CatalogFilters {
+  categories: Array<{ id: string; labelAr: string; productCount: number }>;
+  brands: Array<{ name: string; productCount: number }>;
+}
+
+/** POST /orders/quote — read-only preview; not a price lock or reservation. */
+export interface OrderQuote {
+  items: Array<{ lineNo: number; productId: string; name: string; brand: string; packSize: number; cartonPriceCents: number; cartons: number; lineTotalCents: number }>;
+  amounts: OrderAmounts;
+  minimumOrderMet: boolean;
+  isDemo: boolean;
+  quotedAt: number;
+}
+
+export function isRegisterResponse(v: unknown): v is RegisterResponse {
+  return isObject(v) && v.status === 'received' && isString(v.message);
+}
+export function isLoginResponse(v: unknown): v is LoginResponse {
+  return isObject(v) && isObject(v.user) && isString(v.user.id) && isObject(v.merchant) && isString(v.csrfToken);
+}
+export function isPasswordChangeResponse(v: unknown): v is PasswordChangeResponse {
+  return isObject(v) && v.passwordChanged === true && v.reloginRequired === true;
+}
+export function isOwnProfile(v: unknown): v is OwnProfile {
+  return isObject(v) && isString(v.id) && isString(v.businessName) && isString(v.contactName) && isString(v.phone) && isString(v.governorate) && isString(v.address) && isInt(v.version) && (v.email === null || isString(v.email));
+}
+export function isProfileResponse(v: unknown): v is { profile: OwnProfile } {
+  return isObject(v) && isOwnProfile(v.profile);
+}
+export function isCatalogFilters(v: unknown): v is CatalogFilters {
+  return (
+    isObject(v) &&
+    Array.isArray(v.categories) &&
+    v.categories.every((c) => isObject(c) && isString(c.id) && isString(c.labelAr)) &&
+    Array.isArray(v.brands) &&
+    v.brands.every((b) => isObject(b) && isString(b.name))
+  );
+}
+export function isProductResponse(v: unknown): v is { product: CatalogProduct } {
+  return isObject(v) && isCatalogProduct(v.product);
+}
+export function isOrderResponse(v: unknown): v is { order: Order; replayed?: boolean } {
+  return isObject(v) && isOrder(v.order);
+}
+export function isQuoteResponse(v: unknown): v is { quote: OrderQuote } {
+  return isObject(v) && isObject(v.quote) && Array.isArray(v.quote.items) && isObject(v.quote.amounts) && isInt(v.quote.amounts.totalCents) && typeof v.quote.minimumOrderMet === 'boolean';
+}

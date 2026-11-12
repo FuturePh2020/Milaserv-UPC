@@ -769,8 +769,9 @@
 
 /* ---------- Toasts ---------- */
 .c-toasts {
+  /* Top of the viewport, under the header: never over the bottom tab bar or cart/checkout actions. */
   position: fixed;
-  inset-block-end: calc(var(--space-4) + env(safe-area-inset-bottom));
+  inset-block-start: calc(var(--header-height) + var(--space-2));
   inset-inline: var(--space-4);
   z-index: 60;
   display: flex;
@@ -804,4 +805,83 @@
   color: #fff;
   inline-size: 2rem;
   block-size: 2rem;
+}
+
+/* ---------- Cart ---------- */
+.c-cart {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.c-cart-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+.c-cart-line__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+}
+.c-cart-line__name {
+  font-weight: 700;
+  color: var(--color-text);
+}
+.c-cart-line__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+}
+.c-cart-line__total {
+  display: flex;
+  flex-direction: column;
+  font-weight: 700;
+  min-inline-size: 8rem;
+}
+.c-cart-summary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.c-product-detail {
+  max-inline-size: 34rem;
+}
+.c-review-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  border-block-end: 1px solid var(--color-border);
+}
+.c-review-line:last-child {
+  border-block-end: 0;
+}
+.c-filter-more {
+  flex: 1 1 100%;
+}
+.c-filter-more > summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-block-size: var(--tap-target);
+  display: flex;
+  align-items: center;
+  color: var(--color-primary);
+}
+.c-filter-more__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding-block-start: var(--space-2);
 }

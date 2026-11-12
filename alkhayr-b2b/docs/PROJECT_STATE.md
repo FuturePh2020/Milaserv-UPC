@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **10 — Premium Arabic RTL design system & application shells: COMPLETE** |
-| Next stage | **11 — Complete merchant experience** (awaiting owner prompt) |
+| Current stage | **11 — Complete Arabic RTL merchant experience: COMPLETE** |
+| Next stage | **12 — Complete administration experience** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
 | Schema | Migrations 0001–0004 + **0005** (fulfillment, per-order reservations) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, **Arabic RTL design system, typed browser API client and application shells**. Business screens: stages 11–12. |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, **the complete merchant experience in the browser (register → approval → sign in → catalog → cart → quote → order → tracking → profile/password → sign out)**. Administration screens: stage 12. |
 
 ## Stage log
 
@@ -25,10 +25,135 @@
 | 07 | ✅ Done (inventory + ledger) | Commit `105f672` |
 | 08 | ✅ Done (order creation + own-order reads) | Commit `2849466` |
 | 09 | ✅ Done (fulfillment + allocations) | Commit `6b5f592` |
-| 10 | ✅ Done (design system + shells) | 442/442 tests ×3 clean-copy runs, 119/119 Chromium checks, 14 mutations, audit 0 — below |
-| 11–18 | ⏳ Not started | — |
+| 10 | ✅ Done (design system + shells) | Commit `e8a7ce8` |
+| 11 | ✅ Done (merchant experience) | 458/458 tests ×3 clean-copy runs, 87/87 end-to-end Chromium checks, axe 7 pages 0 violations, 19 mutants (21 runs) — below |
+| 12–18 | ⏳ Not started | — |
 
-## Stage 10 — what was built
+## Stage 11 — known weaknesses first
+- **Username-lockout availability risk is still open** (SECURITY §7, T40): anyone can lock a username's
+  sign-in for 15 minutes. Stage 16 / release gate.
+- **Stock inference** through repeated order or quote attempts (T57, T73) is slowed by per-merchant limits,
+  not eliminated.
+- **Stage-09 database consistency gaps** (event without state change; reserve row without allocation) remain
+  service-enforced only and are carried to stage 16; the UI neither hides nor repairs them.
+- Logging out discards a pending (unclear) order submission from this browser; its outcome must then be
+  checked in "طلباتي" (the server never creates a second order for the same key, but a new submission after
+  logout gets a new key).
+- No password reset or MFA recovery exists in the portal (documented on the sign-in page).
+- Products in an inactive category still appear in the trader catalog (stage-06 behaviour); ordering them is
+  refused by the server with `PRODUCT_UNAVAILABLE` and the UI explains it. No category administration
+  endpoint exists to deactivate categories yet.
+- Browser verification: Chromium only, plain HTTP test origin; axe-core automated rules only (no manual
+  screen-reader test).
+
+## Stage 11 — what works end to end (verified in Chromium against the production build)
+Register (generic response, no auto sign-in) → pending account (profile correction only; no catalog/order
+requests) → administrator approval through the real API → explicit status refresh → catalog (server
+categories/brands, search, sort, load more, stale-search protection, filters kept when returning from a
+product) → product detail → cart (exact subtotal, quantities, remove, confirmed clear) → checkout quote with
+the configured shipping (50.00) and tax (14%) → price change shown as a conflict and accepted explicitly →
+submission with a deliberately interrupted response → "outcome unknown" → page refresh keeps key + payload →
+cart edited meanwhile → retry sends the ORIGINAL payload with the same key → server replays the existing
+order (exactly one order) → order page with snapshot data → product renamed/repriced and profile changed →
+order unchanged → order list/filter → profile version conflict resolved by re-applying → second merchant on
+the same browser (draft of the first removed, foreign order 404) → session expiry and suspension remove the
+UI → logout (server revocation verified, draft cleared, back button shows nothing) → password change (all
+sessions ended, old password refused, new accepted) → administrator sign-in with the explicit OTP option
+(missing/wrong OTP and missing option all generic).
+
+## Stage 11 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| **Server (minimal addition)** | `src/server/services/orders.ts`, `routes/orders.ts`, `auth/rate-limit.ts` | `evaluateOrderLines` extracted unchanged from order creation (stage 08/09 tests pass unchanged); new read-only `POST /api/v1/orders/quote` (approved, CSRF/Origin/JSON, strict body, read transaction, no writes, `order_quote_account` 60/10 min) |
+| Endpoints and contracts | `src/web/api/{endpoints,contracts,client}.ts` | one function per real endpoint; guards for login, registration, password, profile, filters, product, order, quote; request keys from `getRandomValues` |
+| Identity | `session/identity.tsx` | `handleAuthFailure` (401 → expired; 403 ACCOUNT_PENDING/ACCESS_CHANGED → re-read), `signedOut`, bfcache re-check, drafts cleared on logout |
+| Auth screens | `pages/auth/{Login,Register,PasswordChange}.tsx` | generic failures, explicit administrator option with OTP, fresh pre-login token, exact credentials, password managers, error summary focus |
+| Catalog | `pages/catalog/*`, `hooks/{useLoad,usePaged}.ts` | filters from the server, search, sort, load more, stale-request protection, product detail, safe unavailable state |
+| Cart and drafts | `cart/{model,storage,CartContext}.ts(x)`, `pages/cart/CartPage.tsx` | reviewed price/pack kept as expected values; limits; exact subtotal; the only storage module (scoped, validated, 7-day expiry) |
+| Checkout | `pages/cart/Checkout.tsx`, `checkout/submission.ts` | quote review, conflict handling with explicit acceptance, one key per intended submission, unknown-outcome recovery with same-request retry, deliberate discard |
+| Orders | `pages/orders/Orders.tsx` | list with state filter and load more; snapshot detail, timeline (no admin names/reasons), reorder into a new cart from current products |
+| Profile | `pages/Account.tsx` | GET/PATCH own profile with expected version; conflict keeps unsaved values and shows the current record; status refresh |
+| App | `App.tsx`, `router.tsx`, `layouts/Shells.tsx` | routes per identity (pending / merchant / admin incl. own-company purchasing), UI keyed by user+merchant, internal-only navigation |
+| Components | `ErrorSummary.tsx`, `Form.tsx`, `QuantityStepper.tsx`, `Summary.tsx`, `Toast.tsx`, CSS | error summary, stable field ids, accessible label suffix, LTR-isolated rates, top-positioned toasts, cart/filter styles |
+
+## Checks run in stage 11 (2026-11-12 UTC, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Production build | `npm run build` | ✅ (via `npm test` and the clean copies) |
+| Full suite | `npm run check` | ✅ **458 tests, 115 suites, 458 pass, 0 fail** (+16: quote HTTP 4, cart/draft/submission 10, client 2) |
+| Clean reproduction ×3 | tracked + new files → `npm ci` → typecheck + `npm test` ×3 | ✅ 458/458 each run |
+| Dependency audit | `npm audit` | ✅ 0 vulnerabilities; package.json/lockfile and migrations unchanged |
+| **End-to-end browser journey** | Chromium (Playwright), production build, real server process, disposable database, real sessions | ✅ **87/87 checks** (flow above); widths 360, 375, 768, 1366 without page-wide horizontal scroll on catalog, order, orders, account, cart; bottom tab bar does not cover cart actions; skip link and focus checks; no CSP violations |
+| Automated accessibility | axe-core 4.10.2 (scratch install, not a project dependency), WCAG 2.0/2.1 A+AA rules | ✅ 0 violations on 7 states: registration with errors (375), catalog (375), cart (375), order detail (375), catalog (1366), account (1366), sign-in (1366). Automated rules only: they do not prove screen-reader usability |
+| Screen readers, other browsers, real HTTPS | — | NOT RUN |
+
+Test setup used outside the UI (disposable, test-only): the administrator row (equivalent to `setup-admin`),
+26 filler products via the ledger-compliant fixtures (for "load more"), and tax/shipping values in
+`business_settings` (the settings API is stage 14). Approval, products, stock, prices and suspensions went
+through the real administrator API. Each browser context used its own client address via `TRUST_PROXY`, so
+production rate limits applied unchanged.
+
+**Defects found by the browser journey and fixed:** `crypto.randomUUID` is unavailable outside secure contexts
+(submit silently failed on plain HTTP) → request keys from `getRandomValues` (+ unit test); the "outcome unknown"
+panel appeared while the request was still being sent → sending state shown instead; toasts covered cart actions
+on phones → moved to the top; catalog filters filled the first phone screen → collapsible; long product names
+repeated in cart labels → accessible-only suffix; «14%» rendered as «%14» → LTR isolation.
+
+Regression tests adjusted: the stage-10 "no browser storage anywhere" source/bundle tests now allow storage only in
+`src/web/cart/storage.ts` and additionally assert that module contains no token/password/code/buyer fields and that
+`sessionStorage` is never used (reconciliation with SPEC §7, D-115); the totals markup test expects the
+LTR-isolated rate. No protection removed.
+
+### Mutation evidence (19 mutants in 21 runs, each restored)
+| Mutation | Result | Caught by |
+|---|---|---|
+| S01–S04 quote without approval / without CSRF / without rate limit / non-strict body | caught | quote HTTP tests |
+| S05 shared evaluation drops the stock check | caught | order AND quote tests (shared code) |
+| S06 quote always reports the minimum met | caught | quote amounts test |
+| C01 same key for every submission / C02 lost response treated as definite failure | caught | submission unit tests |
+| C03 draft key not scoped / C04 no purge on switch / C05 stored lines not validated | caught | draft storage unit tests |
+| C06 expected price not the reviewed one | caught (second attempt) | first attempt was an **invalid, equivalent mutant** (`price + 0 … \|\| 1` equals the price); replaced by a constant price → caught |
+| C07 sign-in trims the password / C08 reuses a session token instead of a fresh pre-login token | caught | client request test |
+| C09 storage used outside the draft module | caught | source and bundle tests |
+| J01 logout keeps drafts | caught | browser journey |
+| J02 retry sends the current (edited) cart under the old key | caught | browser journey — **by another layer**: the server refused the changed payload (`IDEMPOTENCY_KEY_REUSED`), so no wrong order was created; the first run of this mutant **survived** because the journey did not yet edit the cart (scenario fixed) |
+| J03 stale-search check and loop abort removed | **survived** | **blocked by the independent effect-cleanup abort** (the old request is cancelled on query change) |
+| J04 all three stale-search layers removed | caught | browser journey (older results replaced newer ones) |
+
+## Limitations (known)
+See "known weaknesses" above. Additionally: no print/export (stage 14), no administration screens (stage 12),
+no trader cancellation (no such endpoint), Chromium-only verification.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 12.
+
+## Files changed in stage 11 (all under `alkhayr-b2b/`)
+Server: `src/server/services/orders.ts` (evaluation extracted + quote handler), `src/server/routes/orders.ts`,
+`src/server/auth/rate-limit.ts`.
+Web new: `src/web/api/endpoints.ts`, `src/web/cart/{model.ts,storage.ts,CartContext.tsx}`, `src/web/checkout/submission.ts`,
+`src/web/hooks/{useLoad,usePaged}.ts`, `src/web/components/ErrorSummary.tsx`, `src/web/pages/auth/{Login,Register,PasswordChange}.tsx`,
+`src/web/pages/catalog/{Catalog,ProductDetail}.tsx`, `src/web/pages/catalog/cartMessages.ts`, `src/web/pages/cart/{CartPage,Checkout}.tsx`,
+`src/web/pages/orders/Orders.tsx`.
+Web modified: `src/web/{App.tsx,router.tsx}`, `src/web/api/{client,contracts}.ts`, `src/web/session/identity.tsx`, `src/web/pages/Account.tsx`,
+`src/web/layouts/Shells.tsx`, `src/web/components/{Form,QuantityStepper,Summary,Toast}.tsx`, `src/web/styles/{components,layouts}.css`.
+Tests: new `tests/unit/web-cart.test.ts`; modified `tests/integration/{orders,web-build}.test.ts`, `tests/unit/{web-client,web-components}.test.ts`.
+Docs: `README.md`, `docs/{API_CONTRACT,FRONTEND_API,DESIGN_SYSTEM,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
+Not touched: migrations, package files, other server services.
+
+## How to continue
+Next: send **PROMPT 12** (administration screens) on the existing admin endpoints (merchants, products,
+inventory, orders/transitions), reusing these components, the `usePaged`/`useLoad` hooks, per-administrator
+operation keys and the 428 re-authentication flow (`#/login?admin=1&reason=reauth`).
+
+---
+
+## Stage 10 record (retained)
+
+### What was built
 | Area | Files | Summary |
 |---|---|---|
 | Tokens and styles | `src/web/styles/{tokens,fonts,base,components,layouts}.css` | owner palette with computed contrast; IBM Plex Sans Arabic (OFL 1.1) bundled locally; logical properties; visible offset focus ring; reduced-motion support |
@@ -45,7 +170,7 @@
 Design rules, contrast table and component catalogue: `docs/DESIGN_SYSTEM.md`; client rules: `docs/FRONTEND_API.md`.
 **No server code, migration, business rule, price calculation or stock logic changed** (`git diff src/server migrations src/shared` empty).
 
-## Checks run in stage 10 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 10 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check (server, tests, web) | `npm run typecheck` | ✅ 0 errors (includes the compile-time CSRF-type separation assertions) |
@@ -88,7 +213,7 @@ wrap added); logout arrow not mirrored in the drawer button (directional icons m
 tables squeezed columns on phones instead of scrolling (minimum table width + `wide` columns);
 product placeholder too tall on phones; sticky gallery banner hid the shell header in previews.
 
-### Mutation evidence (14 scripted edits, each restored)
+#### Mutation evidence (14 scripted edits, each restored)
 | Mutation | Result | Caught by |
 |---|---|---|
 | W01 production entry imports the gallery | caught | bundle test (gallery/fixture strings in production) |
@@ -103,7 +228,7 @@ product placeholder too tall on phones; sticky gallery banner hid the shell head
 | W14 trader timeline shows an actor | caught | timeline test |
 Interaction behaviours (focus trap, Escape, drawer) are covered by the Chromium checks, not by mutants.
 
-## Limitations (known)
+### Limitations at the end of stage 10
 - **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
 - Stage 09 database/service boundary limitations stay as recorded (DATABASE.md §14) for stage 16; the UI does not repair or hide them.
 - Sign-in, registration and all business screens are not built yet (stages 11–12); in stage 10 accounts sign in through the API only.
@@ -111,13 +236,7 @@ Interaction behaviours (focus trap, Escape, drawer) are covered by the Chromium 
 - Product photos depend on administrator-supplied https URLs; none exist yet (placeholder shown).
 - Logo derivative is a PNG (76 KB); an SVG or smaller WebP derivative could be produced later from the original.
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 11.
-
-## Files changed in stage 10 (all under `alkhayr-b2b/`)
+### Files changed in stage 10 (all under `alkhayr-b2b/`)
 New: `src/web/{format.ts,labels.ts,main.dev.tsx}`, `src/web/components/*` (14 files), `src/web/layouts/{Shells,States}.tsx`,
 `src/web/pages/Account.tsx`, `src/web/session/identity.tsx`, `src/web/gallery/{Gallery.tsx,fixtures.ts,types.ts,gallery.css}`,
 `src/web/styles/{fonts,base,components,layouts}.css`, `licenses/IBM-Plex-Sans-Arabic-OFL-1.1.txt`, `docs/{DESIGN_SYSTEM,FRONTEND_API}.md`,
@@ -125,11 +244,6 @@ New: `src/web/{format.ts,labels.ts,main.dev.tsx}`, `src/web/components/*` (14 fi
 Modified: `scripts/build.mjs`, `src/web/{App.tsx,main.tsx,router.tsx}`, `src/web/api/{client,contracts}.ts`, `src/web/styles/tokens.css`,
 `package.json`, `package-lock.json`, `README.md`, `docs/{SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
 Deleted: `src/web/styles/globals.css` (replaced). Not touched: server code, migrations, shared business rules.
-
-## How to continue
-Next: send **PROMPT 11**. Build sign-in (with the pre-login CSRF token and admin TOTP field), registration,
-catalog, cart and order screens on these components and `apiPreLogin`/`apiGet`/`apiMutate`; keep one
-request key per intended order; show 409 conflicts with current terms; never display stock counts to traders.
 
 ---
 

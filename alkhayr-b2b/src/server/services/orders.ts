@@ -2,7 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { requireApproved, requireSession, requireSessionCsrf, revalidateAtCommit, type AuthenticatedRequest } from '../auth/authorization.ts';
 import { hmacHex } from '../auth/keys.ts';
-import { writeTransaction } from '../database/transaction.ts';
+import { readTransaction, writeTransaction } from '../database/transaction.ts';
 import { decodeCursor, encodeCursor } from '../http/cursor.ts';
 import { AppError } from '../http/errors.ts';
 import { parseQuery } from '../http/query.ts';
@@ -76,6 +76,7 @@ export const createOrderSchema = z.strictObject({
     }),
 });
 export type CreateOrderRequest = z.infer<typeof createOrderSchema>;
+export type OrderLineInput = z.infer<typeof lineSchema>;
 
 /**
  * Canonical request digest. Lines are sorted by productId (line order is presentation only),
@@ -270,6 +271,84 @@ function requireEligible(auth: AuthenticatedRequest): void {
   requireApproved(auth);
 }
 
+/**
+ * Authoritative evaluation of proposed order lines (shared by order creation and the read-only
+ * quote, so the rules exist once): availability of each product and its category, demo rules,
+ * stale price/packaging, minimum quantities, available stock (status only, never counts),
+ * settings and exact amounts with limits. Throws the same AppErrors for both callers.
+ * Must run inside a transaction so all reads see one consistent snapshot.
+ */
+export function evaluateOrderLines(ctx: RequestContext, items: ReadonlyArray<OrderLineInput>) {
+  const { db } = ctx.services;
+  // 3. Authoritative product state (one lookup per line, at most 100).
+  const select = db.prepare(
+    `SELECT p.id, p.name, p.brand, p.barcode, p.price_cents, p.pack_size, p.minimum_cartons, p.on_hand, p.reserved, p.active, p.is_demo,
+            c.active AS category_active
+       FROM products p JOIN product_categories c ON c.id = p.category WHERE p.id = ?`,
+  );
+  const lines = items.map((item, index) => ({ item, index, product: select.get(item.productId) as unknown as CandidateRow | undefined }));
+  const path = (index: number, field: string) => `items.${index}.${field}`;
+
+  // 3a. Missing, inactive, or in an inactive category: indistinguishable (no existence disclosure).
+  const unavailable = lines.filter((l) => !l.product || l.product.active !== 1 || l.product.category_active !== 1);
+  if (unavailable.length) {
+    throw new AppError('PRODUCT_UNAVAILABLE', {
+      fields: unavailable.map((l) => ({ path: path(l.index, 'productId'), message: 'المنتج غير متاح للطلب حاليًا.' })),
+      current: { items: unavailable.map((l) => ({ productId: l.item.productId })) },
+    });
+  }
+  const resolved = lines.map((l) => ({ ...l, product: l.product as CandidateRow }));
+
+  // 3b. Demo classification is derived from the products only.
+  const demoCount = resolved.filter((l) => l.product.is_demo === 1).length;
+  if (demoCount > 0 && ctx.config.isProduction) throw new AppError('DEMO_NOT_ALLOWED');
+  if (demoCount > 0 && demoCount < resolved.length) throw new AppError('MIXED_DEMO_ITEMS');
+  const isDemo = demoCount > 0;
+
+  // 3c. Stale price / packaging: the trader must review the current terms (they may see them).
+  const stale = resolved.filter((l) => l.product.price_cents !== l.item.expectedCartonPriceCents || l.product.pack_size !== l.item.expectedPackSize);
+  if (stale.length) {
+    const priceChanged = stale.some((l) => l.product.price_cents !== l.item.expectedCartonPriceCents);
+    throw new AppError(priceChanged ? 'PRICE_CHANGED' : 'PACKAGING_CHANGED', {
+      current: { items: stale.map((l) => ({ productId: l.product.id, cartonPriceCents: l.product.price_cents, packSize: l.product.pack_size })) },
+    });
+  }
+
+  // 3d. Minimum quantity per product.
+  const belowMinimum = resolved.filter((l) => l.item.cartons < l.product.minimum_cartons);
+  if (belowMinimum.length) {
+    throw new AppError('MINIMUM_QUANTITY_NOT_MET', {
+      fields: belowMinimum.map((l) => ({ path: path(l.index, 'cartons'), message: `الحد الأدنى لهذا المنتج ${l.product.minimum_cartons} كرتونة.` })),
+      current: { items: belowMinimum.map((l) => ({ productId: l.product.id, minimumCartons: l.product.minimum_cartons })) },
+    });
+  }
+
+  // 3e. Availability at creation (not a reservation). Only the status is disclosed, never counts.
+  const threshold = lowStockThreshold(ctx);
+  const short = resolved.filter((l) => l.product.on_hand - l.product.reserved < l.item.cartons);
+  if (short.length) {
+    throw new AppError('INSUFFICIENT_STOCK', {
+      fields: short.map((l) => ({ path: path(l.index, 'cartons'), message: 'الكمية المطلوبة غير متاحة حاليًا لهذا المنتج.' })),
+      current: {
+        items: short.map((l) => {
+          const status = stockStatus(l.product.on_hand - l.product.reserved, threshold);
+          return { productId: l.product.id, availability: { status, labelAr: STOCK_STATUS_LABEL_AR[status] } };
+        }),
+      },
+    });
+  }
+
+  // 4. Settings and amounts (exact integer arithmetic; limits are rejected, never clamped).
+  const settings = db.prepare('SELECT shipping_cents, shipping_taxable, tax_bps, minimum_order_cents FROM business_settings WHERE id = 1').get() as unknown as Settings;
+  const amounts = computeAmounts(
+    resolved.map((l) => ({ price: l.product.price_cents, cartons: l.item.cartons })),
+    settings,
+  );
+  const max = BigInt(LIMITS.maxOrderTotalCents);
+  if (amounts.subtotal > max || amounts.total > max) throw new AppError('AMOUNT_LIMIT_EXCEEDED');
+  return { resolved, isDemo, settings, amounts };
+}
+
 export async function createOrder(ctx: RequestContext): Promise<void> {
   const auth = requireSession(ctx);
   requireSessionCsrf(ctx, auth);
@@ -306,72 +385,7 @@ export async function createOrder(ctx: RequestContext): Promise<void> {
       return { replayed: true as const, orderId: previous.id };
     }
 
-    // 3. Authoritative product state (one lookup per line, at most 100).
-    const select = db.prepare(
-      `SELECT p.id, p.name, p.brand, p.barcode, p.price_cents, p.pack_size, p.minimum_cartons, p.on_hand, p.reserved, p.active, p.is_demo,
-              c.active AS category_active
-         FROM products p JOIN product_categories c ON c.id = p.category WHERE p.id = ?`,
-    );
-    const lines = request.items.map((item, index) => ({ item, index, product: select.get(item.productId) as unknown as CandidateRow | undefined }));
-    const path = (index: number, field: string) => `items.${index}.${field}`;
-
-    // 3a. Missing, inactive, or in an inactive category: indistinguishable (no existence disclosure).
-    const unavailable = lines.filter((l) => !l.product || l.product.active !== 1 || l.product.category_active !== 1);
-    if (unavailable.length) {
-      throw new AppError('PRODUCT_UNAVAILABLE', {
-        fields: unavailable.map((l) => ({ path: path(l.index, 'productId'), message: 'المنتج غير متاح للطلب حاليًا.' })),
-        current: { items: unavailable.map((l) => ({ productId: l.item.productId })) },
-      });
-    }
-    const resolved = lines.map((l) => ({ ...l, product: l.product as CandidateRow }));
-
-    // 3b. Demo classification is derived from the products only.
-    const demoCount = resolved.filter((l) => l.product.is_demo === 1).length;
-    if (demoCount > 0 && ctx.config.isProduction) throw new AppError('DEMO_NOT_ALLOWED');
-    if (demoCount > 0 && demoCount < resolved.length) throw new AppError('MIXED_DEMO_ITEMS');
-    const isDemo = demoCount > 0;
-
-    // 3c. Stale price / packaging: the trader must review the current terms (they may see them).
-    const stale = resolved.filter((l) => l.product.price_cents !== l.item.expectedCartonPriceCents || l.product.pack_size !== l.item.expectedPackSize);
-    if (stale.length) {
-      const priceChanged = stale.some((l) => l.product.price_cents !== l.item.expectedCartonPriceCents);
-      throw new AppError(priceChanged ? 'PRICE_CHANGED' : 'PACKAGING_CHANGED', {
-        current: { items: stale.map((l) => ({ productId: l.product.id, cartonPriceCents: l.product.price_cents, packSize: l.product.pack_size })) },
-      });
-    }
-
-    // 3d. Minimum quantity per product.
-    const belowMinimum = resolved.filter((l) => l.item.cartons < l.product.minimum_cartons);
-    if (belowMinimum.length) {
-      throw new AppError('MINIMUM_QUANTITY_NOT_MET', {
-        fields: belowMinimum.map((l) => ({ path: path(l.index, 'cartons'), message: `الحد الأدنى لهذا المنتج ${l.product.minimum_cartons} كرتونة.` })),
-        current: { items: belowMinimum.map((l) => ({ productId: l.product.id, minimumCartons: l.product.minimum_cartons })) },
-      });
-    }
-
-    // 3e. Availability at creation (not a reservation). Only the status is disclosed, never counts.
-    const threshold = lowStockThreshold(ctx);
-    const short = resolved.filter((l) => l.product.on_hand - l.product.reserved < l.item.cartons);
-    if (short.length) {
-      throw new AppError('INSUFFICIENT_STOCK', {
-        fields: short.map((l) => ({ path: path(l.index, 'cartons'), message: 'الكمية المطلوبة غير متاحة حاليًا لهذا المنتج.' })),
-        current: {
-          items: short.map((l) => {
-            const status = stockStatus(l.product.on_hand - l.product.reserved, threshold);
-            return { productId: l.product.id, availability: { status, labelAr: STOCK_STATUS_LABEL_AR[status] } };
-          }),
-        },
-      });
-    }
-
-    // 4. Settings and amounts (exact integer arithmetic; limits are rejected, never clamped).
-    const settings = db.prepare('SELECT shipping_cents, shipping_taxable, tax_bps, minimum_order_cents FROM business_settings WHERE id = 1').get() as unknown as Settings;
-    const amounts = computeAmounts(
-      resolved.map((l) => ({ price: l.product.price_cents, cartons: l.item.cartons })),
-      settings,
-    );
-    const max = BigInt(LIMITS.maxOrderTotalCents);
-    if (amounts.subtotal > max || amounts.total > max) throw new AppError('AMOUNT_LIMIT_EXCEEDED');
+    const { resolved, isDemo, settings, amounts } = evaluateOrderLines(ctx, request.items);
     if (amounts.subtotal < BigInt(settings.minimum_order_cents)) {
       throw new AppError('MINIMUM_ORDER_NOT_MET', { current: { minimumOrderCents: settings.minimum_order_cents, subtotalCents: Number(amounts.subtotal) } });
     }
@@ -428,6 +442,60 @@ export async function createOrder(ctx: RequestContext): Promise<void> {
   const order = loadOwnOrder(ctx, auth.identity.merchantId, outcome.orderId);
   if (!order) throw new Error('committed order is not readable');
   sendJson(ctx.res, outcome.replayed ? 200 : 201, { replayed: outcome.replayed, order: orderDetail(ctx, order) });
+}
+
+// ------------------------------------------------------------------ POST /orders/quote
+
+/** Quote body: the proposed lines only (no request key, note, merchant or amount fields). */
+export const quoteSchema = z.strictObject({ items: createOrderSchema.shape.items });
+
+/**
+ * Read-only checkout preview (stage 11). Evaluates the proposed lines with the SAME rules as order
+ * creation (evaluateOrderLines) and returns the merchant-safe amounts under the current settings.
+ * It writes nothing (no order, reservation, ledger, stock or audit row), reserves nothing and does
+ * not lock prices: POST /orders re-checks everything and snapshots its own values.
+ * POST (not GET) because it has a body and requires the session CSRF token like other mutations.
+ */
+export async function quoteOrder(ctx: RequestContext): Promise<void> {
+  const auth = requireSession(ctx);
+  requireSessionCsrf(ctx, auth);
+  requireEligible(auth);
+  const limit = ctx.services.rateLimiter.consume('order_quote_account', auth.identity.merchantId);
+  if (!limit.allowed) throw new AppError('RATE_LIMITED', { headers: { 'Retry-After': String(limit.retryAfterSeconds) } });
+  const raw = await readJsonBody(ctx.req, BODY_LIMIT);
+  precheckCollection(raw);
+  const parsed = quoteSchema.safeParse(raw);
+  if (!parsed.success) throw validationError(parsed.error.issues);
+  const items = parsed.data.items;
+  const quote = readTransaction(ctx.services.db, () => {
+    const { resolved, isDemo, settings, amounts } = evaluateOrderLines(ctx, items);
+    return {
+      items: resolved.map((l, index) => ({
+        lineNo: index + 1,
+        productId: l.product.id,
+        name: l.product.name,
+        brand: l.product.brand,
+        packSize: l.product.pack_size,
+        cartonPriceCents: l.product.price_cents,
+        cartons: l.item.cartons,
+        lineTotalCents: l.product.price_cents * l.item.cartons,
+      })),
+      amounts: {
+        subtotalCents: Number(amounts.subtotal),
+        shippingCents: Number(amounts.shipping),
+        shippingTaxable: settings.shipping_taxable === 1,
+        taxBps: settings.tax_bps,
+        taxBaseCents: Number(amounts.taxBase),
+        taxCents: Number(amounts.tax),
+        totalCents: Number(amounts.total),
+        minimumOrderCents: settings.minimum_order_cents,
+      },
+      minimumOrderMet: amounts.subtotal >= BigInt(settings.minimum_order_cents),
+      isDemo,
+      quotedAt: ctx.services.now(),
+    };
+  });
+  sendJson(ctx.res, 200, { quote });
 }
 
 // ------------------------------------------------------------------ GET /orders

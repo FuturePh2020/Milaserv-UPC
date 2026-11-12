@@ -151,3 +151,36 @@ describe('web API client', () => {
     assert.equal(isMeResponse({ ...me, csrfToken: undefined }), false);
   });
 });
+
+describe('request keys', () => {
+  test('UUID v4 from the CSPRNG, unique, valid for the server schema, without crypto.randomUUID', async () => {
+    const { newRequestKey } = await import('../../src/web/api/client.ts');
+    const original = crypto.randomUUID;
+    Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: undefined }); // insecure context
+    try {
+      const keys = new Set(Array.from({ length: 1000 }, () => newRequestKey()));
+      assert.equal(keys.size, 1000);
+      for (const k of keys) assert.match(k, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    } finally {
+      Object.defineProperty(crypto, 'randomUUID', { configurable: true, value: original });
+    }
+  });
+});
+
+describe('sign-in and registration requests', () => {
+  test('a fresh pre-login token is fetched first; username and password are sent exactly as typed', async () => {
+    const { login } = await import('../../src/web/api/endpoints.ts');
+    const seen: Call[] = [];
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      seen.push({ url, init });
+      if (url === '/api/v1/auth/csrf') return new Response(JSON.stringify({ authenticated: true, csrfToken: 's1.old', preLoginToken: 'p1.fresh', preLoginExpiresAt: 1 }), { status: 200 });
+      return new Response(JSON.stringify({ user: { id: 'u', username: 'x', role: 'trader' }, merchant: { status: 'approved' }, session: {}, csrfToken: 's1.new' }), { status: 200 });
+    }) as typeof fetch;
+    const r = await login({ username: ' Mixed.Case ', password: '  pass word with spaces  ', totp: '012345' });
+    assert.equal(r.ok, true);
+    assert.deepEqual(seen.map((c) => c.url), ['/api/v1/auth/csrf', '/api/v1/auth/login']);
+    const headers = seen[1]!.init.headers as Record<string, string>;
+    assert.equal(headers['X-CSRF-Token'], 'p1.fresh', 'the pre-login token, even though a session exists');
+    assert.deepEqual(JSON.parse(String(seen[1]!.init.body)), { username: ' Mixed.Case ', password: '  pass word with spaces  ', totp: '012345' });
+  });
+});

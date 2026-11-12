@@ -746,3 +746,91 @@ describe('abuse limits', () => {
       { rules: {} },
     ));
 });
+
+describe('checkout quote (stage 11, read-only)', () => {
+  const quote = (c: Client, items: unknown[], extra: Record<string, unknown> = {}) => c.request('POST', '/api/v1/orders/quote', { body: { items, ...extra } });
+  const writes = (app: TestApp) =>
+    ['orders', 'order_items', 'order_events', 'inventory_ledger', 'order_allocations', 'audit_logs'].map((t) => count(app, `SELECT count(*) FROM ${t}`)).concat(count(app, 'SELECT coalesce(sum(version), 0) FROM products'));
+
+  test('access: approved merchants only, with CSRF; strict body without keys, notes, ids or amounts', () =>
+    withApp(async (app) => {
+      const w = await world(app);
+      const p = await w.product();
+      expectCode(await quote(new Client(app, ip()), [line(p)]), 401, 'UNAUTHENTICATED');
+      const pending = await w.trader('pending');
+      expectCode(await quote(pending.c, [line(p)]), 403, 'ACCOUNT_PENDING');
+      const { c } = await w.trader();
+      expectCode(await c.request('POST', '/api/v1/orders/quote', { body: { items: [line(p)] }, csrf: null }), 403, 'CSRF_FAILED');
+      for (const extra of [{ requestKey: randomUUID() }, { note: 'x' }, { merchantId: randomUUID() }, { totalCents: 1 }, { shippingCents: 0 }]) {
+        expectCode(await quote(c, [line(p)], extra), 400, 'VALIDATION_FAILED');
+      }
+      expectCode(await quote(c, [line(p, 1, { unitPriceCents: 1 })]), 400, 'VALIDATION_FAILED');
+      const many = await quote(c, Array.from({ length: 101 }, () => ({})));
+      assert.deepEqual(many.json.error.details.fields.map((f: { path: string }) => f.path), ['items']);
+      expectCode(await c.request('GET', '/api/v1/orders/quote'), 404, 'NOT_FOUND');
+    }));
+
+  test('returns current settings and exact amounts identical to the order created with the same settings; writes nothing', () =>
+    withApp(async (app) => {
+      const w = await world(app);
+      const p = await w.product({ price: 12_345 });
+      const q = await w.product({ price: 999 });
+      const { c } = await w.trader();
+      settings(app, 'tax_bps = 1400, shipping_cents = 7500, shipping_taxable = 1, minimum_order_cents = 40000');
+      const before = writes(app);
+      const r = await quote(c, [line(p, 3), line(q, 7)]);
+      assert.equal(r.status, 200, r.body);
+      assert.deepEqual(writes(app), before, 'no order, ledger, allocation, audit or product change');
+      assert.equal(r.json.quote.minimumOrderMet, true);
+      assert.deepEqual(r.json.quote.items.map((i: any) => [i.lineNo, i.productId, i.cartonPriceCents, i.packSize, i.cartons, i.lineTotalCents]), [
+        [1, p.id, 12_345, 24, 3, 37_035],
+        [2, q.id, 999, 24, 7, 6_993],
+      ]);
+      assert.doesNotMatch(r.body, /onHand|on_hand|reserved|available"|stock/);
+      const order = await place(c, orderBody([line(p, 3), line(q, 7)]));
+      assert.equal(order.status, 201, order.body);
+      assert.deepEqual(r.json.quote.amounts, order.json.order.amounts);
+      // Below the minimum order: reported, not an error (the order endpoint refuses it).
+      const small = await quote(c, [line(q, 1)]);
+      assert.equal(small.json.quote.minimumOrderMet, false);
+      assert.equal(small.json.quote.amounts.minimumOrderCents, 40_000);
+      expectCode(await place(c, orderBody([line(q, 1)])), 422, 'MINIMUM_ORDER_NOT_MET');
+    }));
+
+  test('same rules and errors as order creation; a quote is not a price lock or a reservation', () =>
+    withApp(async (app) => {
+      const w = await world(app);
+      const p = await w.product({ price: 10_000, stock: 5 });
+      const inactive = await w.product({ active: false });
+      const { c } = await w.trader();
+      expectCode(await quote(c, [line({ ...p, price: 9_000 })]), 409, 'PRICE_CHANGED');
+      expectCode(await quote(c, [line(inactive)]), 409, 'PRODUCT_UNAVAILABLE');
+      const short = await quote(c, [line(p, 6)]);
+      expectCode(short, 409, 'INSUFFICIENT_STOCK');
+      assert.doesNotMatch(short.body, /"5"|:5[,}]|onHand|reserved/);
+      const ok = await quote(c, [line(p, 5)]);
+      assert.equal(ok.status, 200);
+      // The price changes after the quote: the order with the quoted (now stale) price is refused.
+      const v = (app.fixtureDb.prepare('SELECT version FROM products WHERE id = ?').get(p.id) as { version: number }).version;
+      assert.equal((await w.ac.request('PATCH', `/api/v1/admin/products/${p.id}`, { body: { expectedVersion: v, cartonPriceCents: 11_000 } })).status, 200);
+      expectCode(await place(c, orderBody([line(p, 5)])), 409, 'PRICE_CHANGED');
+      // Quoting reserved nothing: two traders can each quote the full stock.
+      const other = await w.trader();
+      assert.equal((await quote(other.c, [line({ ...p, price: 11_000 }, 5)])).status, 200);
+      assert.equal(app.fixtureDb.prepare('SELECT reserved FROM products WHERE id = ?').get(p.id)!.reserved, 0);
+    }));
+
+  test('quotes are limited per merchant (60 per 10 minutes by default)', () =>
+    withApp(
+      async (app) => {
+        const w = await world(app);
+        const p = await w.product();
+        const { c } = await w.trader();
+        for (let i = 0; i < 60; i++) assert.equal((await quote(c, [line(p)])).status, 200);
+        const limited = await quote(c, [line(p)]);
+        expectCode(limited, 429, 'RATE_LIMITED');
+        assert.ok(Number(limited.headers['retry-after']) > 0);
+      },
+      { rules: { api_ip: { limit: 10_000, windowMs: 60_000 } } },
+    ));
+});

@@ -91,6 +91,7 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 | GET `/api/v1/products/:id` | A/D | `{product: CatalogProduct}`; inactive, unknown and malformed ids → identical 404 | **06 ✅** |
 | GET `/api/v1/catalog/filters` | A/D | `{categories:[{id,labelAr,productCount}], brands:[{name,productCount}]}` — categories from `product_categories` (active), counts and brands only from active products (≤ 500 brands) | **06 ✅** |
 | POST `/api/v1/orders` | A/D (session token) | Strict: `{requestKey (UUID v4), note? (≤ 500, NFC-trimmed; blank → null), items:[1–100 × {productId, cartons 1–100000, expectedCartonPriceCents, expectedPackSize}]}`. For the session's **own** merchant only (administrators: their own approved profile). → **201** `{replayed:false, order:Order}`; identical retry → **200** `{replayed:true, order:<original>}`. Details §3c. Limit 30 attempts / 10 min / merchant. | **08 ✅** |
+| POST `/api/v1/orders/quote` | A/D (session token) | **Read-only checkout preview (stage 11).** Strict `{items:[1–100 × {productId, cartons, expectedCartonPriceCents, expectedPackSize}]}` (no key, note, ids or amounts; 100-line limit first; 32 KiB). Same rules and errors as order creation (shared `evaluateOrderLines`). → `200 {quote:{items:[{lineNo, productId, name, brand, packSize, cartonPriceCents, cartons, lineTotalCents}], amounts:{…as Order.amounts}, minimumOrderMet, isDemo, quotedAt}}`. Writes nothing, reserves nothing, is not a price lock. Limit 60 / 10 min / merchant (`order_quote_account`). | **11 ✅** |
 | GET `/api/v1/orders` | A/D | Own finalized orders, newest first. Query (strict): `state∈{pending,confirmed,preparing,shipped,delivered,cancelled}`, `limit` 1–100 (25), `cursor` (bound to user, merchant and `state`). → `{items:[{id, displayNumber, state, isDemo, lineCount, cartonCount, totalCents, createdAt, updatedAt}], nextCursor}` | **08 ✅** |
 | GET `/api/v1/orders/:id` | A/D | `{order:Order}`; foreign, unfinished, unknown and malformed ids → identical 404 | **08 ✅** |
 | GET `/api/v1/orders/:id/summary` | A/D(own) | print data; labeled not a tax invoice — **deferred to stage 14** (no route yet) | 14 |
@@ -170,6 +171,18 @@ Amounts (BigInt): `line = cartonPrice × cartons`; `subtotal = Σ lines`; `taxBa
 shipping : 0)`; `tax = ⌊(taxBase × taxBps + 5000) / 10000⌋` (half-up; amounts are non-negative);
 `total = subtotal + shipping + tax`. Settings and buyer data are snapshotted at creation. Creating a
 pending order changes no stock, reservation, ledger row or product version.
+
+## 3d. Checkout quote vs order (stage 11)
+- The quote evaluates the proposed lines with the **same function** as `POST /orders`
+  (`evaluateOrderLines`: product/category availability, demo rules, expected price and packaging, minimum
+  quantity, available stock as status only, settings, BigInt amounts and limits). It differs only in
+  reporting `minimumOrderMet` instead of refusing, and in writing nothing.
+- A quote is evidence of the terms at `quotedAt` only. Prices, settings and stock can change afterwards;
+  `POST /orders` re-checks everything and stores its own snapshots. No price is reserved and no stock is
+  held by a quote.
+- Gap closed: before stage 11 a merchant had no way to see the configured shipping, tax and minimum
+  order before submitting (only after, in the order snapshot). The settings themselves are still not
+  exposed through any broad configuration endpoint.
 
 ## 4a. Merchant status transitions (PATCH /api/v1/admin/merchants/:id)
 | from \ to | pending | approved | suspended |

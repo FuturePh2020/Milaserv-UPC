@@ -8,19 +8,23 @@ import { Icon } from './Icon.tsx';
  * aria-describedby / aria-invalid. The render prop receives the ids to apply.
  */
 export function Field({
+  id: fixedId,
   label,
   hint,
   error,
   required = false,
   children,
 }: {
+  /** Stable id (needed when an error summary links to the field). */
+  id?: string;
   label: ReactNode;
   hint?: ReactNode;
   error?: string | null;
   required?: boolean;
   children: (control: { id: string; 'aria-describedby'?: string; 'aria-invalid'?: true; required?: boolean }) => ReactNode;
 }) {
-  const id = useId();
+  const generated = useId();
+  const id = fixedId ?? generated;
   const hintId = hint ? `${id}-hint` : undefined;
   const errorId = error ? `${id}-error` : undefined;
   const describedBy = [hintId, errorId].filter(Boolean).join(' ') || undefined;

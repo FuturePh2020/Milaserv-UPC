@@ -18,6 +18,7 @@ export interface NavItem {
 
 export const MERCHANT_NAV: readonly NavItem[] = [
   { href: '#/catalog', label: 'الكتالوج', icon: 'store' },
+  { href: '#/cart', label: 'السلة', icon: 'cart' },
   { href: '#/orders', label: 'طلباتي', icon: 'orders' },
   { href: '#/account', label: 'حسابي', icon: 'user' },
 ];
@@ -34,18 +35,28 @@ export const ADMIN_NAV: ReadonlyArray<{ heading: string; items: readonly NavItem
     ],
   },
   { heading: 'الحسابات', items: [{ href: '#/admin/merchants', label: 'التجار', icon: 'users' }] },
+  {
+    // The administrator's OWN approved company profile ordering (own-order routes, not admin views).
+    heading: 'مشتريات الشركة',
+    items: [
+      { href: '#/catalog', label: 'الكتالوج', icon: 'store' },
+      { href: '#/cart', label: 'السلة', icon: 'cart' },
+      { href: '#/orders', label: 'طلبات الشركة', icon: 'orders' },
+    ],
+  },
 ];
 
 const isCurrent = (path: string, href: string) => {
   const target = href.replace(/^#/, '');
-  return path === target || path.startsWith(`${target}/`);
+  return path === target || path.startsWith(`${target}/`) || (target === '/cart' && path === '/checkout');
 };
 
-function NavLink({ item, path, onNavigate }: { item: NavItem; path: string; onNavigate?: () => void }) {
+function NavLink({ item, path, onNavigate, count }: { item: NavItem; path: string; onNavigate?: () => void; count?: number }) {
   return (
     <a className="l-navlink" href={item.href} {...(isCurrent(path, item.href) ? { 'aria-current': 'page' as const } : {})} onClick={onNavigate}>
       <Icon name={item.icon} />
       <span>{item.label}</span>
+      {count ? <span className="l-count">({count})</span> : null}
     </a>
   );
 }
@@ -130,6 +141,7 @@ export function MerchantLayout({
   onLogout,
   logoutBusy = false,
   banner,
+  cartCount = 0,
   children,
 }: {
   kind: 'merchant' | 'pending';
@@ -138,6 +150,8 @@ export function MerchantLayout({
   onLogout: () => void;
   logoutBusy?: boolean;
   banner?: ReactNode;
+  /** Number of cart lines (shown on the cart link). */
+  cartCount?: number;
   children: ReactNode;
 }) {
   const nav = kind === 'merchant' ? MERCHANT_NAV : PENDING_NAV;
@@ -148,7 +162,7 @@ export function MerchantLayout({
         <Brand portal="بوابة التجار" href={kind === 'merchant' ? '#/catalog' : '#/account'} />
         <nav className="l-merchant__nav" aria-label="التنقل الرئيسي">
           {nav.map((item) => (
-            <NavLink key={item.href} item={item} path={path} />
+            <NavLink key={item.href} item={item} path={path} {...(item.href === '#/cart' ? { count: cartCount } : {})} />
           ))}
         </nav>
         <span className="l-header__spacer" />
@@ -163,7 +177,10 @@ export function MerchantLayout({
           {nav.map((item) => (
             <a key={item.href} href={item.href} {...(isCurrent(path, item.href) ? { 'aria-current': 'page' as const } : {})}>
               <Icon name={item.icon} />
-              <span>{item.label}</span>
+              <span>
+                {item.label}
+                {item.href === '#/cart' && cartCount ? ` (${cartCount})` : ''}
+              </span>
             </a>
           ))}
         </nav>
@@ -184,6 +201,7 @@ export function AdminLayout({
   onLogout,
   logoutBusy = false,
   banner,
+  cartCount = 0,
   children,
 }: {
   account: AccountView;
@@ -191,6 +209,7 @@ export function AdminLayout({
   onLogout: () => void;
   logoutBusy?: boolean;
   banner?: ReactNode;
+  cartCount?: number;
   children: ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -199,7 +218,7 @@ export function AdminLayout({
       <div key={group.heading}>
         <p className="l-sidenav__heading">{group.heading}</p>
         {group.items.map((item) => (
-          <NavLink key={item.href} item={item} path={path} {...(onNavigate ? { onNavigate } : {})} />
+          <NavLink key={item.href} item={item} path={path} {...(onNavigate ? { onNavigate } : {})} {...(item.href === '#/cart' ? { count: cartCount } : {})} />
         ))}
       </div>
     ));

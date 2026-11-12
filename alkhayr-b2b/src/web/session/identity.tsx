@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { apiGet, apiMutate, sessionCsrf, type ApiFailure, type SessionCsrfToken } from '../api/client.ts';
 import { isLogoutResponse, isMeResponse, type MeResponse } from '../api/contracts.ts';
+import { clearAllDrafts } from '../cart/storage.ts';
 
 /**
  * Identity for PRESENTATION decisions only (which shell and navigation to show). Every API
@@ -28,8 +29,16 @@ interface IdentityApi {
   reload: () => void;
   /** Called when any request returns 401 while signed in. */
   markExpired: () => void;
+  /** The server ended every session (password change): show the signed-out state, not "expired". */
+  signedOut: () => void;
   /** Real POST /api/v1/auth/logout. On failure the session is still valid (API contract). */
   logout: () => Promise<ApiFailure | null>;
+  /**
+   * Central reaction to a failed protected request. 401 -> session ended (protected UI is
+   * removed); 403 ACCOUNT_PENDING / ACCESS_CHANGED -> the account's status changed, so identity
+   * is re-read from the server. Other failures are left to the screen. Returns true if handled.
+   */
+  handleAuthFailure: (failure: ApiFailure) => boolean;
 }
 
 const IdentityContext = createContext<IdentityApi | null>(null);
@@ -38,6 +47,15 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<IdentityState>({ status: 'loading' });
   const [generation, setGeneration] = useState(0);
   const wasAuthenticated = useRef(false);
+
+  // A page restored from the back/forward cache may show a previous identity: re-check it.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) setGeneration((g) => g + 1);
+    };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -61,11 +79,16 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
 
   const reload = useCallback(() => setGeneration((g) => g + 1), []);
   const markExpired = useCallback(() => setState((s) => (s.status === 'authenticated' ? { status: 'expired' } : s)), []);
+  const signedOut = useCallback(() => {
+    wasAuthenticated.current = false;
+    setState({ status: 'signed_out' });
+  }, []);
   const logout = useCallback(async () => {
     if (state.status !== 'authenticated') return null;
     const r = await apiMutate({ method: 'POST', path: '/api/v1/auth/logout', csrf: state.csrf, validate: isLogoutResponse });
     if (r.ok) {
       wasAuthenticated.current = false;
+      clearAllDrafts(); // explicit logout removes this browser's order drafts (docs/FRONTEND_API.md)
       setState({ status: 'signed_out' });
       return null;
     }
@@ -76,7 +99,22 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     return r;
   }, [state]);
 
-  const api = useMemo(() => ({ state, reload, markExpired, logout }), [state, reload, markExpired, logout]);
+  const handleAuthFailure = useCallback(
+    (failure: ApiFailure) => {
+      if (failure.kind === 'unauthenticated') {
+        markExpired();
+        return true;
+      }
+      if (failure.code === 'ACCOUNT_PENDING' || failure.code === 'ACCESS_CHANGED') {
+        reload();
+        return true;
+      }
+      return false;
+    },
+    [markExpired, reload],
+  );
+
+  const api = useMemo(() => ({ state, reload, markExpired, signedOut, logout, handleAuthFailure }), [state, reload, markExpired, signedOut, logout, handleAuthFailure]);
   return <IdentityContext.Provider value={api}>{children}</IdentityContext.Provider>;
 }
 

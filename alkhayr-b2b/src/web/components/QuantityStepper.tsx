@@ -9,6 +9,7 @@ import { IconButton } from './Button.tsx';
  */
 export function QuantityStepper({
   label = 'عدد الكراتين',
+  labelSuffix,
   value,
   text,
   onChange,
@@ -18,6 +19,8 @@ export function QuantityStepper({
   error,
 }: {
   label?: string;
+  /** Extra label text for assistive technology only (e.g. the product name in a cart line). */
+  labelSuffix?: string;
   value: number | null;
   /** Raw text as typed (so partially typed input is not lost). */
   text: string;
@@ -44,6 +47,7 @@ export function QuantityStepper({
     <div className="c-field">
       <label className="c-field__label" htmlFor={id}>
         {label}
+        {labelSuffix ? <span className="visually-hidden"> — {labelSuffix}</span> : null}
       </label>
       <div className="c-qty" data-invalid={invalid || undefined}>
         <IconButton icon="minus" label="إنقاص كرتونة" disabled={disabled || value === null || value <= min} onClick={() => value !== null && set(value - 1)} />

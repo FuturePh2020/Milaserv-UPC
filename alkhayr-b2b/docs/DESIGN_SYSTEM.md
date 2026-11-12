@@ -109,3 +109,13 @@ nav), 64 rem (admin sidebar). Verified at 375, 768 and 1366 px (PROJECT_STATE).
 Unchanged: `style-src 'self'`, `script-src 'self'`, `font-src 'self'`, no `unsafe-inline`/`unsafe-eval`.
 No inline `<style>`/`style=""`; dynamic sizes/colours (skeleton width, gallery swatches) are set through
 the CSSOM, which the CSP permits. No style exception was required.
+
+## 10. Stage 11 additions
+- `ErrorSummary`: focusable summary (receives focus after a failed submission) whose items link to fields;
+  `Field` accepts a stable `id` for those links.
+- `QuantityStepper` `labelSuffix`: product name added to the accessible label only (no repeated long names).
+- Cart line, checkout review line, product detail, collapsible catalog filters ("تصفية وترتيب", open when a
+  filter is active) so phones show products on the first screen.
+- Toasts moved to the top under the header (max two) so they never cover the bottom tab bar or actions.
+- Merchant bottom tabs: الكتالوج · السلة (count) · طلباتي · حسابي.
+- Rates inside Arabic text are LTR-isolated («(14%)»).

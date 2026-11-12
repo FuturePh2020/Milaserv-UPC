@@ -42,9 +42,13 @@ describe('browser bundle: previews, storage and assets', () => {
     }
   });
 
-  test('no credential persistence: the bundles never touch localStorage or sessionStorage', () => {
-    assert.doesNotMatch(prod.all, /localStorage|sessionStorage/);
-    assert.doesNotMatch(dev.all, /localStorage|sessionStorage/);
+  test('no credential persistence: sessionStorage is never used; localStorage only under the draft key prefix', () => {
+    for (const bundle of [prod.all, dev.all]) {
+      assert.doesNotMatch(bundle, /sessionStorage/);
+      // Every localStorage access in the bundle belongs to the draft module (key prefix alkhayr.v1.draft.).
+      assert.match(bundle, /alkhayr\.v1\.draft\./);
+      assert.equal((bundle.match(/localStorage/g) ?? []).length, 1, 'single storage accessor');
+    }
   });
 
   test('assets are local and allow-listed: fonts are woff2 from /assets, no remote stylesheet, script or font', () => {
@@ -80,13 +84,19 @@ describe('browser bundle: previews, storage and assets', () => {
 });
 
 describe('browser source rules', () => {
-  test('no raw HTML injection, eval or browser storage anywhere in src/web (React escaping is the XSS control)', async () => {
+  test('no raw HTML injection, eval or cookie access in src/web; browser storage only in the draft module (React escaping is the XSS control)', async () => {
     const { readdir } = await import('node:fs/promises');
     const files = (await readdir(path.join(projectRoot, 'src', 'web'), { recursive: true })).filter((f) => /\.(ts|tsx)$/.test(f));
     assert.ok(files.length > 20);
+    const DRAFT_MODULE = path.join('cart', 'storage.ts');
     for (const f of files) {
       const code = (await readFile(path.join(projectRoot, 'src', 'web', f), 'utf8')).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
-      assert.doesNotMatch(code, /dangerouslySetInnerHTML|innerHTML\s*=|\beval\(|new Function\(|localStorage|sessionStorage|document\.cookie/, f);
+      assert.doesNotMatch(code, /dangerouslySetInnerHTML|innerHTML\s*=|\beval\(|new Function\(|document\.cookie/, f);
+      if (f !== DRAFT_MODULE) assert.doesNotMatch(code, /localStorage|sessionStorage/, `${f}: browser storage is only allowed in ${DRAFT_MODULE}`);
     }
+    // The draft module stores order drafts only: never tokens, passwords or authenticator codes.
+    const draft = (await readFile(path.join(projectRoot, 'src', 'web', DRAFT_MODULE), 'utf8')).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+    assert.doesNotMatch(draft, /csrf|token|password|totp|session|buyer/i);
+    assert.doesNotMatch(draft, /sessionStorage/);
   });
 });

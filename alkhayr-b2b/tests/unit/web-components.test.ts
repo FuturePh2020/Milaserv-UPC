@@ -79,7 +79,7 @@ describe('web components (markup)', () => {
     const out = html(h(w.OrderTotals, { amounts: { subtotalCents: 709_980, shippingCents: 0, shippingTaxable: false, taxBps: 1400, taxBaseCents: 709_980, taxCents: 99_397, totalCents: 809_377, minimumOrderCents: 0 } }));
     assert.match(out, /7,099\.80/);
     assert.match(out, /بدون رسوم/);
-    assert.match(out, /الضريبة \(14%\)/);
+    assert.match(out, /الضريبة \(<bdi dir="ltr">14%<\/bdi>\)/);
     assert.match(out, /8,093\.77/);
   });
 

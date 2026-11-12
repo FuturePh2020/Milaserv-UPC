@@ -124,6 +124,14 @@ is unchanged. The release contains the production web build only; the component 
 itself (no internet font service). Sign-in screens arrive in stage 11; until then, accounts sign in
 through the API.
 
+### Stage 11 note: merchant screens (no migration)
+Traders can now register, sign in, browse, order and follow their orders in the browser; administrators sign
+in on the same page by ticking "تسجيل دخول مدير النظام" and entering the authenticator code. There is no
+password reset in the portal: a trader who forgets the password must contact the business (an administrator
+account cannot reset it either; there is no such feature yet). Shipping, tax and minimum order shown to
+traders come from the business settings (defaults 0 until configured in stage 14). Before go-live, make sure
+the real tax/shipping values are configured.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -163,6 +171,7 @@ None has been supplied (BUILD_NEW). If one is:
 - المرحلة 07 أضافت الترحيل 0003: المنتجات الجديدة تُنشأ غير مفعّلة وبرصيد صفر، وأي تغيير في الرصيد يجب أن يقابله قيد في سجل الحركة.
 - رصيد الافتتاح: البوابة لا تعرف المبيعات في البرامج الأخرى؛ خصّص كمية للبوابة وسجّلها كاستلام أو كتحديد للإجمالي مع ذكر السبب، وراجعها دوريًا.
 - لا تُعدَّل الحركات القديمة ولا تُحذف؛ الخطأ يُصحَّح بحركة تسوية عكسية مع ذكر السبب.
+- المرحلة 11 أضافت واجهة التاجر كاملة: التسجيل، تسجيل الدخول (والمدير بخيار «تسجيل دخول مدير النظام» مع رمز التحقق)، الكتالوج، السلة، إرسال الطلب ومتابعته، وتعديل البيانات وكلمة المرور. لا توجد استعادة لكلمة المرور من البوابة.
 - المرحلة 10 أضافت الهوية البصرية وإطارات الواجهة فقط، بدون ترحيل لقاعدة البيانات؛ معرض المكونات موجود في نسخة التطوير فقط ولا يظهر في نسخة الإنتاج.
 - المرحلة 09 أضافت الترحيل 0005: الإدارة تؤكد الطلب (يُحجز المخزون لهذا الطلب تحديدًا)، ثم التجهيز، ثم الشحن (يُخصم المخزون)، ثم التسليم، أو الإلغاء مع ذكر السبب (يُفك الحجز). كل خطوة تتطلب تسجيل دخول خلال آخر 15 دقيقة.
 - لا يمكن تغيير عدد القطع في الكرتونة أثناء وجود رصيد أو حجوزات للمنتج؛ صفّر الرصيد بحركة موثّقة أولًا. الطلبات المعلّقة بالتعبئة القديمة لا تُؤكَّد، بل تُلغى ويُطلب من التاجر طلب جديد.

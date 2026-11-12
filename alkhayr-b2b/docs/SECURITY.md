@@ -123,6 +123,8 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   | `login_account` | 5 / 15 min | normalized username (existing or not); reset on successful login |
   | `register_ip` | 5 / hour | client IP |
   | `password_account` | 5 / 15 min | account |
+  | `order_create_account` | 30 / 10 min | merchant (stage 08) |
+  | `order_quote_account` | 60 / 10 min | merchant (stage 11, read-only quote) |
   | `api_ip` | 300 / min | client IP, every `/api` request |
 
   Denied attempts do not extend the window; `429` carries `Retry-After` (seconds to window end).
@@ -260,6 +262,35 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Product images: `img-src https:` already allowed; loaded with `referrerPolicy="no-referrer"`, lazy,
   with a placeholder on failure; never fetched server-side.
 
+## 7g. Merchant experience (implemented stage 11)
+- Sign-in: one generic failure for every cause (unknown user, wrong password, suspended, wrong/missing
+  OTP). The OTP field appears only when the user chooses "administrator sign-in"; an administrator signing
+  in without it gets the same generic failure (no account discovery). A fresh pre-login token is fetched
+  for every sign-in/registration attempt, even when a session exists. Usernames/passwords are sent as
+  typed; codes keep leading zeros. Passwords/codes are cleared from component state after each attempt and
+  are never stored, logged or put in URLs. No password-reset, MFA-recovery or "remember me" feature exists.
+- Registration: allowed fields only, pending trader only, identical response for duplicates, no automatic
+  sign-in, no claim that any message was sent.
+- Identity changes (sign-in as another account, logout, expiry, suspension): the whole signed-in UI is
+  keyed by user+merchant and remounted; 401 removes protected UI; 403 `ACCOUNT_PENDING`/`ACCESS_CHANGED`
+  re-reads identity; a page restored from the back/forward cache re-checks identity. A failed identity
+  request is shown as a network failure, never as "signed out"; a failed logout is reported, never hidden.
+- Pending traders never request catalog or order data (verified in the browser).
+- **Browser storage (reconciled with SPEC §7):** only `src/web/cart/storage.ts` may use storage
+  (enforced by tests). It stores the cart draft and at most one pending submission (request key + exact
+  payload) under `alkhayr.v1.draft.<userId>.<merchantId>` in localStorage — no tokens, passwords, codes,
+  buyer data or responses; validated on read; 7-day expiry; removed on explicit logout, on successful
+  submission and, for other accounts, when a different identity signs in. Residual risk: anyone with access
+  to the browser profile can read product ids/quantities/reviewed prices of a draft (accepted in the threat
+  model since stage 00).
+- Orders: one request key per intended submission, stored with its exact payload before sending; unclear
+  outcomes (no response, 5xx, malformed response) keep both for an explicit same-request retry; definite
+  refusals release the key; nothing is retried automatically. A changed cart is a new payload with a new
+  key, allowed only after the previous outcome is resolved or deliberately discarded.
+- Checkout quote: approved merchants only, session CSRF + Origin + JSON, strict body, per-merchant limit;
+  writes nothing; returns merchant-safe amounts (no settings dump, no stock counts).
+- Traders still see no stock counts, administrator names or cancellation reasons.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -349,6 +380,10 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Browser client: same-origin only, no credential storage, typed CSRF split, no auto-retry, failure kinds | ✅ | ✅ 10 (unit + bundle scan) |
 | Production bundle excludes gallery/fixtures; no remote assets; CSP unchanged | ✅ | ✅ 10 (build tests + Chromium) |
 | Shell visibility by role/approval (presentation only) | ✅ | ✅ 10 (markup tests + Chromium with real sessions) |
+| Generic sign-in failures incl. explicit admin OTP option; fresh pre-login token; exact credentials | ✅ | ✅ 11 (unit + Chromium) |
+| Read-only checkout quote (same rules as orders, no writes, rate-limited) | ✅ | ✅ 11 (HTTP) |
+| Ambiguous order outcome: same key + exact payload retry, no duplicate order | ✅ | ✅ 11 (Chromium: interrupted response + refresh + retry) |
+| Draft storage scoped per account, validated, cleared on logout/switch/success | ✅ | ✅ 11 (unit + Chromium) |
 | Atomic ledger + balance + audit (rollback on any failure) | ✅ | ✅ 07 (three injected failures) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

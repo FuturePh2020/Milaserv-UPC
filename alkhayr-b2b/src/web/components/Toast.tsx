@@ -23,7 +23,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const show = useCallback(
     (message: string, tone: Tone = 'info') => {
       const id = next.current++;
-      setItems((list) => [...list.slice(-2), { id, tone, message }]);
+      setItems((list) => [...list.slice(-1), { id, tone, message }]); // at most two visible
       if (tone !== 'danger') window.setTimeout(() => dismiss(id), 6000);
     },
     [dismiss],

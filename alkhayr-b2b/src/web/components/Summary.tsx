@@ -21,7 +21,7 @@ export function OrderTotals({ amounts }: { amounts: OrderAmounts }) {
     <dl className="c-summary">
       <SummaryRow label="إجمالي البضاعة" value={<Money cents={amounts.subtotalCents} />} />
       <SummaryRow label={amounts.shippingTaxable ? 'الشحن (خاضع للضريبة)' : 'الشحن'} value={amounts.shippingCents === 0 ? 'بدون رسوم' : <Money cents={amounts.shippingCents} />} />
-      <SummaryRow label={`الضريبة (${formatBasisPoints(amounts.taxBps)})`} value={<Money cents={amounts.taxCents} />} />
+      <SummaryRow label={<>الضريبة (<bdi dir="ltr">{formatBasisPoints(amounts.taxBps)}</bdi>)</>} value={<Money cents={amounts.taxCents} />} />
       <SummaryRow label="الإجمالي" value={<Money cents={amounts.totalCents} />} total />
     </dl>
   );
