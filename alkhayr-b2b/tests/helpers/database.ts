@@ -14,6 +14,12 @@ import { projectRoot } from './server.ts';
  */
 
 export const MIGRATIONS_DIR = path.join(projectRoot, 'migrations');
+/** Number of migrations shipped with the code (tests must not hardcode it). */
+export const LATEST_VERSION = loadMigrations(MIGRATIONS_DIR).length;
+/** Filename for a test-only migration `offset` versions after the latest shipped one. */
+export function nextMigrationFile(suffix: string, offset = 1): string {
+  return `${String(LATEST_VERSION + offset).padStart(4, '0')}_${suffix}.sql`;
+}
 
 export interface TestDatabase {
   db: DatabaseSync;

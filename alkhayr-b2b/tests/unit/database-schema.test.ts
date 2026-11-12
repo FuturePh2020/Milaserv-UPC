@@ -123,9 +123,24 @@ describe('accounts', () => {
 
   test('merchant version must advance on every update', () => {
     const { merchantId } = trader();
-    fails(() => db.prepare("UPDATE merchants SET status = 'suspended' WHERE id = ?").run(merchantId), SQLITE.CONSTRAINT_TRIGGER);
-    db.prepare("UPDATE merchants SET status = 'suspended', version = version + 1 WHERE id = ?").run(merchantId);
+    fails(() => db.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 1 WHERE id = ?").run(merchantId), SQLITE.CONSTRAINT_TRIGGER);
+    db.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(merchantId);
     assert.equal(scalar('SELECT version FROM merchants WHERE id = ?', merchantId), 2);
+  });
+
+  test('migration 0002: access_version advances by exactly 1 with every status change and never otherwise', () => {
+    const { merchantId } = trader();
+    const row = () => db.prepare('SELECT status, version, access_version FROM merchants WHERE id = ?').get(merchantId) as { status: string; version: number; access_version: number };
+    assert.equal(row().access_version, 1);
+    fails(() => db.prepare("UPDATE merchants SET status = 'suspended', version = version + 1 WHERE id = ?").run(merchantId), SQLITE.CONSTRAINT_TRIGGER, /access_version must increase/);
+    fails(() => db.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 2, version = version + 1 WHERE id = ?").run(merchantId), SQLITE.CONSTRAINT_TRIGGER);
+    fails(() => db.prepare('UPDATE merchants SET access_version = access_version + 1, version = version + 1 WHERE id = ?').run(merchantId), SQLITE.CONSTRAINT_TRIGGER, /only together with status/);
+    fails(() => db.prepare('UPDATE merchants SET access_version = 1.5, version = version + 1 WHERE id = ?').run(merchantId), SQLITE.CONSTRAINT_DATATYPE);
+    db.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(merchantId);
+    db.prepare("UPDATE merchants SET status = 'approved', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(merchantId);
+    assert.deepEqual({ ...row() }, { status: 'approved', version: 3, access_version: 3 }, 'ABA leaves a different access_version');
+    db.prepare("UPDATE merchants SET address = '15 شارع جديد', version = version + 1 WHERE id = ?").run(merchantId);
+    assert.equal(row().access_version, 3, 'profile edits do not touch it');
   });
 
   test('sessions store only SHA-256 hex token hashes and are removed with their user', () => {

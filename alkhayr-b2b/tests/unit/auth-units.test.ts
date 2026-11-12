@@ -7,6 +7,8 @@ import { RateLimiter } from '../../src/server/auth/rate-limit.ts';
 import { hashSessionToken, newSessionToken } from '../../src/server/auth/sessions.ts';
 import { normalizeIp, rateLimitIdentity, resolveClientIp, trustedProxySet } from '../../src/server/http/client-ip.ts';
 import { createTestDatabase } from '../helpers/database.ts';
+import { openDatabase } from '../../src/server/database/connection.ts';
+import { deriveServerKeys } from '../../src/server/auth/keys.ts';
 
 describe('client IP resolution (TRUST_PROXY)', () => {
   const trusted = trustedProxySet(['10.0.0.2', '::1']);
@@ -147,6 +149,34 @@ describe('rate limiter', () => {
       assert.equal(rows, 1, 'expired rows were purged to make room');
       now += 2000;
       assert.equal(rl.sweep(), 1);
+    } finally {
+      t.cleanup();
+    }
+  });
+});
+
+describe('rate-limit persistence', () => {
+  test('counters live in the database: they survive closing and reopening (application restart)', () => {
+    const t = createTestDatabase();
+    const appSecret = randomBytes(32);
+    const now = 9_000_000;
+    try {
+      const first = new RateLimiter(t.db, deriveServerKeys(appSecret).rateLimit, () => now);
+      for (let i = 0; i < 5; i++) assert.equal(first.consume('login_account', 'persisted.user').allowed, true);
+      assert.equal(first.consume('login_account', 'persisted.user').allowed, false);
+      t.db.close();
+      const reopened = openDatabase(t.file, { mustExist: true, runtime: true });
+      try {
+        const second = new RateLimiter(reopened, deriveServerKeys(appSecret).rateLimit, () => now + 1000);
+        const r = second.consume('login_account', 'persisted.user');
+        assert.equal(r.allowed, false, 'still limited after restart');
+        assert.equal(r.retryAfterSeconds, 15 * 60 - 1);
+        // Keys are keyed HMACs: with a different APP_SECRET the same identifier maps to a different key.
+        const otherSecret = new RateLimiter(reopened, deriveServerKeys(randomBytes(32)).rateLimit, () => now + 1000);
+        assert.notEqual(otherSecret.keyFor('login_account', 'persisted.user'), second.keyFor('login_account', 'persisted.user'));
+      } finally {
+        reopened.close();
+      }
     } finally {
       t.cleanup();
     }

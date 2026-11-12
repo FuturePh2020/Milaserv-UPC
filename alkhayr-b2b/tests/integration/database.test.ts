@@ -5,6 +5,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { describe, test } from 'node:test';
 import { baseEnv, CANARY, createTempApp, rawRequest, runCli, runUntilExit, startServer, type TempApp } from '../helpers/server.ts';
+import { LATEST_VERSION, nextMigrationFile } from '../helpers/database.ts';
+
+const L = LATEST_VERSION;
+const NEXT_FILE = nextMigrationFile('add_note_index');
 
 const scalar = (file: string, sql: string) => {
   const db = new DatabaseSync(file, { readOnly: true });
@@ -45,12 +49,12 @@ describe('clean release initialization (no Git, no node_modules)', () => {
 
         const init = await runCli(app, ['db:init']);
         assert.equal(init.code, 0, init.stderr);
-        assert.match(init.stdout, /initialized at schema version 1/);
+        assert.match(init.stdout, new RegExp(`initialized at schema version ${L} `));
         assert.equal(statSync(path.dirname(app.databasePath)).mode & 0o777, 0o700);
         assert.equal(statSync(app.databasePath).mode & 0o777, 0o600);
 
         const status = await runCli(app, ['db:status']);
-        assert.deepEqual(JSON.parse(status.stdout), { initialized: true, schemaVersion: 1, latestVersion: 1, pending: [], integrity: 'ok', journalMode: 'wal' });
+        assert.deepEqual(JSON.parse(status.stdout), { initialized: true, schemaVersion: L, latestVersion: L, pending: [], integrity: 'ok', journalMode: 'wal' });
 
         const s = await startServer(app);
         try {
@@ -70,12 +74,12 @@ describe('clean release initialization (no Git, no node_modules)', () => {
       const settingsBefore = scalar(app.databasePath, 'SELECT company_name || version FROM business_settings');
       const again = await runCli(app, ['db:init']);
       assert.equal(again.code, 1);
-      assert.match(again.stderr, /Refusing to initialize: a database with schema version 1 already exists\. Nothing was changed\./);
+      assert.match(again.stderr, new RegExp(`Refusing to initialize: a database with schema version ${L} already exists\\. Nothing was changed\\.`));
       const migrate = await runCli(app, ['db:migrate']);
       assert.equal(migrate.code, 0);
-      assert.match(migrate.stdout, /up to date at schema version 1/);
+      assert.match(migrate.stdout, new RegExp(`up to date at schema version ${L}\\.`));
       assert.equal(scalar(app.databasePath, 'SELECT company_name || version FROM business_settings'), settingsBefore);
-      assert.equal(scalar(app.databasePath, 'SELECT count(*) FROM schema_migrations'), 1);
+      assert.equal(scalar(app.databasePath, 'SELECT count(*) FROM schema_migrations'), L);
     }));
 
   test('unknown commands print usage with exit code 2', () =>
@@ -106,21 +110,21 @@ describe('server startup refuses unsafe database states with operator instructio
 
   test('pending migrations: server refuses; db:migrate requires --confirm-backup; then server starts with data intact', () =>
     withApp(async (app) => {
-      writeFileSync(path.join(app.migrationsDir, '0002_add_note_index.sql'), 'CREATE INDEX merchants_contact_idx ON merchants (contact_name);\n');
+      writeFileSync(path.join(app.migrationsDir, NEXT_FILE), 'CREATE INDEX merchants_contact_idx ON merchants (contact_name);\n');
       const refused = startupFailure(await runUntilExit(app, baseEnv()));
       assert.equal(refused.code, 'MIGRATIONS_PENDING');
-      assert.match(refused.message, /version 1 but this release requires version 2/);
+      assert.match(refused.message, new RegExp(`version ${L} but this release requires version ${L + 1}`));
       assert.match(refused.message, /db:migrate -- --confirm-backup/);
 
       const noFlag = await runCli(app, ['db:migrate']);
       assert.equal(noFlag.code, 1);
-      assert.match(noFlag.stderr, /0002_add_note_index\.sql/);
+      assert.ok(noFlag.stderr.includes(NEXT_FILE));
       assert.match(noFlag.stderr, /--confirm-backup/);
-      assert.equal(scalar(app.databasePath, 'PRAGMA user_version'), 1);
+      assert.equal(scalar(app.databasePath, 'PRAGMA user_version'), L);
 
       const migrated = await runCli(app, ['db:migrate', '--confirm-backup']);
       assert.equal(migrated.code, 0, migrated.stderr);
-      assert.match(migrated.stdout, /Migrated schema version 1 -> 2/);
+      assert.match(migrated.stdout, new RegExp(`Migrated schema version ${L} -> ${L + 1}`));
       assert.equal(scalar(app.databasePath, 'SELECT company_name FROM business_settings'), CANARY);
 
       const s = await startServer(app);
@@ -225,7 +229,7 @@ describe('running server', () => {
       }
       assert.equal(scalar(app.databasePath, schemaSql), before);
       assert.equal(scalar(app.databasePath, 'SELECT company_name FROM business_settings'), CANARY);
-      assert.equal(scalar(app.databasePath, 'SELECT count(*) FROM schema_migrations'), 1);
+      assert.equal(scalar(app.databasePath, 'SELECT count(*) FROM schema_migrations'), L);
     }));
 
   test('the database really contains the canary that the HTTP exposure tests must never return', () =>

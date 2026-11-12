@@ -1,9 +1,13 @@
 # ALKHAYR — HTTP API Contract (v1)
 
-Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, and the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04). No catalog/order/admin business endpoint exists yet.** Each feature stage updates the
+Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04), and the merchant lifecycle endpoints `/api/v1/merchant/profile` and `/api/v1/admin/merchants…` (05). No catalog, inventory or order endpoint exists yet.** Each feature stage updates the
 "Implemented in" column only after its tests pass.
 
 ## 1. Conventions
+- **Canonical paths.** Every business route is under the single prefix `/api/v1`. Shorthand such as
+  "`/auth/login`" in reports or decision notes always means `/api/v1/auth/login`; no unprefixed aliases
+  exist and none will be added (an alias could diverge from the protections tested on the canonical
+  path). Unprefixed paths such as `/auth/login` return 404 (D-061).
 - Business routes under `/api/v1`. JSON only (`Content-Type: application/json; charset=utf-8`),
   except CSV export.
 - Every response carries `X-Request-Id`; error bodies include it.
@@ -46,6 +50,9 @@ Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /
 | 403 | `REAUTH_FAILED` | password change: current password or administrator TOTP wrong |
 | 404 | `NOT_FOUND` | also used for resources the caller may not see (no existence leak) |
 | 409 | `VERSION_CONFLICT`, `ORDER_STATE_CONFLICT`, `INSUFFICIENT_STOCK`, `PRICE_CHANGED`, `IDEMPOTENCY_KEY_REUSED`, `DUPLICATE` | concurrency/business conflict; body includes current state where safe |
+| 409 | `VERSION_CONFLICT` | `expectedVersion` is stale; `details.current` holds the current safe state (own profile, or `{status, version}` for administrators) — UI: show it and let the user retry |
+| 409 | `INVALID_STATE_TRANSITION` | merchant status change not allowed from the current state (incl. "no change"); `details.current` = `{status, version}` |
+| 403 | `ADMIN_ACCOUNT_PROTECTED` | administrator accounts cannot be suspended/demoted through merchant controls |
 | 409 | `CREDENTIALS_CHANGED` | password change lost a race with another credential change — UI: sign in again |
 | 405 | `METHOD_NOT_ALLOWED` | known path, wrong method; `Allow` header set |
 | 413 | `PAYLOAD_TOO_LARGE` | body limit exceeded while streaming (`Connection: close`) |
@@ -75,15 +82,17 @@ Auth column: V=visitor, P=pending trader, A=approved trader, D=admin; R = recent
 There is no `/auth/reauth` endpoint: re-authentication is a normal login (D-052). There is no
 account-existence lookup, password-reset, MFA-reset or verification-email endpoint.
 
-| GET/PATCH `/api/v1/merchant/profile` | P/A/D | own profile only; PATCH needs expectedVersion | 05 |
+| GET `/api/v1/merchant/profile` | P/A/D | `{profile:{id,status,businessName,contactName,email,phone,governorate,address,version,updatedAt}}` of the session's own merchant. **No query parameters accepted** (400); no id in the path. | **05 ✅** |
+| PATCH `/api/v1/merchant/profile` | P/A/D (session token) | `{expectedVersion, businessName?, contactName?, email? (""/null clears), phone?, governorate?, address?}` (strict; at least one field). Same normalization as registration. Never changes status, role, credentials or access. 200 → `{profile}`; stale → `409 VERSION_CONFLICT` with `details.current.profile`. | **05 ✅** |
 | GET `/api/v1/products` | A/D | catalog: `q, category, brand, sort∈{name,price_asc,price_desc,newest}`, cursor | 06 |
 | GET `/api/v1/products/:id` | A/D | active product detail (trader sees `available` only if > 0 policy — stage 06) | 06 |
 | POST `/api/v1/orders` | A/D | `{requestKey, note?, items:[{productId,cartons,expectedUnitPriceCents?}]}` | 08 |
 | GET `/api/v1/orders` | A/D | own orders, cursor | 08 |
 | GET `/api/v1/orders/:id` | A/D | own order + items + events | 08 |
 | GET `/api/v1/orders/:id/summary` | A/D(own) | print data; labeled not a tax invoice | 08/14 |
-| GET `/api/v1/admin/merchants` | D | queue: `status, q`, cursor | 05 |
-| GET/PATCH `/api/v1/admin/merchants/:id` | D, PATCH R | `{status, expectedVersion}`; suspension revokes sessions; cannot touch admin accounts | 05 |
+| GET `/api/v1/admin/merchants` | D (live admin session; recency not required, D-063) | Query (strict, each at most once): `status∈{pending,approved,suspended}`, `q` (1–80 chars; literal match on business/contact name, username, email, phone), `sort∈{newest,oldest,name}` (default newest), `limit` 1–100 (default 25), `cursor`. → `{items:[{…profile, username, role, createdAt, statusChangedAt}], nextCursor}`. Keyset pagination on (sort key, id); cursor HMAC-bound to admin, sort and filters. | **05 ✅** |
+| GET `/api/v1/admin/merchants/:id` | D | `{merchant, statusHistory:[{from,to,reason,at,actor}]}` (last 20). Unknown/malformed id → 404. | **05 ✅** |
+| PATCH `/api/v1/admin/merchants/:id` | D R (session token) | `{status, expectedVersion, reason?}` (strict). Transitions in §4a. → `{merchant, sessionsRevoked}`. Approval creates no session and sends nothing. Administrator targets → `403 ADMIN_ACCOUNT_PROTECTED`. | **05 ✅** |
 | GET/POST `/api/v1/admin/products` | D, POST R | list incl. inactive/demo; create (optional opening stock → ledger) | 06 |
 | PATCH `/api/v1/admin/products/:id` | D R | metadata/price/active with expectedVersion; **no stock fields** | 06 |
 | POST `/api/v1/admin/products/import` | D R | normalized rows, mode, operationKey, stockPolicy | 13 |
@@ -101,7 +110,20 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 No database-maintenance (init/migrate/status), backup, restore, admin-creation, password-reset or MFA-reset HTTP endpoints exist; these are operator CLI commands (`dist/server/cli.js`). HTTP requests never create or alter schema (runtime connection authorizer, DATABASE.md §1).
 No legacy `action`-style endpoint (BUILD_NEW, no old client).
 
-## 4. Status transitions (POST …/transitions)
+## 4a. Merchant status transitions (PATCH /api/v1/admin/merchants/:id)
+| from \ to | pending | approved | suspended |
+|---|---|---|---|
+| pending | ✘ (no change) | ✔ reason optional | ✔ reason required · sessions revoked |
+| approved | ✔ reason required · sessions revoked (access removed) | ✘ | ✔ reason required · sessions revoked |
+| suspended | ✔ reason required | ✔ reason required | ✘ |
+
+Every accepted change: one transaction re-validates the administrator (session, role, recent auth),
+re-reads the target, checks `expectedVersion`, updates `status`, `version`+1, `access_version`+1 and
+`status_changed_at`, deletes the target's sessions when access is removed, and writes
+`merchant.status_changed` `{from, to, reason?, sessions_revoked, version}`. Any failure rolls back all of it.
+Reason: 3–200 characters, stored in the audit log and shown in the merchant's status history.
+
+## 4. Order status transitions (POST …/transitions)
 | from \ to | confirmed | preparing | shipped | delivered | cancelled |
 |---|---|---|---|---|---|
 | pending | ✔ reserve | ✘ | ✘ | ✘ | ✔ no stock effect |

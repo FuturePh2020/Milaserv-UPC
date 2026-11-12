@@ -14,8 +14,11 @@ export const ERROR_CATALOG = {
   CSRF_FAILED: { status: 403, messageAr: 'انتهت صلاحية الصفحة أو الطلب غير موثّق. حدّث الصفحة وحاول مرة أخرى.' },
   ORIGIN_REJECTED: { status: 403, messageAr: 'مصدر الطلب غير مسموح به.' },
   REAUTH_FAILED: { status: 403, messageAr: 'كلمة المرور الحالية أو رمز التحقق غير صحيح.' },
+  ADMIN_ACCOUNT_PROTECTED: { status: 403, messageAr: 'لا يمكن تغيير حالة حساب مدير من شاشة التجار.' },
   NOT_FOUND: { status: 404, messageAr: 'المورد المطلوب غير موجود.' },
   METHOD_NOT_ALLOWED: { status: 405, messageAr: 'طريقة الطلب غير مسموح بها لهذا المسار.' },
+  VERSION_CONFLICT: { status: 409, messageAr: 'تم تعديل هذه البيانات بواسطة طلب آخر. راجع البيانات الحالية ثم أعد المحاولة.' },
+  INVALID_STATE_TRANSITION: { status: 409, messageAr: 'لا يمكن نقل الحساب إلى هذه الحالة من حالته الحالية.' },
   CREDENTIALS_CHANGED: { status: 409, messageAr: 'تغيّرت بيانات الدخول أثناء تنفيذ الطلب. سجّل الدخول من جديد.' },
   PAYLOAD_TOO_LARGE: { status: 413, messageAr: 'حجم البيانات المرسلة أكبر من المسموح.' },
   URI_TOO_LONG: { status: 414, messageAr: 'عنوان الطلب أطول من المسموح.' },
@@ -39,7 +42,7 @@ export interface ApiErrorBody {
     code: ErrorCode;
     message: string;
     requestId: string;
-    details?: { fields?: ApiFieldError[] };
+    details?: { fields?: ApiFieldError[]; current?: Record<string, unknown> };
   };
 }
 

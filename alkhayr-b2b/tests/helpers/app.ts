@@ -194,6 +194,51 @@ export class Client {
     });
   }
 
+  /**
+   * Sends the JSON body in two halves and runs `midway` in between: the handler has
+   * already authenticated the request when the race action happens.
+   */
+  requestSlow(method: string, p: string, body: unknown, midway: () => unknown | Promise<unknown>): Promise<Response> {
+    const payload = Buffer.from(JSON.stringify(body));
+    const headers: Record<string, string> = {
+      Host: TEST_HOST,
+      'Sec-Fetch-Site': 'same-origin',
+      Origin: this.app.origin,
+      'Content-Type': 'application/json',
+      'Content-Length': String(payload.length),
+    };
+    if (this.cookies.size) headers.Cookie = [...this.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+    if (this.csrf) headers['X-CSRF-Token'] = this.csrf;
+    if (this.ip) headers['X-Forwarded-For'] = this.ip;
+    return new Promise((resolve, reject) => {
+      const req = httpRequest({ host: '127.0.0.1', port: this.app.port, method, path: p, headers, agent: false }, (res) => {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (d: string) => (text += d));
+        res.on('end', () => {
+          let json: unknown;
+          try {
+            json = JSON.parse(text);
+          } catch {
+            /* not JSON */
+          }
+          resolve({ status: res.statusCode ?? 0, headers: res.headers, body: text, json, setCookies: ([] as string[]).concat(res.headers['set-cookie'] ?? []) });
+        });
+      });
+      req.on('error', reject);
+      req.write(payload.subarray(0, Math.floor(payload.length / 2)));
+      setTimeout(async () => {
+        try {
+          await midway();
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        req.end(payload.subarray(Math.floor(payload.length / 2)));
+      }, 60);
+    });
+  }
+
   async preLogin(): Promise<string> {
     const r = await this.request('GET', '/api/v1/auth/csrf');
     if (r.status !== 200) throw new Error(`csrf failed: ${r.status} ${r.body}`);

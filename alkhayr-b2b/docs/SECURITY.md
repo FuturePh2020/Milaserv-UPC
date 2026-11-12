@@ -2,7 +2,7 @@
 
 Status: **Policy defined in stage 00; controls implemented so far are listed in §12 with the stage
 that tested them (03: password hashing, TOTP, secret encryption, administrator bootstrap; 04: login,
-registration, sessions, CSRF, request boundaries, rate limits, authorization guards).** Historical results from
+registration, sessions, CSRF, request boundaries, rate limits, authorization guards; 05: merchant profile ownership, administrator review/approval, access versioning).** Historical results from
 the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this codebase.
 
 ## 1. Prohibited in every build
@@ -106,8 +106,16 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Server timeouts: `headersTimeout` 15 s, `requestTimeout` 30 s, keep-alive 5 s; max header 16 KiB.
 - Order of work on login/registration: boundary → general limit → bounded body → strict schema → CSRF →
   login/registration limits → only then scrypt (which has its own 2-running/32-queued cap → 503).
-- Durable fixed-window counters in `rate_limits`, keyed by HMAC(rate-limit key, bucket + identifier)
-  (no raw IP/username/password stored):
+- **Persistence:** counters are rows in the SQLite `rate_limits` table, so they survive an application
+  restart (tested with the real bundled server: 5 failures, restart, 6th attempt → 429). Only the
+  password-hashing concurrency limiter (§2) is in memory. No distributed store is used or needed for the
+  single-instance deployment.
+- **Keyed pseudonyms:** each key is HMAC-SHA256 under the rate-limit purpose key
+  (HKDF(APP_SECRET, info `alkhayr:rate_limit:v1`)) over `bucket + "\0" + identifier`; audit IPs use a separate
+  `alkhayr:ip:v1` key. Without APP_SECRET the values cannot be enumerated from IPs/usernames. This has been
+  the scheme since stage 04, so no stored-key transition was needed. If APP_SECRET is ever rotated, existing
+  counters simply stop matching (limits restart from zero) — a deliberate, documented effect.
+- Durable fixed-window counters in `rate_limits`, keyed as above (no raw IP/username/password stored):
 
   | Bucket | Limit | Identifier |
   |---|---|---|
@@ -121,13 +129,38 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Bounded growth: at 100 000 live rows, expired rows are purged; if still full, new identities share
   one restrictive overflow counter per bucket. A background sweep (every 60 s, 5 000 rows per pass)
   removes expired counters and sessions.
-- **Availability trade-off:** anyone can exhaust a username's 5 attempts per 15 minutes and so delay
-  that user's login (no permanent lockout; nothing reveals whether the account exists). Per-IP limits
-  apply to all users behind one NAT/proxy address. Operators should watch `rate_limited` log events.
+- **Availability trade-off — OPEN, not solved:** anyone can exhaust a username's 5 attempts per
+  15 minutes and so delay that user's login (no permanent lockout; nothing reveals whether the account
+  exists). Per-IP limits apply to all users behind one NAT/proxy address. Operators should watch
+  `rate_limited` log events. **Carried to stage 16 (adversarial review) and to the release gate (stage 18)**
+  as an explicit risk to accept or mitigate (e.g. separate limits for previously-successful devices).
 - `TRUST_PROXY`: exact proxy IPs. `X-Forwarded-For` is honoured only when the TCP peer is one of them,
   read right-to-left skipping trusted hops; malformed data → the peer address. Otherwise the socket
   address is used, so direct clients cannot spoof their address. The app port must not be reachable
   except through that proxy (stage 17).
+
+## 7a. Merchant data ownership and administration (implemented stage 05)
+- Self-service profile: the merchant is always the session's own; no id is accepted in path, query or
+  body (strict schemas; any query parameter → 400). Editable: business name, contact name, optional
+  email, phone, governorate, address — same normalization as registration. Status, role, credentials,
+  MFA and `access_version` are not writable. `expectedVersion` prevents stale overwrites (409 with the
+  newer data, never last-write-wins).
+- Administrator endpoints require a live administrator session; status changes additionally require
+  recent authentication (≤ 15 min, re-checked at commit) and the session-bound CSRF token. Reads do not
+  require recency (D-063).
+- Status changes run in one transaction: re-validate the administrator, re-read the target, check
+  `expectedVersion` and the transition table, update status + `version` + `access_version`, delete the
+  target's sessions when access is removed (→ suspended, approved → pending), audit. Failure of any part
+  rolls everything back (tested with injected revocation and audit failures).
+- Administrator accounts cannot be suspended/demoted (403 `ADMIN_ACCOUNT_PROTECTED`); no endpoint changes
+  roles, passwords or MFA; nothing deletes history.
+- Every mutation re-validates the session at commit (`revalidateAtCommit`), so a suspension, logout,
+  password change or lapse of recency while the body is in flight prevents the write (tested).
+- ABA: login compares `merchants.access_version` read before verification with the value at commit.
+- List queries: strict parameters, allow-listed sorts mapped to fixed SQL, bound values, LIKE wildcards
+  escaped, keyset pagination with HMAC-signed cursors bound to administrator, sort and filters.
+- Audit: `merchant.profile_updated` stores changed field NAMES only; `merchant.status_changed` stores
+  from/to, the administrator's reason, revoked-session count and version. No profile values or secrets.
 
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
@@ -189,4 +222,11 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Authorization guards (session, approval, admin, recent auth, ownership) | ✅ | ✅ 04 (test-only routes) |
 | Logout/password change revoke sessions; honest failure reporting | ✅ | ✅ 04 |
 | APP_SECRET required to start the server in every mode | ✅ | ✅ 04 |
+| Rate-limit counters persist across restart | ✅ (SQLite) | ✅ 05 (unit reopen + bundled-process restart) |
+| Profile ownership (no id selection; strict fields; version conflicts) | ✅ | ✅ 05 (HTTP) |
+| Admin review: strict query, allow-listed sort, escaped search, signed cursors | ✅ | ✅ 05 (HTTP) |
+| Atomic status change + session revocation + audit (rollback on failure) | ✅ | ✅ 05 (injected failures) |
+| ABA protection (access_version) and commit-time re-validation | ✅ | ✅ 05 (gated races, slow bodies) |
+| Administrator accounts protected from merchant controls | ✅ | ✅ 05 |
+| Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

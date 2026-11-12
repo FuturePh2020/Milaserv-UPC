@@ -78,6 +78,11 @@ The server refuses to start with `MIGRATIONS_PENDING` and prints the command. Th
 Never edit an applied migration file. If startup reports `MIGRATION_CHECKSUM_MISMATCH`, restore the
 original file from the release; do not "fix" the database to match an edited file.
 
+### Stage 05 note: migration 0002
+Stage 05 ships `0002_merchant_access_version.sql`. A database initialized before stage 05 makes the
+server refuse to start with `MIGRATIONS_PENDING`; apply it with §2 (stop the server, back up, then
+`db:migrate --confirm-backup`). New installations get it automatically through `db:init`.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -114,6 +119,8 @@ None has been supplied (BUILD_NEW). If one is:
 - احتفظ بقيمة `APP_SECRET` الأصلية؛ تغييرها يمنع تشغيل الخادم حتى تُستعاد، ولا تُعاد تهيئة حسابات المديرين تلقائيًا.
 - واجهة تسجيل الدخول (API) متاحة منذ المرحلة 04؛ في أول دخول للمدير انتظر الرمز التالي في تطبيق المصادقة، فالرمز المستخدم في التسجيل لا يُقبل مرة ثانية.
 - الخادم لا يعمل دون `APP_SECRET` في أي وضع.
+- المرحلة 05 أضافت الترحيل 0002؛ قواعد البيانات الأقدم تحتاج `db:migrate --confirm-backup` بعد إيقاف الخادم وأخذ نسخة احتياطية.
+- اعتماد التاجر أو تعليقه يتم من حساب مدير سجّل الدخول خلال آخر 15 دقيقة، مع ذكر سبب عند التعليق أو الإرجاع للمراجعة؛ التعليق يُنهي كل جلسات التاجر فورًا، والاعتماد لا يرسل أي رسائل.
 - اضبط `TRUST_PROXY` على عنوان الوكيل العكسي فقط إذا كان الخادم لا يُصل إليه إلا عبره.
 - حدود المحاولات: 5 محاولات دخول لكل اسم مستخدم و20 لكل عنوان IP كل 15 دقيقة؛ يمكن لأي شخص استنفاد محاولات اسم مستخدم مؤقتًا (15 دقيقة) دون قفل دائم.
 - قاعدة البيانات تُنشأ مرة واحدة بالأمر `db:init` ولا ينشئها الخادم أو يعدّلها تلقائيًا أبدًا.

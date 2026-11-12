@@ -179,15 +179,28 @@ interface UserRow {
   last_otp_step: number | null;
   merchant_id: string | null;
   merchant_status: string | null;
+  /** Monotonic authorization marker (migration 0002): +1 on every status change. */
+  merchant_access_version: number | null;
 }
 
 const USER_BY_USERNAME = `SELECT u.id, u.username, u.password_hash, u.password_changed_at, u.role, u.totp_ciphertext, u.last_otp_step,
-                                 m.id AS merchant_id, m.status AS merchant_status
+                                 m.id AS merchant_id, m.status AS merchant_status, m.access_version AS merchant_access_version
                             FROM auth_users u LEFT JOIN merchants m ON m.user_id = u.id
                            WHERE u.username = ? COLLATE NOCASE`;
 const USER_BY_ID = USER_BY_USERNAME.replace('WHERE u.username = ? COLLATE NOCASE', 'WHERE u.id = ?');
 
-type FailureReason = 'invalid_username' | 'unknown_user' | 'bad_password' | 'unsupported_hash' | 'mfa_failed' | 'mfa_unreadable' | 'suspended' | 'no_profile' | 'stale_credentials' | 'otp_replay';
+type FailureReason =
+  | 'invalid_username'
+  | 'unknown_user'
+  | 'bad_password'
+  | 'unsupported_hash'
+  | 'mfa_failed'
+  | 'mfa_unreadable'
+  | 'suspended'
+  | 'no_profile'
+  | 'stale_credentials'
+  | 'access_changed'
+  | 'otp_replay';
 
 function loginFailed(ctx: RequestContext, reason: FailureReason, userId: string | null): never {
   const { db, now } = ctx.services;
@@ -256,6 +269,9 @@ export async function login(ctx: RequestContext): Promise<void> {
       return { ok: false as const, reason: 'stale_credentials' as const };
     }
     if (!current.merchant_id || current.merchant_status === 'suspended') return { ok: false as const, reason: 'suspended' as const };
+    // ABA defence: any status change since the account was read (e.g. approved -> suspended -> approved)
+    // invalidates this verification, even if the final status looks the same.
+    if (current.merchant_access_version !== user.merchant_access_version) return { ok: false as const, reason: 'access_changed' as const };
     if (acceptedStep !== null) {
       const updated = db.prepare('UPDATE auth_users SET last_otp_step = ? WHERE id = ? AND (last_otp_step IS NULL OR last_otp_step < ?)').run(acceptedStep, user.id, acceptedStep);
       if (updated.changes !== 1) return { ok: false as const, reason: 'otp_replay' as const };

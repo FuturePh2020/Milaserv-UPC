@@ -4,6 +4,8 @@ Versioned, checksum-verified SQL migrations: `NNNN_name.sql`, contiguous from `0
 
 - `0001_initial.sql` — initial schema (13 STRICT tables, indexes, invariant triggers, approved
   categories and pilot business-setting defaults). Applied by `db:init`.
+- `0002_merchant_access_version.sql` — `merchants.access_version`, a monotonic marker advanced on every
+  status change (ABA protection for in-flight logins, stage 05).
 
 Rules (enforced by `src/server/database/migrations.ts`, see `docs/DATABASE.md` §5 and `docs/MIGRATION.md`):
 - **Never edit an applied migration.** Its SHA-256 is verified on every startup; changes go into a new file.

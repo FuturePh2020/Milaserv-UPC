@@ -15,6 +15,9 @@ const METADATA_ALLOW_LIST: Readonly<Record<string, readonly string[]>> = {
   'auth.logout': [],
   'auth.password_changed': ['sessions_revoked'],
   'auth.password_change_failed': ['reason'],
+  /** Field NAMES only (comma-separated), never values. */
+  'merchant.profile_updated': ['fields', 'version'],
+  'merchant.status_changed': ['from', 'to', 'reason', 'sessions_revoked', 'version'],
 };
 
 export type AuditAction = keyof typeof METADATA_ALLOW_LIST;

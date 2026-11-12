@@ -11,6 +11,8 @@ import type { StaticFiles } from './http/static-files.ts';
 import type { ReadinessProbe } from './database/readiness.ts';
 import { registerHealthRoutes } from './routes/health.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
+import { registerMerchantRoutes } from './routes/merchant.ts';
+import { registerAdminMerchantRoutes } from './routes/admin-merchants.ts';
 import type { AppServices } from './context.ts';
 import { rateLimitIdentity, resolveClientIp, trustedProxySet } from './http/client-ip.ts';
 import { assertApiRequestBoundary } from './http/request-guards.ts';
@@ -41,6 +43,8 @@ export function createApp(config: AppConfig, log: Logger, deps: AppDependencies)
   const router = new Router();
   registerHealthRoutes(router, deps.readiness);
   registerAuthRoutes(router);
+  registerMerchantRoutes(router);
+  registerAdminMerchantRoutes(router);
   // Business routes under /api/v1 are registered by later stages.
 
   const state: AppState = { shuttingDown: false };

@@ -14,7 +14,7 @@ import { openDatabase } from '../../src/server/database/connection.ts';
 import { acquireInstanceLock } from '../../src/server/database/instance-lock.ts';
 import { applyMigrations, loadMigrations } from '../../src/server/database/migrations.ts';
 import { BootstrapError, createAdministrator } from '../../src/server/services/admin-bootstrap.ts';
-import { insertMerchant, insertUser, MIGRATIONS_DIR, tempDir } from '../helpers/database.ts';
+import { insertMerchant, insertUser, LATEST_VERSION, MIGRATIONS_DIR, nextMigrationFile, tempDir } from '../helpers/database.ts';
 
 // Disposable fixture credentials (tests only; never seeded anywhere).
 const PASSWORD = 'Fixture-Admin-Passphrase-2026!';
@@ -207,11 +207,11 @@ describe('setup-admin: preconditions (nothing created or migrated as a side effe
     const e = env();
     const dir = path.join(tempDir(), 'migrations');
     cpSync(MIGRATIONS_DIR, dir, { recursive: true });
-    writeFileSync(path.join(dir, '0002_next.sql'), 'CREATE INDEX merchants_contact_idx ON merchants (contact_name);\n');
+    writeFileSync(path.join(dir, nextMigrationFile('next')), 'CREATE INDEX merchants_contact_idx ON merchants (contact_name);\n');
     const r = await run(e, happyAnswers(), { migrationsDir: dir });
     assert.equal(r.code, 1);
     assert.match(r.errors, /MIGRATIONS_PENDING/);
-    assert.equal(rows(e, 'PRAGMA user_version')[0]!.user_version, 1);
+    assert.equal(rows(e, 'PRAGMA user_version')[0]!.user_version, LATEST_VERSION);
   });
 
   test('refused while the server (or another operator command) holds the instance lock', async () => {

@@ -6,7 +6,7 @@ import { assertLocalFilesystem, networkFilesystemName, openDatabase } from '../.
 import { DatabaseError } from '../../src/server/database/errors.ts';
 import { acquireInstanceLock } from '../../src/server/database/instance-lock.ts';
 import { createReadinessProbe } from '../../src/server/database/readiness.ts';
-import { createTestDatabase, insertProduct, tempDir } from '../helpers/database.ts';
+import { createTestDatabase, insertProduct, LATEST_VERSION, tempDir } from '../helpers/database.ts';
 
 const mode = (p: string) => statSync(p).mode & 0o777;
 const pragma = (db: { prepare(s: string): { get(): unknown } }, name: string) => Object.values(db.prepare(`PRAGMA ${name}`).get() as object)[0];
@@ -109,7 +109,7 @@ describe('runtime authorizer: HTTP-path connections cannot change schema', () =>
       }
       assert.equal(pragma(db, 'foreign_keys'), 1);
       assert.equal(pragma(db, 'journal_mode'), 'wal');
-      assert.equal(pragma(db, 'user_version'), 1);
+      assert.equal(pragma(db, 'user_version'), LATEST_VERSION);
       const id = insertProduct(db);
       assert.equal((db.prepare('SELECT name FROM products WHERE id = ?').get(id) as { name: string }).name, 'شيكولاتة بالبندق');
       db.exec('BEGIN IMMEDIATE');
@@ -137,8 +137,8 @@ describe('readiness probe', () => {
   test('ready while the configured file is open at the expected version', () => {
     const t = createTestDatabase();
     try {
-      assert.equal(createReadinessProbe(t.db, t.file, 1)(), true);
-      assert.equal(createReadinessProbe(t.db, t.file, 2)(), false);
+      assert.equal(createReadinessProbe(t.db, t.file, LATEST_VERSION)(), true);
+      assert.equal(createReadinessProbe(t.db, t.file, LATEST_VERSION + 1)(), false);
     } finally {
       t.cleanup();
     }
@@ -147,7 +147,7 @@ describe('readiness probe', () => {
   test('not ready when the file is moved away or replaced, ready again when restored', () => {
     const t = createTestDatabase();
     try {
-      const probe = createReadinessProbe(t.db, t.file, 1);
+      const probe = createReadinessProbe(t.db, t.file, LATEST_VERSION);
       renameSync(t.file, `${t.file}.moved`);
       assert.equal(probe(), false);
       writeFileSync(t.file, 'not the same file');
@@ -161,7 +161,7 @@ describe('readiness probe', () => {
 
   test('not ready (and no throw) when the connection is closed', () => {
     const t = createTestDatabase();
-    const probe = createReadinessProbe(t.db, t.file, 1);
+    const probe = createReadinessProbe(t.db, t.file, LATEST_VERSION);
     t.db.close();
     assert.equal(probe(), false);
     t.cleanup();

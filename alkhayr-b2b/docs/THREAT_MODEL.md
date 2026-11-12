@@ -22,7 +22,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | T1 | Credential stuffing / brute force on login | external | scrypt; per-account (5/15 min) + per-IP (20/15 min) limits applied before hashing; one generic failure; admin TOTP | 03/04 ✅ |
 | T2 | Admin TOTP replay or race | external w/ observed code | `verifyTotp` returns the accepted step (03 ✅); enrollment step stored as baseline (03 ✅); atomic `last_otp_step` update at login (04) | 03/04 |
 | T3 | Self-registration as admin / mass assignment of role, status, prices | trader/visitor | strict schemas reject unknown fields (tested: role, status, ids, totp, hash); registration creates pending traders only; admin only via CLI | 04 ✅ (profile edits: 05) |
-| T4 | IDOR: trader reads another's orders/profile | approved trader | ownership in SQL WHERE, 404 for foreign IDs, signed cursors | 05/08 |
+| T4 | IDOR: trader reads another's orders/profile | approved trader | profile selected only by session (no ids/params accepted); 404 for foreign ids; signed cursors | 05 ✅ profile (orders: 08) |
 | T5 | Pending/suspended trader sees prices or orders | trader | guards read live status per request (`requireApproved`); suspended accounts have no valid session | 04 ✅ guards (routes: 06–09) |
 | T6 | CSRF / cross-site mutation | malicious site | SameSite=Strict, exact Origin, Fetch Metadata, session-bound CSRF, pre-login CSRF, JSON-only | 04 ✅ |
 | T7 | Session theft/fixation | external | HttpOnly `__Host-` cookie, rotation destroying any presented session, duplicate-cookie rejection, idle/absolute expiry, hash-only storage, cap 5 | 04 ✅ |
@@ -65,5 +65,10 @@ third-party content rendered by the browser only (never fetched server-side).
 | T37 | Hashing-queue exhaustion (CPU/RAM DoS through login) | external | rate limits before hashing; 2 running/32 queued cap; 503 + Retry-After | 04 ✅ |
 | T38 | Stale verification wins a race (reset/suspension/password change during login or password change) | concurrent actor | commit transaction re-reads hash, `password_changed_at`, status, session; conditional updates | 04 ✅ (gated-race tests) |
 | T39 | Concurrent TOTP replay | attacker with an observed code | `UPDATE … WHERE last_otp_step < step` must affect 1 row inside the session-creating transaction | 04 ✅ |
-| T40 | Targeted login lockout (availability) | external | accepted trade-off: 15-minute windows, no permanent lockout; monitoring of `rate_limited` events | 04 (documented) |
+| T40 | Targeted login lockout (availability) | external | 15-minute windows, no permanent lockout, monitoring of `rate_limited` events — **OPEN risk**, not solved | carried to 16 and release gate 18 |
 | T41 | Rate-limit key spraying (many IPs/usernames) to grow storage | external | HMAC keys, 100 000-row cap with expired purge and shared overflow counter; periodic sweep | 04 ✅ |
+| T42 | ABA status race: approved → suspended → approved during an in-flight login | concurrent admin action | monotonic `merchants.access_version` compared at login commit (migration 0002) | 05 ✅ |
+| T43 | Stale identity authorizes a write after suspension/logout/recency lapse while the body is in flight | concurrent actor | `revalidateAtCommit` inside every mutating transaction | 05 ✅ |
+| T44 | Suspension reported but sessions still valid (partial failure) | storage failure | state change, revocation and audit in one transaction; injected failures roll back all | 05 ✅ |
+| T45 | Privilege change through merchant controls (promote trader, demote/suspend admin) | admin error / attacker with admin session | strict schemas (no role field), `ADMIN_ACCOUNT_PROTECTED`, no role/password/MFA endpoints | 05 ✅ |
+| T46 | Data harvesting through admin search/pagination | trader / forged cursor | admin-only, strict params, escaped LIKE, HMAC cursors bound to admin/sort/filters, limit ≤ 100 | 05 ✅ |

@@ -80,3 +80,36 @@ test('bundled server: csrf -> login -> me -> logout with __Host- secure cookies;
     await app.cleanup();
   }
 });
+
+test('bundled server: login rate-limit counters survive a full process restart', async () => {
+  const app = await createTempApp();
+  try {
+    const env = baseEnv();
+    const attempt = async (port: number) => {
+      const csrf = await rawRequest(port, { path: '/api/v1/auth/csrf' });
+      const pre = cookiesFrom(csrf.headers['set-cookie']).get('alkhayr_presession')!;
+      return rawRequest(port, {
+        method: 'POST',
+        path: '/api/v1/auth/login',
+        headers: { Origin: `http://${TEST_HOST}`, 'Content-Type': 'application/json', Cookie: `alkhayr_presession=${pre}`, 'X-CSRF-Token': JSON.parse(csrf.body).preLoginToken },
+        body: JSON.stringify({ username: 'restart.target', password: 'Wrong-Password-000' }),
+      });
+    };
+    const s1 = await startServer(app, env);
+    try {
+      for (let i = 0; i < 5; i++) assert.equal((await attempt(s1.port)).status, 401);
+    } finally {
+      assert.equal(await s1.stop(), 0);
+    }
+    const s2 = await startServer(app, env);
+    try {
+      const limited = await attempt(s2.port);
+      assert.equal(limited.status, 429, limited.body);
+      assert.ok(Number(limited.headers['retry-after']) > 0);
+    } finally {
+      await s2.stop();
+    }
+  } finally {
+    await app.cleanup();
+  }
+});

@@ -16,6 +16,7 @@ export function sendJson(res: ServerResponse, status: number, body: unknown, hea
 export function errorBody(code: ErrorCode, requestId: string, err?: AppError): ApiErrorBody {
   const body: ApiErrorBody = { error: { code, message: ERROR_CATALOG[code].messageAr, requestId } };
   if (err?.fields && err.fields.length > 0) body.error.details = { fields: err.fields };
+  if (err?.current) body.error.details = { ...body.error.details, current: err.current };
   return body;
 }
 

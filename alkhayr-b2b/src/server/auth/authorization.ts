@@ -98,3 +98,21 @@ export function requireOwnMerchant(auth: AuthenticatedRequest, merchantId: strin
   if (options.allowAdmin && auth.identity.role === 'admin') return;
   if (auth.identity.merchantId !== merchantId) throw new AppError('NOT_FOUND');
 }
+
+/**
+ * Commit-time re-validation: call INSIDE the write transaction. The identity
+ * resolved at the start of the request may be stale (the body is read
+ * asynchronously); this re-reads the session and account so a suspension,
+ * logout, password change or expiry in the meantime prevents the write.
+ * Returns the current identity.
+ */
+export function revalidateAtCommit(ctx: RequestContext, auth: AuthenticatedRequest, options: { admin?: 'any' | 'recent' } = {}): Identity {
+  const found = lookupSession(ctx.services.db, auth.token, ctx.services.now());
+  if (found.kind !== 'valid' || found.identity.userId !== auth.identity.userId) throw new AppError('UNAUTHENTICATED');
+  const current = found.identity;
+  if (options.admin) {
+    if (current.role !== 'admin') throw new AppError('FORBIDDEN');
+    if (options.admin === 'recent' && ctx.services.now() - current.authAt >= SESSION_POLICY.recentAuthMs) throw new AppError('RECENT_AUTH_REQUIRED');
+  }
+  return current;
+}

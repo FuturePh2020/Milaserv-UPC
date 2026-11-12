@@ -3,12 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **04 — Authentication, sessions, CSRF & abuse limits: COMPLETE** |
-| Next stage | **05 — Merchant registration, approval & profile ownership** (awaiting owner prompt) |
+| Current stage | **05 — Merchant lifecycle, approval & profile ownership: COMPLETE** |
+| Next stage | **06 — Product management & approved catalog** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Application | Foundation + database + security primitives + admin enrollment + **authentication API** (register, login with admin TOTP, sessions, CSRF, rate limits, logout, password change, authorization guards). **No catalog, orders, merchant-profile/admin endpoints or sign-in UI yet.** |
+| Schema | Migrations 0001 + **0002** (`merchants.access_version`) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication API, **merchant lifecycle API**. No catalog, inventory, orders or UI screens yet. |
 
 ## Stage log
 
@@ -18,10 +19,99 @@
 | 01 | ✅ Done (foundation) | Commit `f6ac774` |
 | 02 | ✅ Done (database) | Commit `fa2fe06` |
 | 03 | ✅ Done (security primitives + setup-admin) | Commit `4894196` |
-| 04 | ✅ Done (authentication) | 297/297 tests ×5 clean-copy runs, typecheck clean, 13 mutation checks, audit 0 — below |
-| 05–18 | ⏳ Not started | — |
+| 04 | ✅ Done (authentication) | Commit `50ed3fa` |
+| 05 | ✅ Done (merchant lifecycle) | 321/321 tests ×3 clean-copy runs, typecheck clean, mutation checks, audit 0 — below |
+| 06–18 | ⏳ Not started | — |
 
-## Stage 04 — what was built
+## Stage 05 — clarifications requested
+| Topic | Answer | Where |
+|---|---|---|
+| `/auth/*` paths | Shorthand for the canonical `/api/v1/auth/*`. No unprefixed aliases exist or will be added; unprefixed paths are 404. | API_CONTRACT §1, D-061 |
+| Rate-limit persistence | Counters are SQLite rows and survive restarts — tested with the real bundled server (5 failures → restart → 429). Only the hashing concurrency limiter is in memory. No distributed store. | SECURITY §7, D-062 |
+| Pseudonym keys | Keyed HMAC-SHA256 under HKDF(APP_SECRET) purpose keys (`rate_limit`, `ip`) since stage 04 — not enumerable plain hashes; no key transition needed. APP_SECRET rotation resets counters (documented). | SECURITY §7 |
+| Username-lockout availability risk | **Still open, not solved.** Carried to stage 16 and the release gate (stage 18). | SECURITY §7, THREAT_MODEL T40 |
+
+## Stage 05 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| Own profile | `src/server/services/merchants.ts`, `routes/merchant.ts` | `GET`/`PATCH /api/v1/merchant/profile`; session-only identity, no query params, strict editable fields, registration normalization, `expectedVersion` (409 with newer data), commit-time re-validation, audit with field names only |
+| Admin review | `services/merchants.ts`, `routes/admin-merchants.ts`, `http/query.ts`, `http/cursor.ts` | List (status filter, escaped search, allow-listed sorts, keyset pagination with HMAC cursors), detail with status history |
+| State changes | `services/merchants.ts` | Transition table, reasons, `expectedVersion`, admin recency at commit, atomic update + session revocation + audit, admin accounts protected |
+| ABA defence | `migrations/0002_merchant_access_version.sql`, `services/authentication.ts` | Monotonic `access_version` (+1 per status change, trigger-enforced); login commit compares it |
+| Guards | `auth/authorization.ts` | `revalidateAtCommit` (session, account state, admin role/recency) |
+| Errors | `shared/errors.ts`, `http/errors.ts`, `http/response.ts` | `VERSION_CONFLICT`, `INVALID_STATE_TRANSITION`, `ADMIN_ACCOUNT_PROTECTED`; `details.current` |
+| Audit | `services/audit.ts` | `merchant.profile_updated` (field names, version), `merchant.status_changed` (from/to/reason/revoked/version) |
+
+## Checks run in stage 05 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Full suite (stages 01–05) | `npm test` | ✅ **321 tests, 75 suites, 321 pass, 0 fail** |
+| — merchant lifecycle (HTTP) / auth units (+ persistence) / auth process (+ restart) / schema (+ 0002) | `node --test <file>` | ✅ 21 / 13 / 2 / 32 |
+| Regression tests adjusted | migration, database, connection, setup-admin, auth-security tests | Version numbers now derived from the shipped migrations (`LATEST_VERSION`, `nextMigrationFile`) instead of hardcoded 1/2; status fixtures advance `access_version`; stage-boundary list no longer expects the new merchant routes to be 404. No protection removed. |
+| Mutation checks | 13 run | ✅ 10 caught: ABA check, session revocation, profile commit re-validation, admin commit re-validation, admin protection, profile version precheck, strict profile schema, LIKE escaping, cursor MAC, commit-time admin recency (the last one initially **survived**; a test for recency lapsing mid-request was added, then it was caught). 2 survived by design because a second independent layer catches them (profile WHERE-version guard; recency precheck vs commit check). 1 was a malformed placeholder (not counted). |
+| Clean reproduction ×3 | tracked files → `npm ci` → typecheck + `npm test` ×3 | ✅ 0 type errors; 321/321 each run |
+| Dependency audit | `npm audit` | ✅ 0 findings (57 packages); lockfile unchanged |
+| Immutability | `git diff` of `0001_initial.sql` | ✅ unchanged |
+| Browser QA | — | NOT RUN (no UI change) |
+| Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
+
+### Required tests → evidence (real HTTP, in-process app unless noted)
+| Requirement | Test |
+|---|---|
+| Anonymous denied | profile GET/PATCH → 401; admin list → 401 |
+| Own profile only; ids/headers cannot redirect | two traders; `X-Merchant-Id`/`X-User-Id`, `?merchantId=`, `/profile/<id>`, body `merchantId`/`id`/`userId` |
+| Role/status/security fields rejected | 8 fields → 400, nothing written |
+| Pending edit does not approve | status pending, `access_version` 1, role trader |
+| Validation and stale versions | phone/email/address, empty patch, missing version, 409 with newer data, email clearing |
+| Traders blocked from admin endpoints | list/search/detail/patch (incl. forged role header) → 403 |
+| Stale admin authentication | reads 200, change 428, re-login → 200; recency lapsing mid-request → 428 at commit |
+| Search/filter/pagination | status filter, `%` literal, Arabic, username, SQL-ish input, 10 invalid params, 3 pages = full ordering, cursor bound to sort/filter/admin, forged cursor |
+| Approval | no session created, no notification field, audit from/to, live effect on trader |
+| Suspension | 3 sessions revoked, reason required, login refused |
+| Approved → pending | access removed, re-login as pending |
+| Concurrent changes | [200, 409 `VERSION_CONFLICT` with current version], one audit row |
+| Revocation/audit failure rollback | injected trigger failures → 500, merchant row identical, sessions intact |
+| In-flight login/password vs suspension | gated password change → 401, password unchanged; gated login (stage 04) |
+| ABA | gated login + suspend + reapprove → 401 (`access_changed`), fresh login works; schema test for triggers |
+| Admin accounts protected | 4 attempts → 403; role field → 400; counts unchanged |
+| Secret-free responses/audit | regex scan of profile/list/detail bodies; audit has no passwords, tokens, CSRF, email/phone values |
+| Rate limits survive restart | unit reopen; bundled process restart → 429 |
+| Existing protections | full stage 01–04 suites pass |
+
+## Limitations (known)
+- **Username-lockout availability risk is open** (SECURITY §7, T40) — for stage 16 and the release gate.
+- Administrator reads do not require recent authentication (D-063); only changes do.
+- No email/SMS notification of approval or suspension (none configured; nothing claims otherwise).
+- Merchant search uses LIKE (case-insensitive only for ASCII; Arabic matches literally).
+- End-to-end proof that profile edits leave order snapshots unchanged waits for stages 08–09 (DB-level guarantee exists since 0001).
+- Existing pre-stage-05 databases must run `db:migrate` for 0002.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 06.
+
+## Files changed in stage 05 (all under `alkhayr-b2b/`)
+New: `migrations/0002_merchant_access_version.sql`, `src/server/services/merchants.ts`, `src/server/routes/{merchant,admin-merchants}.ts`,
+`src/server/http/{query,cursor}.ts`, `tests/integration/merchants.test.ts`.
+Modified: `src/server/{app.ts,auth/authorization.ts,http/errors.ts,http/response.ts,services/audit.ts,services/authentication.ts}`, `src/shared/errors.ts`,
+`tests/helpers/{app,database}.ts`, `tests/integration/{auth-process,auth-security,database}.test.ts`,
+`tests/unit/{auth-units,database-connection,database-migrations,database-schema,setup-admin}.test.ts`,
+`migrations/README.md`, `README.md`, `docs/{API_CONTRACT,DATABASE,DECISIONS,MIGRATION,SECURITY,THREAT_MODEL,PROJECT_STATE}.md`.
+Not touched: `migrations/0001_initial.sql`, dependencies/lockfile, web UI, repository-root files.
+
+## How to continue
+Next: send **PROMPT 06**. Reuse `requireApproved` for catalog reads, `requireRecentAdminAuth` + `revalidateAtCommit`
+for product mutations, `parseQuery` + `encodeCursor/decodeCursor` for lists, `VERSION_CONFLICT` with `details.current`,
+`LATEST_VERSION`/`nextMigrationFile` in tests, and append migrations (never edit 0001/0002).
+
+---
+
+## Stage 04 record (retained)
+
+### What was built
 | Area | Files | Summary |
 |---|---|---|
 | Endpoints | `src/server/routes/auth.ts`, `src/server/services/authentication.ts` | `GET /auth/csrf`, `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password` (contract: API_CONTRACT.md §3) |
@@ -39,15 +129,7 @@
 - `GET /auth/csrf` gave a signed-in browser only its session token, so it could not log in again (switch account / re-authenticate after 428) — found by the fixation and recency tests; fixed (D-054).
 - `setup-admin` still said web login was unavailable; it now explains that the enrollment code cannot be reused and the next 30-second code is needed.
 
-## Commands (from `alkhayr-b2b/`, Node 24 on PATH)
-| Purpose | Command |
-|---|---|
-| Install / build | `npm ci` · `npm run build` |
-| Initialization sequence | `npm run db:init` → `npm run setup-admin` (interactive, server stopped) → `npm start` (APP_SECRET required) |
-| Status / upgrade | `npm run db:status` · `npm run db:migrate -- --confirm-backup` |
-| Checks | `npm run typecheck` · `npm test` · `npm run check` |
-
-## Checks run in stage 04 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 04 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -84,7 +166,7 @@
 | Secret-free responses and logs | flows: password, hash, token, CSRF, TOTP code, MFA secret, APP_SECRET, raw IP absent from logs and audit rows; process E2E logs |
 | Continued DB/static protections | stage 01–03 suites unchanged and passing |
 
-## Limitations (known)
+### Limitations (known)
 - Per-username limit allows targeted temporary login delay (accepted trade-off, SECURITY.md §7).
 - Rate limiting and hashing limits are per process (single-instance design).
 - Suspension is enforced on the next request; deleting the suspended account's session rows at suspension time is part of stage 05's status endpoint.
@@ -92,13 +174,7 @@
 - No password/MFA recovery, operator password reset or additional administrators until stage 15.
 - TRUST_PROXY behaviour behind a real proxy and TLS are not tested here (stage 17).
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 05.
-
-## Files changed in stage 04 (all under `alkhayr-b2b/`)
+### Files changed in stage 04 (all under `alkhayr-b2b/`)
 New: `src/server/auth/{authorization,cookies,csrf,keys,rate-limit,sessions}.ts`, `src/server/context.ts`,
 `src/server/http/{client-ip,request-guards}.ts`, `src/server/routes/auth.ts`, `src/server/services/{audit,authentication}.ts`,
 `tests/helpers/app.ts`, `tests/unit/auth-units.test.ts`, `tests/integration/auth-{flows,security,process}.test.ts`.
@@ -107,14 +183,6 @@ Modified: `src/server/{app,main}.ts`, `src/server/http/router.ts`, `src/server/c
 `tests/security/repository-hygiene.test.ts`, `.env.example`, `README.md`,
 `docs/{API_CONTRACT,SECURITY,THREAT_MODEL,DECISIONS,DATABASE,MIGRATION,PROJECT_STATE}.md`.
 Not touched: migrations, dependencies/lockfile, web UI, repository-root files.
-
-## How to continue
-Next: send **PROMPT 05**. Stage 05 should build on: `requireSession` / `requireSessionCsrf` / `requireApproved` /
-`requireAdmin` / `requireRecentAdminAuth` / `requireOwnMerchant`, `merchantProfileSchema`, `writeAudit` (add
-new actions to its allow-list), `deleteUserSessions` on suspension, `writeTransaction`, and keep the
-runtime authorizer and the in-process HTTP harness (`tests/helpers/app.ts`).
-
----
 
 ## Stage 03 record (retained)
 

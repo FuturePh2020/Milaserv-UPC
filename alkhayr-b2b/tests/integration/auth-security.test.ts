@@ -285,7 +285,7 @@ describe('races between verification and commit', () => {
         const arrived = hasher.pause();
         const pending = c.request('POST', '/api/v1/auth/login', { body: { username: t.username, password: t.password } });
         await arrived;
-        app.fixtureDb.prepare("UPDATE merchants SET status = 'suspended', version = version + 1 WHERE id = ?").run(t.merchantId);
+        app.fixtureDb.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(t.merchantId);
         hasher.release();
         expectCode(await pending, 401, 'INVALID_CREDENTIALS');
         assert.equal(count(app, 'SELECT count(*) FROM sessions WHERE user_id = ?', t.id), 0);
@@ -469,10 +469,10 @@ describe('authorization guards (exercised through TEST-ONLY routes)', () => {
       assert.equal((await t.request('GET', '/api/v1/__test/approved')).status, 200);
 
       // Approval is read live: approving the pending merchant takes effect on the next request.
-      app.fixtureDb.prepare("UPDATE merchants SET status = 'approved', version = version + 1 WHERE id = ?").run(pending.merchantId);
+      app.fixtureDb.prepare("UPDATE merchants SET status = 'approved', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(pending.merchantId);
       assert.equal((await p.request('GET', '/api/v1/__test/approved')).status, 200);
       // Suspension removes effective access immediately, even with an unexpired session.
-      app.fixtureDb.prepare("UPDATE merchants SET status = 'suspended', version = version + 1 WHERE id = ?").run(approved.merchantId);
+      app.fixtureDb.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(approved.merchantId);
       expectCode(await t.request('GET', '/api/v1/__test/approved'), 401, 'UNAUTHENTICATED');
       expectCode(await t.request('GET', '/api/v1/auth/me'), 401, 'UNAUTHENTICATED');
       assert.equal(count(app, 'SELECT count(*) FROM sessions WHERE user_id = ?', approved.id), 0);
@@ -495,12 +495,12 @@ describe('authorization guards (exercised through TEST-ONLY routes)', () => {
 });
 
 describe('stage boundary', () => {
-  test('no catalog, order or admin business endpoints exist yet', () =>
+  test('no catalog, order or inventory endpoints exist yet', () =>
     withApp(async (app) => {
       const t = await createTrader(app);
       const c = new Client(app, ip());
       await c.login(t.username, t.password);
-      for (const p of ['/api/v1/products', '/api/v1/orders', '/api/v1/admin/merchants', '/api/v1/merchant/profile']) {
+      for (const p of ['/api/v1/products', '/api/v1/orders', '/api/v1/admin/products', '/api/v1/admin/inventory', '/api/v1/admin/orders']) {
         expectCode(await c.request('GET', p), 404, 'NOT_FOUND');
       }
     }));

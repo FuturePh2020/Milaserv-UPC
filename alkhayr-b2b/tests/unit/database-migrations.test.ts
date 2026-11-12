@@ -7,7 +7,7 @@ import { describe, test } from 'node:test';
 import { APPLICATION_ID, openDatabase } from '../../src/server/database/connection.ts';
 import { DatabaseError } from '../../src/server/database/errors.ts';
 import { applyMigrations, inspectSchema, loadMigrations, MigrationFailedError, quickCheck } from '../../src/server/database/migrations.ts';
-import { createTestDatabase, MIGRATIONS_DIR, tempDir } from '../helpers/database.ts';
+import { createTestDatabase, LATEST_VERSION, MIGRATIONS_DIR, nextMigrationFile, tempDir } from '../helpers/database.ts';
 
 const scalar = (db: DatabaseSync, sql: string) => Object.values(db.prepare(sql).get() as object)[0];
 
@@ -47,7 +47,7 @@ describe('loading migrations', () => {
     writeFileSync(path.join(bad, '2_oops.sql'), 'SELECT 1;');
     assert.equal(code(() => loadMigrations(bad)), 'MIGRATION_FILENAME');
     const gap = migrationsCopy();
-    writeFileSync(path.join(gap, '0003_skipped.sql'), 'SELECT 1;');
+    writeFileSync(path.join(gap, nextMigrationFile('skipped', 2)), 'SELECT 1;');
     assert.equal(code(() => loadMigrations(gap)), 'MIGRATION_SEQUENCE');
     assert.equal(code(() => loadMigrations(path.join(tempDir(), 'none'))), 'MIGRATIONS_MISSING');
     assert.equal(code(() => loadMigrations(tempDir())), 'MIGRATIONS_MISSING');
@@ -55,19 +55,23 @@ describe('loading migrations', () => {
 });
 
 describe('fresh initialization and repeat runs', () => {
-  test('a new file is uninitialized; applying produces the full schema at version 1', () => {
+  test('a new file is uninitialized; applying produces the full schema at the latest version', () => {
     const t = createTestDatabase({ migrate: false });
     try {
       const migrations = loadMigrations(MIGRATIONS_DIR);
-      assert.deepEqual(inspectSchema(t.db, migrations), { kind: 'uninitialized', latestKnown: 1 });
+      assert.deepEqual(inspectSchema(t.db, migrations), { kind: 'uninitialized', latestKnown: LATEST_VERSION });
       const result = applyMigrations(t.db, migrations, () => 1_800_000_000_000);
-      assert.deepEqual(result, { fromVersion: 0, toVersion: 1, applied: ['0001_initial.sql'] });
-      assert.equal(scalar(t.db, 'PRAGMA user_version'), 1);
+      assert.deepEqual(result, { fromVersion: 0, toVersion: LATEST_VERSION, applied: migrations.map((m) => m.filename) });
+      assert.equal(result.applied[0], '0001_initial.sql');
+      assert.equal(scalar(t.db, 'PRAGMA user_version'), LATEST_VERSION);
       assert.equal(scalar(t.db, 'PRAGMA application_id'), APPLICATION_ID);
       const tables = (t.db.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((r) => r.name);
       assert.deepEqual(tables, EXPECTED_TABLES);
-      const history = t.db.prepare('SELECT version, name, checksum, applied_at FROM schema_migrations').all();
-      assert.deepEqual(history.map((r) => ({ ...r })), [{ version: 1, name: 'initial', checksum: migrations[0]!.checksum, applied_at: 1_800_000_000_000 }]);
+      const history = t.db.prepare('SELECT version, name, checksum, applied_at FROM schema_migrations ORDER BY version').all();
+      assert.deepEqual(
+        history.map((r) => ({ ...r })),
+        migrations.map((m) => ({ version: m.version, name: m.name, checksum: m.checksum, applied_at: 1_800_000_000_000 })),
+      );
       assert.deepEqual(quickCheck(t.db), []);
       assert.equal(t.db.prepare('PRAGMA foreign_key_check').all().length, 0);
     } finally {
@@ -82,10 +86,10 @@ describe('fresh initialization and repeat runs', () => {
       const migrations = loadMigrations(MIGRATIONS_DIR);
       const result = applyMigrations(t.db, migrations);
       assert.deepEqual(result.applied, []);
-      assert.equal(scalar(t.db, 'SELECT count(*) FROM schema_migrations'), 1);
+      assert.equal(scalar(t.db, 'SELECT count(*) FROM schema_migrations'), LATEST_VERSION);
       assert.equal(scalar(t.db, 'SELECT tax_bps FROM business_settings'), 1400);
       assert.equal(scalar(t.db, 'SELECT count(*) FROM product_categories'), 4);
-      assert.deepEqual(inspectSchema(t.db, migrations), { kind: 'current', version: 1, latestKnown: 1 });
+      assert.deepEqual(inspectSchema(t.db, migrations), { kind: 'current', version: LATEST_VERSION, latestKnown: LATEST_VERSION });
     } finally {
       t.cleanup();
     }
@@ -98,7 +102,7 @@ describe('fresh initialization and repeat runs', () => {
       const migrations = loadMigrations(MIGRATIONS_DIR);
       applyMigrations(t.db, migrations);
       assert.deepEqual(applyMigrations(other, migrations).applied, []);
-      assert.equal(scalar(other, 'SELECT count(*) FROM schema_migrations'), 1);
+      assert.equal(scalar(other, 'SELECT count(*) FROM schema_migrations'), LATEST_VERSION);
     } finally {
       other.close();
       t.cleanup();
@@ -124,10 +128,10 @@ describe('immutability and version guards', () => {
 
   test('a database newer than this release is rejected (history or user_version)', () => {
     const dir = migrationsCopy();
-    writeFileSync(path.join(dir, '0002_future.sql'), 'CREATE TABLE future_feature (id INTEGER PRIMARY KEY) STRICT;\n');
+    writeFileSync(path.join(dir, nextMigrationFile('future')), 'CREATE TABLE future_feature (id INTEGER PRIMARY KEY) STRICT;\n');
     const t = createTestDatabase({ migrationsDir: dir });
     try {
-      assert.equal(scalar(t.db, 'PRAGMA user_version'), 2);
+      assert.equal(scalar(t.db, 'PRAGMA user_version'), LATEST_VERSION + 1);
       assert.equal(code(() => inspectSchema(t.db, loadMigrations(MIGRATIONS_DIR))), 'SCHEMA_TOO_NEW');
       assert.equal(code(() => applyMigrations(t.db, loadMigrations(MIGRATIONS_DIR))), 'SCHEMA_TOO_NEW');
     } finally {
@@ -183,13 +187,13 @@ describe('failed migrations leave no recorded success', () => {
   function failingCase(sql: string): { db: DatabaseSync; dir: string; cleanup(): void } {
     const dir = migrationsCopy();
     const t = createTestDatabase({ migrationsDir: dir });
-    writeFileSync(path.join(dir, '0002_next.sql'), sql);
+    writeFileSync(path.join(dir, nextMigrationFile('next')), sql);
     return { db: t.db, dir, cleanup: t.cleanup };
   }
 
-  function assertStillVersion1(db: DatabaseSync) {
-    assert.equal(scalar(db, 'SELECT max(version) FROM schema_migrations'), 1);
-    assert.equal(scalar(db, 'PRAGMA user_version'), 1);
+  function assertStillAtLatest(db: DatabaseSync) {
+    assert.equal(scalar(db, 'SELECT max(version) FROM schema_migrations'), LATEST_VERSION);
+    assert.equal(scalar(db, 'PRAGMA user_version'), LATEST_VERSION);
     assert.equal(scalar(db, "SELECT count(*) FROM sqlite_schema WHERE name = 'half_done'"), 0);
     assert.equal(scalar(db, 'SELECT shipping_cents FROM business_settings'), 0);
     assert.equal(db.isTransaction, false);
@@ -208,11 +212,11 @@ describe('failed migrations leave no recorded success', () => {
         }
       })();
       assert.ok(err instanceof MigrationFailedError);
-      assert.equal(err.version, 2);
-      assertStillVersion1(c.db);
+      assert.equal(err.version, LATEST_VERSION + 1);
+      assertStillAtLatest(c.db);
       // The fixed migration can then be applied normally.
-      writeFileSync(path.join(c.dir, '0002_next.sql'), 'CREATE TABLE half_done (id INTEGER PRIMARY KEY) STRICT;\n');
-      assert.deepEqual(applyMigrations(c.db, loadMigrations(c.dir)).applied, ['0002_next.sql']);
+      writeFileSync(path.join(c.dir, nextMigrationFile('next')), 'CREATE TABLE half_done (id INTEGER PRIMARY KEY) STRICT;\n');
+      assert.deepEqual(applyMigrations(c.db, loadMigrations(c.dir)).applied, [nextMigrationFile('next')]);
     } finally {
       c.cleanup();
     }
@@ -222,7 +226,7 @@ describe('failed migrations leave no recorded success', () => {
     const c = failingCase('CREATE TABLE half_done (id INTEGER PRIMARY KEY) STRICT;\nCOMMIT;\nCREATE TABLE after_commit (id INTEGER) STRICT;\n');
     try {
       assert.throws(() => applyMigrations(c.db, loadMigrations(c.dir)), MigrationFailedError);
-      assertStillVersion1(c.db);
+      assertStillAtLatest(c.db);
     } finally {
       c.cleanup();
     }
@@ -232,7 +236,7 @@ describe('failed migrations leave no recorded success', () => {
     const c = failingCase(`ATTACH DATABASE '${path.join(tempDir(), 'x.db')}' AS other;\n`);
     try {
       assert.throws(() => applyMigrations(c.db, loadMigrations(c.dir)), MigrationFailedError);
-      assertStillVersion1(c.db);
+      assertStillAtLatest(c.db);
     } finally {
       c.cleanup();
     }
@@ -254,7 +258,7 @@ describe('failed migrations leave no recorded success', () => {
       })();
       assert.ok(err instanceof MigrationFailedError, String(err));
       assert.match(err.message, /foreign-key/);
-      assertStillVersion1(c.db);
+      assertStillAtLatest(c.db);
       assert.equal(scalar(c.db, 'SELECT count(*) FROM sessions'), 0);
     } finally {
       c.cleanup();

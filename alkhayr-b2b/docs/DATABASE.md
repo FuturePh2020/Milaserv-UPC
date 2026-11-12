@@ -1,6 +1,6 @@
 # ALKHAYR — Database Contract
 
-Status: **Implemented in stage 02; stages 03 and 04 needed no schema change (see §8–§9)** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
+Status: **Implemented in stage 02 (0001); stage 05 appended migration 0002 (`merchants.access_version`, §10). Stages 03–04 needed no schema change (§8–§9).** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
 `db:status` / `db:init` / `db:migrate`). The SQL file is the authoritative schema; this document
 explains it. Operator procedures: [`MIGRATION.md`](MIGRATION.md).
 
@@ -60,7 +60,7 @@ barcode — compared as exact text, leading zeros included — appears at most o
 |---|---|
 | `schema_migrations` | `version` PK, `name`, `checksum` (SHA-256 hex), `applied_at`. Append-only (triggers). |
 | `auth_users` | UUID PK; `username` lowercase `^[a-z0-9][a-z0-9._-]{2,31}$` (CHECK) with `UNIQUE … COLLATE NOCASE` index → case-insensitively unique; `password_hash`; `password_changed_at`; `role ∈ {admin, trader}`; admin ⇒ `totp_ciphertext NOT NULL`; `last_otp_step`. |
-| `merchants` | UUID PK; `user_id` UNIQUE FK→auth_users; business/contact name, optional email, phone (digits/+), governorate, address with length CHECKs; `status ∈ {pending, approved, suspended}`; `version` must increase by exactly 1 on every UPDATE (trigger). |
+| `merchants` | UUID PK; `user_id` UNIQUE FK→auth_users; business/contact name, optional email, phone (digits/+), governorate, address with length CHECKs; `status ∈ {pending, approved, suspended}`; `version` must increase by exactly 1 on every UPDATE (trigger); **`access_version`** (0002) increases by exactly 1 on every status change and never otherwise (triggers). |
 | `sessions` | `token_hash` PK = SHA-256 hex of the raw token (CHECK 64 lowercase hex; a raw token cannot fit); FK user **ON DELETE CASCADE** (credentials, not history); created/last_seen/expires/auth_at/password_changed_at with time-order CHECK. `csrf_secret` removed (D-030). WITHOUT ROWID. |
 | `product_categories` | `id` PK (`chocolate`, `candy`, `wafers_biscuits`, `snacks_nuts`), unique Arabic `label_ar`, unique `sort_order`, `active`. Seeded by 0001; must equal `src/shared/categories.ts` (test). Deletion blocked (deactivate instead). |
 | `products` | UUID PK; name/brand; `category` FK→product_categories; `barcode` TEXT or NULL (NULL = the product has no barcode; otherwise 1–32 of `[0-9A-Za-z-]`, leading zeros kept; `''` invalid), unique among non-NULL values via a partial UNIQUE index; `image_url` https only; `price_cents` 1…100,000,000; `on_hand` 0…1e9; `reserved ≥ 0`; **`reserved ≤ on_hand`**; `pack_size` 1…10,000; `minimum_cartons` 1…100,000; `active`, `is_demo`; `version` +1 on every UPDATE including stock/reservation changes. |
@@ -149,3 +149,19 @@ no migration was added and 0001 was not modified.
 | `audit_logs` | Actions `auth.register`, `auth.register_duplicate`, `auth.login`, `auth.login_failed`, `auth.logout`, `auth.password_changed`, `auth.password_change_failed`; allow-listed metadata only; `ip_hmac` = HMAC(ip key, client IP). Same 365-day minimum retention (D-014). |
 | `auth_users.last_otp_step` | Advanced inside the login / password-change transaction with `WHERE last_otp_step IS NULL OR last_otp_step < ?`; zero affected rows = replay → rejected. |
 | `auth_users.password_changed_at` | Strictly increased on password change; sessions with an older copy are invalid. |
+
+## 10. Migration 0002 — `merchants.access_version` (stage 05)
+`ALTER TABLE merchants ADD COLUMN access_version INTEGER NOT NULL DEFAULT 1 CHECK (access_version >= 1)`
+(the table stays STRICT) plus two triggers:
+- `merchants_access_version_on_status_change`: a status change must set `access_version = old + 1`.
+- `merchants_access_version_only_with_status`: `access_version` cannot change without a status change.
+
+Purpose: a monotonic authorization marker. Login reads it before the slow password verification and
+requires the same value at commit, so approved → suspended → approved during an in-flight login (ABA)
+is detected although the final status string is unchanged. `version` is not used for this because
+ordinary profile edits also advance it. Existing rows start at 1. Applying it to an existing database
+follows MIGRATION.md §2 (`db:migrate --confirm-backup`, server stopped). 0001 is unchanged.
+
+Order snapshots: self-service profile edits update only `merchants`; orders keep their buyer snapshot
+(enforced by the `orders_snapshot_immutable` trigger since 0001). The end-to-end test with real orders
+is part of stages 08–09, when orders are created through the API.
