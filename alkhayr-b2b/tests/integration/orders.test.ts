@@ -146,11 +146,14 @@ describe('access and ownership of order creation', () => {
       assert.equal(stored.merchant_id, w.admin.merchantId);
       const t = await w.trader();
       expectCode(await place(w.ac, orderBody([line(p)], { merchantId: t.account.merchantId })), 400, 'VALIDATION_FAILED');
-      // Stage 08 adds no administrator order routes: the trader's orders stay invisible to the admin's own-order list.
-      await place(t.c, orderBody([line(p)]));
+      // The own-order list stays scoped to the administrator's own profile; other merchants' orders are
+      // reachable only through the separate administrator order routes (stage 09).
+      const traderOrder = await place(t.c, orderBody([line(p)]));
       const list = await w.ac.request('GET', '/api/v1/orders');
       assert.deepEqual(list.json.items.map((o: { id: string }) => o.id), [r.json.order.id]);
-      expectCode(await w.ac.request('GET', '/api/v1/admin/orders'), 404, 'NOT_FOUND');
+      expectCode(await w.ac.request('GET', `/api/v1/orders/${traderOrder.json.order.id}`), 404, 'NOT_FOUND');
+      const adminList = await w.ac.request('GET', '/api/v1/admin/orders');
+      assert.equal(adminList.json.items.length, 2);
     }));
 });
 
@@ -472,7 +475,14 @@ describe('snapshots', () => {
       assert.equal(snapshot.state, 'pending');
       assert.equal(snapshot.version, 1);
 
-      const v = (app.fixtureDb.prepare('SELECT version FROM products WHERE id = ?').get(p.id) as { version: number }).version;
+      // Pieces-per-carton may only change while the product holds no stock (stage 09, migration 0005):
+      // empty it through a traceable inventory adjustment first.
+      const v0 = (app.fixtureDb.prepare('SELECT version FROM products WHERE id = ?').get(p.id) as { version: number }).version;
+      const emptied = await w.ac.request('POST', `/api/v1/admin/inventory/${p.id}/adjustments`, {
+        body: { type: 'set_total', total: 0, expectedVersion: v0, operationKey: randomUUID(), reason: 'تفريغ قبل تغيير التعبئة' },
+      });
+      assert.equal(emptied.status, 201, emptied.body);
+      const v = emptied.json.product.version;
       const patch = await w.ac.request('PATCH', `/api/v1/admin/products/${p.id}`, { body: { expectedVersion: v, name: 'شيكولاتة جديدة', cartonPriceCents: 15_000, packSize: 12 } });
       assert.equal(patch.status, 200, patch.body);
       const profile = await c.request('PATCH', '/api/v1/merchant/profile', { body: { expectedVersion: 1, address: 'عنوان جديد للمحل في الجيزة' } });

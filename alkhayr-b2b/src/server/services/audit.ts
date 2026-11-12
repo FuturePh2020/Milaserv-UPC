@@ -25,6 +25,8 @@ const METADATA_ALLOW_LIST: Readonly<Record<string, readonly string[]>> = {
   'inventory.adjusted': ['type', 'on_hand_delta', 'on_hand_after', 'version', 'ledger_id'],
   /** No note, buyer data or line details: the order snapshot is the record. */
   'order.created': ['display_number', 'lines', 'total_cents', 'is_demo'],
+  /** The event row holds the reason; ledger rows hold the per-line movements. */
+  'order.transitioned': ['from', 'to', 'version', 'event_id', 'movement', 'lines_moved'],
 };
 
 export type AuditAction = keyof typeof METADATA_ALLOW_LIST;

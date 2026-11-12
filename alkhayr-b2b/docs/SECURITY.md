@@ -225,6 +225,25 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Audit `order.created` stores display number, line count, total and demo flag only (no note or buyer data).
 - Database finalization guards (0004) make the creation event a consistency check; exact boundary DATABASE.md §13.
 
+## 7e. Order fulfillment (implemented stage 09)
+- Reads (`/api/v1/admin/orders…`): live administrator session. Transitions: recent authentication (15 min,
+  re-checked at commit and before returning a replay), session CSRF, exact Origin, JSON, 4 KiB, strict body.
+- Own-order routes stay merchant-scoped; administrators see other merchants' orders only through the
+  separate administrator routes.
+- Idempotency per administrator (`order_events (actor_user_id, operation_key)` unique + digest); replay before
+  version/state checks; nothing reapplied.
+- Concurrency: `BEGIN IMMEDIATE`; client `expectedVersion` pre-check, `WHERE version = expectedVersion`, and
+  the event's `order_version_after` check (database). Concurrent different operations from one version:
+  one commits, the others get 409.
+- Per-order reservations (`order_allocations`) make it impossible — at the database level — to ship or
+  release stock reserved for another order. Exact boundary: DATABASE.md §14.
+- Packaging cannot change while stocked or reserved (service 409 + database trigger); confirmation refuses
+  orders whose snapshot pack size differs from the product's.
+- Buyer suspension blocks forward processing (service + database) but never cancels or releases
+  automatically; cancellation needs a reason; delivery of shipped orders stays possible.
+- Administrators see stock counts in conflicts; traders still see only availability statuses.
+- Audit `order.transitioned`: from, to, version, event id, movement kind, line count (reason in the event).
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -304,6 +323,13 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Order idempotency per merchant (replay, 409, concurrent, failed attempt reusable) | ✅ | ✅ 08 |
 | Atomic order write; finalization guards (0004); unfinished orders invisible | ✅ | ✅ 08 (injected failure, SQL) |
 | Own-order reads: ownership, non-disclosing 404, signed cursors; per-merchant order limit | ✅ | ✅ 08 |
+| Admin order reads/transitions: live admin, recency at commit, CSRF/Origin/content type, strict body | ✅ | ✅ 09 (HTTP, slow bodies) |
+| Transition idempotency (replay after advance, 409 changed content, failed attempt reusable) | ✅ | ✅ 09 |
+| Concurrent transitions/confirmations: one commits; no overselling | ✅ | ✅ 09 (concurrent HTTP, single process) |
+| Per-order allocations; no cross-order settlement; exactly-once release/shipment (database) | ✅ | ✅ 09 (SQL, raw bypass attempts, HTTP) |
+| Packaging lock while stocked; snapshot pack size at confirmation | ✅ | ✅ 09 |
+| Buyer-approval gate for forward steps; no automatic release | ✅ | ✅ 09 |
+| Atomic transitions (ledger, allocation, product, event, order, audit failure rollback) | ✅ | ✅ 09 (8 injected failures) |
 | Atomic ledger + balance + audit (rollback on any failure) | ✅ | ✅ 07 (three injected failures) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

@@ -23,12 +23,12 @@ third-party content rendered by the browser only (never fetched server-side).
 | T2 | Admin TOTP replay or race | external w/ observed code | `verifyTotp` returns the accepted step (03 ✅); enrollment step stored as baseline (03 ✅); atomic `last_otp_step` update at login (04) | 03/04 |
 | T3 | Self-registration as admin / mass assignment of role, status, prices | trader/visitor | strict schemas reject unknown fields (tested: role, status, ids, totp, hash); registration creates pending traders only; admin only via CLI | 04 ✅ (profile edits: 05) |
 | T4 | IDOR: trader reads another's orders/profile | approved trader | profile and orders selected only by session (no ids/params accepted); 404 for foreign ids; signed cursors | 05 ✅ profile · 08 ✅ orders |
-| T5 | Pending/suspended trader sees prices or orders | trader | guards read live status per request (`requireApproved`); suspended accounts have no valid session; order reads/creation approved-only | 04 ✅ guards · 06/08 ✅ routes (admin orders: 09) |
+| T5 | Pending/suspended trader sees prices or orders | trader | guards read live status per request (`requireApproved`); suspended accounts have no valid session; order reads/creation approved-only | 04 ✅ guards · 06/08/09 ✅ routes |
 | T6 | CSRF / cross-site mutation | malicious site | SameSite=Strict, exact Origin, Fetch Metadata, session-bound CSRF, pre-login CSRF, JSON-only | 04 ✅ |
 | T7 | Session theft/fixation | external | HttpOnly `__Host-` cookie, rotation destroying any presented session, duplicate-cookie rejection, idle/absolute expiry, hash-only storage, cap 5 | 04 ✅ |
 | T8 | Forged identity headers (ChatGPT/role headers) | external | headers ignored; identity only from session + live rows | 04 ✅ |
 | T9 | Price tampering in order request | trader | server-authoritative pricing; client prices/packaging only for stale detection (409 with current terms); strict schema rejects totals/tax/shipping | 08 ✅ |
-| T10 | Overselling via concurrent confirmations | admins concurrently | BEGIN IMMEDIATE, guarded UPDATE `available >= qty`, all-or-nothing | 09 |
+| T10 | Overselling via concurrent confirmations | admins concurrently | BEGIN IMMEDIATE; availability checked and reserved in one transaction; ledger/products CHECKs; all lines or none | 09 ✅ |
 | T11 | Double order on retry/double click | trader/network | per-merchant idempotency key + canonical digest; replay before current-state rules; serialized writes | 08 ✅ |
 | T12 | Stale admin form overwrites stock/price | admin | expectedVersion pre-check + WHERE expectedVersion; version +1 on every update incl. stock (trigger) | 06/07 ✅ |
 | T13 | SQL injection via search/sort | any | bound parameters, fixed sort/column maps, strict query parsing | 05/06 ✅ |
@@ -86,3 +86,9 @@ third-party content rendered by the browser only (never fetched server-side).
 | T58 | Partial order visible or inconsistent (header without items, wrong subtotal, mixed demo) | bug / other write path | one transaction; creation event as finalization marker guarded by 0004; reads finalized only | 08 ✅ |
 | T59 | Money overflow / rounding manipulation | trader | BigInt, half-up rule, limits rejected not clamped; database total/tax CHECKs | 08 ✅ |
 | T60 | Approval revoked/restored (ABA) while an order body is in flight | concurrent admin action | commit-time session + approval + `access_version` comparison | 08 ✅ |
+| T61 | Shipping/cancelling one order consumes or releases another order's reservation | bug / admin / raw SQL | per-order allocations; settle guard requires this order's own outstanding allocation (database) | 09 ✅ |
+| T62 | Double release/deduction (retries, two admins, different keys) | network / concurrent admins | idempotent replay; version layers; allocation settled once; one release/ship row per line (unique index) | 09 ✅ |
+| T63 | Carton meaning changed under stock (repack) silently reinterprets inventory/orders | admin error | pack-size lock while stocked/reserved (service + trigger); confirmation requires snapshot pack size | 09 ✅ |
+| T64 | Suspended buyer's orders keep moving forward, or suspension silently releases stock | admin action | approval gate for confirm/prepare/ship (service + database); no automatic cancellation/release | 09 ✅ |
+| T65 | State changed without an audit trail (raw SQL) | bug / insider | state change requires its matching latest event; events append-only, administrator actor, reason for cancellation | 09 ✅ (database) |
+| T66 | Replayed operation result disclosed after the administrator lost access | stale session | eligibility re-checked before idempotency lookup | 09 ✅ |

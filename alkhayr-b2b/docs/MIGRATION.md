@@ -103,6 +103,20 @@ submit pending orders through the API (`POST /api/v1/orders`):
 - A pending order does **not** reserve stock; stock is reserved when an administrator confirms (stage 09).
 - Each trader may attempt at most 30 orders per 10 minutes.
 
+### Stage 09 note: migration 0005 and order fulfillment
+`0005_order_fulfillment.sql` must be applied to databases created earlier (§2). It adds the
+`order_allocations` table, columns on `order_events` and checks; existing rows are not changed. After it:
+- Administrators process orders: confirm (reserves stock for that order), prepare, ship (deducts stock),
+  deliver, or cancel with a reason (releases that order's reservation). Each step needs a login within the
+  last 15 minutes.
+- **Pieces per carton cannot be changed while a product has stock or reservations.** To repack: cancel or
+  ship open reservations, set the stock to 0 with an inventory adjustment (with a reason), change the
+  packaging, then receive the stock again. Pending orders made with the old packaging cannot be confirmed;
+  cancel them and ask the trader to order again.
+- Suspending a trader does not cancel or release anything; their orders wait (or can be cancelled).
+- Before this upgrade no order can be confirmed (stage 08 orders are all pending), so no reservation data
+  needs conversion.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -142,6 +156,9 @@ None has been supplied (BUILD_NEW). If one is:
 - المرحلة 07 أضافت الترحيل 0003: المنتجات الجديدة تُنشأ غير مفعّلة وبرصيد صفر، وأي تغيير في الرصيد يجب أن يقابله قيد في سجل الحركة.
 - رصيد الافتتاح: البوابة لا تعرف المبيعات في البرامج الأخرى؛ خصّص كمية للبوابة وسجّلها كاستلام أو كتحديد للإجمالي مع ذكر السبب، وراجعها دوريًا.
 - لا تُعدَّل الحركات القديمة ولا تُحذف؛ الخطأ يُصحَّح بحركة تسوية عكسية مع ذكر السبب.
+- المرحلة 09 أضافت الترحيل 0005: الإدارة تؤكد الطلب (يُحجز المخزون لهذا الطلب تحديدًا)، ثم التجهيز، ثم الشحن (يُخصم المخزون)، ثم التسليم، أو الإلغاء مع ذكر السبب (يُفك الحجز). كل خطوة تتطلب تسجيل دخول خلال آخر 15 دقيقة.
+- لا يمكن تغيير عدد القطع في الكرتونة أثناء وجود رصيد أو حجوزات للمنتج؛ صفّر الرصيد بحركة موثّقة أولًا. الطلبات المعلّقة بالتعبئة القديمة لا تُؤكَّد، بل تُلغى ويُطلب من التاجر طلب جديد.
+- تعليق حساب التاجر لا يلغي طلباته ولا يفك الحجز تلقائيًا.
 - المرحلة 08 أضافت الترحيل 0004 (فحوص إضافية فقط) وإنشاء الطلبات قيد الانتظار: الأسعار والضريبة والشحن يحسبها الخادم، والطلب قيد الانتظار لا يحجز مخزونًا (الحجز عند تأكيد الإدارة في المرحلة 09)، وبحد أقصى 30 محاولة طلب لكل تاجر كل 10 دقائق.
 - المرحلة 05 أضافت الترحيل 0002؛ قواعد البيانات الأقدم تحتاج `db:migrate --confirm-backup` بعد إيقاف الخادم وأخذ نسخة احتياطية.
 - اعتماد التاجر أو تعليقه يتم من حساب مدير سجّل الدخول خلال آخر 15 دقيقة، مع ذكر سبب عند التعليق أو الإرجاع للمراجعة؛ التعليق يُنهي كل جلسات التاجر فورًا، والاعتماد لا يرسل أي رسائل.

@@ -132,23 +132,66 @@ export function fixtureAdjustStock(db: DatabaseSync, productId: string, delta: u
 }
 
 /**
- * TEST-ONLY: ledger-linked reservation of `quantity` cartons against a fixture
- * order (a reservation always references an order). Stage 09 implements the
- * real reservation inside order confirmation.
+ * TEST-ONLY: reservation of `quantity` cartons through a real, valid order confirmation
+ * (migration 0005): a finalized fixture order with one line of that quantity is confirmed by a
+ * fixture administrator (reserve ledger row -> allocation -> linked product update -> event ->
+ * state). A quantity that is not a positive integer is written as a raw reserve ledger row so the
+ * ledger CHECKs can be exercised. Returns the order id.
  */
 export function fixtureReserve(db: DatabaseSync, productId: string, quantity: unknown): string {
   const userId = insertUser(db);
   const merchantId = insertMerchant(db, userId);
-  const orderId = insertOrder(db, { userId, merchantId, items: [{ productId, cartons: 1, unitPrice: 100 }] });
+  const valid = Number.isInteger(quantity) && (quantity as number) > 0 && (quantity as number) <= 100_000;
+  const pack = (db.prepare('SELECT pack_size FROM products WHERE id = ?').get(productId) as { pack_size: number }).pack_size;
+  const orderId = insertOrder(db, { userId, merchantId, finalize: true, items: [{ productId, cartons: valid ? (quantity as number) : 1, unitPrice: 100, packSize: pack }] });
+  if (valid) {
+    fixtureTransition(db, orderId, 'confirmed');
+    return orderId;
+  }
   const p = db.prepare('SELECT on_hand, reserved, version FROM products WHERE id = ?').get(productId) as { on_hand: number; reserved: number; version: number };
-  const ledger = db
-    .prepare(
-      `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, order_id, product_version_after, created_at)
-       VALUES (?, NULL, 'reserve', 0, ?, ?, ?, NULL, ?, ?, ?)`,
-    )
-    .run(productId, quantity as number, p.on_hand, p.reserved + (quantity as number), orderId, p.version + 1, now());
-  db.prepare('UPDATE products SET reserved = ?, version = version + 1, last_ledger_id = ? WHERE id = ?').run(p.reserved + (quantity as number), ledger.lastInsertRowid, productId);
-  return orderId;
+  db.prepare(
+    `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, order_id, product_version_after, created_at)
+     VALUES (?, NULL, 'reserve', 0, ?, ?, ?, NULL, ?, ?, ?)`,
+  ).run(productId, quantity as number, p.on_hand, p.reserved + (quantity as number), orderId, p.version + 1, now());
+  throw new Error('fixtureReserve: the invalid reserve row was unexpectedly accepted');
+}
+
+/**
+ * TEST-ONLY: one legal order transition through the same database write sequence as the
+ * fulfillment service (per line: ledger row -> allocation -> linked product update; then the
+ * event and the state/version update). Never used by production code.
+ */
+export function fixtureTransition(db: DatabaseSync, orderId: string, to: string, o: { actorId?: string; note?: string } = {}): void {
+  const order = db.prepare('SELECT state, version FROM orders WHERE id = ?').get(orderId) as { state: string; version: number };
+  const actor = o.actorId ?? insertUser(db, { role: 'admin' });
+  const t = now();
+  const kind = order.state === 'pending' && to === 'confirmed' ? 'reserve' : to === 'cancelled' && order.state !== 'pending' ? 'release' : to === 'shipped' ? 'ship' : null;
+  if (kind) {
+    const lines = db.prepare('SELECT product_id, cartons FROM order_items WHERE order_id = ? ORDER BY line_no').all(orderId) as Array<{ product_id: string; cartons: number }>;
+    for (const line of lines) {
+      const p = db.prepare('SELECT on_hand, reserved, version FROM products WHERE id = ?').get(line.product_id) as { on_hand: number; reserved: number; version: number };
+      const q = line.cartons;
+      const [dOn, dRes] = kind === 'reserve' ? [0, q] : kind === 'release' ? [0, -q] : [-q, -q];
+      const ledgerId = Number(
+        db
+          .prepare(
+            `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, order_id, product_version_after, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(line.product_id, actor, kind, dOn, dRes, p.on_hand + dOn, p.reserved + dRes, orderId, p.version + 1, t).lastInsertRowid,
+      );
+      if (kind === 'reserve') {
+        db.prepare("INSERT INTO order_allocations (order_id, product_id, quantity, status, reserve_ledger_id, created_at) VALUES (?, ?, ?, 'reserved', ?, ?)").run(orderId, line.product_id, q, ledgerId, t);
+      } else {
+        db.prepare('UPDATE order_allocations SET status = ?, settle_ledger_id = ?, settled_at = ? WHERE order_id = ? AND product_id = ?').run(kind === 'release' ? 'released' : 'consumed', ledgerId, t, orderId, line.product_id);
+      }
+      db.prepare('UPDATE products SET on_hand = ?, reserved = ?, version = version + 1, last_ledger_id = ? WHERE id = ?').run(p.on_hand + dOn, p.reserved + dRes, ledgerId, line.product_id);
+    }
+  }
+  db.prepare('INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, note, order_version_after, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+    orderId, actor, order.state, to, o.note ?? (to === 'cancelled' ? 'إلغاء للاختبار' : null), order.version + 1, t,
+  );
+  db.prepare('UPDATE orders SET state = ?, version = version + 1, updated_at = ? WHERE id = ?').run(to, t, orderId);
 }
 
 export interface OrderInput {
@@ -156,7 +199,7 @@ export interface OrderInput {
   merchantId: string;
   userId: string;
   requestKey?: string;
-  items: Array<{ productId: string; cartons: number; unitPrice: number; lineTotal?: number }>;
+  items: Array<{ productId: string; cartons: number; unitPrice: number; lineTotal?: number; packSize?: number }>;
   shipping?: number;
   shippingTaxable?: 0 | 1;
   taxBps?: number;
@@ -193,10 +236,10 @@ export function insertOrder(db: DatabaseSync, o: OrderInput): string {
   );
   const stmt = db.prepare(
     `INSERT INTO order_items (order_id, product_id, line_no, product_name, product_brand, product_barcode, pack_size, unit_price_cents, cartons, line_total_cents)
-     VALUES (?, ?, ?, ?, ?, NULL, 24, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
   );
   o.items.forEach((item, idx) => {
-    stmt.run(id, item.productId, idx + 1, 'شيكولاتة بالبندق', 'براند', item.unitPrice, item.cartons, item.lineTotal ?? item.unitPrice * item.cartons);
+    stmt.run(id, item.productId, idx + 1, 'شيكولاتة بالبندق', 'براند', item.packSize ?? 24, item.unitPrice, item.cartons, item.lineTotal ?? item.unitPrice * item.cartons);
   });
   if (o.finalize) {
     db.prepare("INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, created_at) VALUES (?, ?, NULL, 'pending', ?)").run(id, o.userId, t);

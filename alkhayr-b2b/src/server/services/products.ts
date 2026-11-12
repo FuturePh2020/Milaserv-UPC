@@ -453,6 +453,11 @@ export async function updateProduct(ctx: RequestContext): Promise<void> {
     if (changed.length === 0) return current; // nothing differs: no version bump, no audit
     if (changed.includes('category')) assertCategory(ctx, body.category as string);
     if (changed.includes('barcode')) assertBarcodeFree(ctx, body.barcode, current.id);
+    // Pieces-per-carton is the physical meaning of a stocked carton: it may change only while the
+    // product holds no stock and no reservations (also enforced by migration 0005).
+    if (changed.includes('packSize') && (current.on_hand !== 0 || current.reserved !== 0)) {
+      throw new AppError('PACKAGING_LOCKED', { current: { product: adminProduct(current) } });
+    }
 
     const t = Math.max(now(), current.updated_at);
     const values = changed.map((k) => (k === 'active' ? (body.active ? 1 : 0) : (body[k] as string | number | null)));

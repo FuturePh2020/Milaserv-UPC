@@ -5,7 +5,7 @@ import { after, before, describe, test } from 'node:test';
 import { isForeignKeyError, SQLITE } from '../../src/server/database/errors.ts';
 import { PRODUCT_CATEGORIES } from '../../src/shared/categories.ts';
 import { BUSINESS_SETTING_DEFAULTS } from '../../src/shared/constants.ts';
-import { createTestDatabase, fixtureAdjustStock, fixtureReserve, insertMerchant, insertOrder, insertProduct, insertUser, now, sqliteFailure, type TestDatabase } from '../helpers/database.ts';
+import { createTestDatabase, fixtureAdjustStock, fixtureReserve, fixtureTransition, insertMerchant, insertOrder, insertProduct, insertUser, now, sqliteFailure, type TestDatabase } from '../helpers/database.ts';
 
 let t: TestDatabase;
 let db: DatabaseSync;
@@ -42,7 +42,7 @@ function trader() {
 describe('initial configuration (owner decisions)', () => {
   test('every table is STRICT', () => {
     const rows = db.prepare("SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string; strict: number }>;
-    assert.equal(rows.length, 13);
+    assert.equal(rows.length, 14); // 13 from 0001 + order_allocations (0005)
     for (const r of rows) assert.equal(r.strict, 1, `${r.name} must be STRICT`);
   });
 
@@ -350,23 +350,25 @@ describe('orders, items and snapshots', () => {
     const to = (state: string) => db.prepare('UPDATE orders SET state = ?, version = version + 1, updated_at = ? WHERE id = ?').run(state, now(), o);
     fails(() => to('shipped'), SQLITE.CONSTRAINT_TRIGGER, /illegal order state transition/);
     fails(() => db.prepare("UPDATE orders SET state = 'confirmed' WHERE id = ?").run(o), SQLITE.CONSTRAINT_TRIGGER, /version/);
-    to('confirmed');
+    // Legal transitions go through the full write sequence (ledger, allocations, event: migration 0005).
+    fixtureTransition(db, o, 'confirmed');
     fails(() => to('pending'), SQLITE.CONSTRAINT_TRIGGER);
-    to('preparing');
-    to('shipped');
+    fixtureTransition(db, o, 'preparing');
+    fixtureTransition(db, o, 'shipped');
     fails(() => to('cancelled'), SQLITE.CONSTRAINT_TRIGGER);
-    to('delivered');
+    fixtureTransition(db, o, 'delivered');
     fails(() => to('shipped'), SQLITE.CONSTRAINT_TRIGGER);
     assert.equal(scalar('SELECT version FROM orders WHERE id = ?', o), 5);
   });
 
   test('order events: legal transitions only, append-only', () => {
     const { userId, merchantId } = trader();
+    const admin = insertUser(db, { role: 'admin' });
     const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
-    const ev = (oldState: string | null, newState: string) =>
-      db.prepare('INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, created_at) VALUES (?, ?, ?, ?, ?)').run(o, userId, oldState, newState, now());
+    const ev = (oldState: string | null, newState: string, actor = userId) =>
+      db.prepare('INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, note, order_version_after, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(o, actor, oldState, newState, 'سبب الاختبار', 2, now());
     ev(null, 'pending');
-    ev('pending', 'confirmed');
+    ev('pending', 'cancelled', admin); // legal; written before the state update (migration 0005 sequence)
     fails(() => ev('pending', 'delivered'), SQLITE.CONSTRAINT_CHECK, /order_events_transition/);
     fails(() => ev('delivered', 'cancelled'), SQLITE.CONSTRAINT_CHECK);
     fails(() => db.prepare('UPDATE order_events SET note = ? WHERE order_id = ?').run('x', o), SQLITE.CONSTRAINT_TRIGGER, /append-only/);
@@ -419,17 +421,111 @@ describe('order finalization (migration 0004)', () => {
     const o = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
     const transition = () => db.prepare("INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, created_at) VALUES (?, ?, 'pending', 'confirmed', ?)").run(o, userId, now());
     const confirm = () => db.prepare("UPDATE orders SET state = 'confirmed', version = version + 1, updated_at = ? WHERE id = ?").run(now(), o);
-    fails(transition, SQLITE.CONSTRAINT_TRIGGER, /no creation event/);
-    fails(confirm, SQLITE.CONSTRAINT_TRIGGER, /no creation event/);
+    // Refused by the 0004 guard; since 0005 the transition guards also refuse it (SQLite does not
+    // specify which trigger reports first, so either message is accepted).
+    const unfinished = /no creation event|current state and latest event|requires its transition event/;
+    fails(transition, SQLITE.CONSTRAINT_TRIGGER, unfinished);
+    fails(confirm, SQLITE.CONSTRAINT_TRIGGER, unfinished);
     create(o, userId);
     fails(() => item(o, insertProduct(db), 2), SQLITE.CONSTRAINT_TRIGGER, /after the order was created/);
-    confirm();
-    transition();
+    fixtureTransition(db, o, 'confirmed'); // legal once finalized (full 0005 sequence)
     // The creation event cannot be written for an order that already left pending/version 1.
     const late = insertOrder(db, { userId, merchantId, items: [{ productId: insertProduct(db), cartons: 1, unitPrice: 100 }] });
-    fails(() => db.prepare("UPDATE orders SET state = 'confirmed', version = version + 1 WHERE id = ?").run(late), SQLITE.CONSTRAINT_TRIGGER, /no creation event/);
+    fails(() => db.prepare("UPDATE orders SET state = 'confirmed', version = version + 1 WHERE id = ?").run(late), SQLITE.CONSTRAINT_TRIGGER, unfinished);
     db.prepare('UPDATE orders SET version = version + 1 WHERE id = ?').run(late);
     fails(() => create(late, userId), SQLITE.CONSTRAINT_TRIGGER, /pending order at version 1/);
+  });
+});
+
+describe('order fulfillment and allocations (migration 0005)', () => {
+  const ledgerRow = (o: { product: string; order: string; kind: string; dOn: number; dRes: number; actor?: string | null }) => {
+    const p = db.prepare('SELECT on_hand, reserved, version FROM products WHERE id = ?').get(o.product) as { on_hand: number; reserved: number; version: number };
+    return Number(
+      db
+        .prepare(
+          `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, order_id, product_version_after, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(o.product, o.actor ?? null, o.kind, o.dOn, o.dRes, p.on_hand + o.dOn, p.reserved + o.dRes, o.order, p.version + 1, now()).lastInsertRowid,
+    );
+  };
+  const pendingOrder = (cartons = 3, pack?: number) => {
+    const { userId, merchantId } = trader();
+    const product = insertProduct(db, { onHand: 50, ...(pack ? { pack } : {}) });
+    const order = insertOrder(db, { userId, merchantId, finalize: true, items: [{ productId: product, cartons, unitPrice: 100, packSize: 24 }] });
+    return { userId, merchantId, product, order };
+  };
+
+  test('reserve movements need a finalized pending order line of the same quantity and packaging, once', () => {
+    const a = pendingOrder(3);
+    fails(() => ledgerRow({ product: a.product, order: a.order, kind: 'reserve', dOn: 0, dRes: 4 }), SQLITE.CONSTRAINT_TRIGGER, /reserve movement requires/);
+    const repacked = pendingOrder(3, 12);
+    fails(() => ledgerRow({ product: repacked.product, order: repacked.order, kind: 'reserve', dOn: 0, dRes: 3 }), SQLITE.CONSTRAINT_TRIGGER, /reserve movement requires/);
+    const { userId, merchantId } = trader();
+    const unfinished = insertOrder(db, { userId, merchantId, items: [{ productId: a.product, cartons: 3, unitPrice: 100 }] });
+    fails(() => ledgerRow({ product: a.product, order: unfinished, kind: 'reserve', dOn: 0, dRes: 3 }), SQLITE.CONSTRAINT_TRIGGER, /reserve movement requires/);
+    fixtureTransition(db, a.order, 'confirmed');
+    fails(() => ledgerRow({ product: a.product, order: a.order, kind: 'reserve', dOn: 0, dRes: 3 }), SQLITE.CONSTRAINT_TRIGGER, /reserve movement requires/);
+  });
+
+  test('a stock change from an order movement needs the allocation that references it', () => {
+    const a = pendingOrder(3);
+    const id = ledgerRow({ product: a.product, order: a.order, kind: 'reserve', dOn: 0, dRes: 3 });
+    fails(() => db.prepare('UPDATE products SET reserved = reserved + 3, version = version + 1, last_ledger_id = ? WHERE id = ?').run(id, a.product), SQLITE.CONSTRAINT_TRIGGER, /not backed by an order allocation/);
+    fails(
+      () => db.prepare("INSERT INTO order_allocations (order_id, product_id, quantity, status, reserve_ledger_id, created_at) VALUES (?, ?, 2, 'reserved', ?, 1)").run(a.order, a.product, id),
+      SQLITE.CONSTRAINT_TRIGGER,
+      /full line quantity/,
+    );
+    fails(
+      () => db.prepare("INSERT INTO order_allocations (order_id, product_id, quantity, status, reserve_ledger_id, created_at) VALUES (?, ?, 3, 'released', ?, 1)").run(a.order, a.product, id),
+      SQLITE.CONSTRAINT_TRIGGER,
+    );
+    db.prepare("INSERT INTO order_allocations (order_id, product_id, quantity, status, reserve_ledger_id, created_at) VALUES (?, ?, 3, 'reserved', ?, 1)").run(a.order, a.product, id);
+    db.prepare('UPDATE products SET reserved = reserved + 3, version = version + 1, last_ledger_id = ? WHERE id = ?').run(id, a.product);
+    fails(() => db.prepare('DELETE FROM order_allocations WHERE order_id = ?').run(a.order), SQLITE.CONSTRAINT_TRIGGER, /cannot be deleted/);
+    fails(() => db.prepare('UPDATE order_allocations SET quantity = 2 WHERE order_id = ?').run(a.order), SQLITE.CONSTRAINT_TRIGGER, /settled once/);
+  });
+
+  test('order state changes require the transition event, matching allocations and an approved buyer for forward steps', () => {
+    const a = pendingOrder(2);
+    const admin = insertUser(db, { role: 'admin' });
+    const confirm = () => db.prepare("UPDATE orders SET state = 'confirmed', version = version + 1, updated_at = ? WHERE id = ?").run(now(), a.order);
+    fails(confirm, SQLITE.CONSTRAINT_TRIGGER, /requires its transition event/);
+    const event = (from: string, to: string, actor: string, note: string | null = null, versionAfter = 2) =>
+      db.prepare('INSERT INTO order_events (order_id, actor_user_id, old_state, new_state, note, order_version_after, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(a.order, actor, from, to, note, versionAfter, now());
+    fails(() => event('pending', 'confirmed', a.userId), SQLITE.CONSTRAINT_TRIGGER, /administrator actor/);
+    fails(() => event('pending', 'cancelled', admin), SQLITE.CONSTRAINT_TRIGGER, /requires a reason/);
+    fails(() => event('pending', 'confirmed', admin, null, 5), SQLITE.CONSTRAINT_TRIGGER, /recorded together/);
+    fails(() => event('confirmed', 'preparing', admin), SQLITE.CONSTRAINT_TRIGGER, /current state/);
+    event('pending', 'confirmed', admin);
+    fails(confirm, SQLITE.CONSTRAINT_TRIGGER, /allocations do not match/); // no reservation was made
+    // A buyer that is no longer approved blocks forward steps at the database level.
+    const b = pendingOrder(2);
+    db.prepare("UPDATE merchants SET status = 'suspended', access_version = access_version + 1, version = version + 1 WHERE id = ?").run(b.merchantId);
+    db.exec('BEGIN'); // the service runs the whole sequence in one transaction; mirror that here
+    try {
+      fails(() => fixtureTransition(db, b.order, 'confirmed'), SQLITE.CONSTRAINT_TRIGGER, /buyer must be approved/);
+    } finally {
+      db.exec('ROLLBACK');
+    }
+    fixtureTransition(db, b.order, 'cancelled'); // cancellation stays possible
+  });
+
+  test('settle movements use only this order’s outstanding allocation; packaging is locked while stocked', () => {
+    const a = pendingOrder(4);
+    fixtureTransition(db, a.order, 'confirmed');
+    const b = pendingOrder(4);
+    // Order b shares nothing with a's product; try to release a's product under b.
+    fails(() => ledgerRow({ product: a.product, order: b.order, kind: 'release', dOn: 0, dRes: -4 }), SQLITE.CONSTRAINT_TRIGGER, /own outstanding allocation/);
+    fails(() => ledgerRow({ product: a.product, order: a.order, kind: 'ship', dOn: -4, dRes: -4 }), SQLITE.CONSTRAINT_TRIGGER, /own outstanding allocation/); // not preparing yet
+    fixtureTransition(db, a.order, 'preparing');
+    fixtureTransition(db, a.order, 'shipped');
+    fails(() => ledgerRow({ product: a.product, order: a.order, kind: 'release', dOn: 0, dRes: -4 }), SQLITE.CONSTRAINT_TRIGGER, /own outstanding allocation|UNIQUE/);
+    assert.equal(scalar("SELECT status FROM order_allocations WHERE order_id = ?", a.order), 'consumed');
+    fails(() => db.prepare('UPDATE products SET pack_size = 12, version = version + 1 WHERE id = ?').run(a.product), SQLITE.CONSTRAINT_TRIGGER, /pack_size cannot change/);
+    const empty = insertProduct(db, { onHand: 0 });
+    db.prepare('UPDATE products SET pack_size = 12, version = version + 1 WHERE id = ?').run(empty);
   });
 });
 

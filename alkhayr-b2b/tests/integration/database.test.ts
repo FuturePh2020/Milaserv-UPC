@@ -148,7 +148,7 @@ describe('server startup refuses unsafe database states with operator instructio
   test('database newer than the release: server refuses', () =>
     withApp(async (app) => {
       const db = new DatabaseSync(app.databasePath);
-      db.exec('PRAGMA user_version = 5');
+      db.exec(`PRAGMA user_version = ${LATEST_VERSION + 1}`); // one version beyond this release
       db.close();
       const r = startupFailure(await runUntilExit(app, baseEnv()));
       assert.equal(r.code, 'SCHEMA_TOO_NEW');

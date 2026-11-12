@@ -495,15 +495,17 @@ describe('authorization guards (exercised through TEST-ONLY routes)', () => {
 });
 
 describe('stage boundary', () => {
-  test('stage 08 adds own-order endpoints only; administrator order and fulfillment endpoints do not exist yet', () =>
+  test('stage 09: administrator order routes are admin-only; no trader cancellation, reservation, summary or refund endpoints', () =>
     withApp(async (app) => {
       const t = await createTrader(app);
       const c = new Client(app, ip());
       await c.login(t.username, t.password);
       assert.equal((await c.request('GET', '/api/v1/orders')).status, 200);
-      for (const p of ['/api/v1/admin/orders', '/api/v1/admin/inventory/reservations', '/api/v1/orders/summary']) {
-        expectCode(await c.request('GET', p), 404, 'NOT_FOUND');
+      expectCode(await c.request('GET', '/api/v1/admin/orders'), 403, 'FORBIDDEN');
+      for (const p of ['/api/v1/admin/inventory/reservations', '/api/v1/orders/summary', '/api/v1/admin/orders/reservations']) {
+        expectCode(await c.request('GET', p), p === '/api/v1/admin/orders/reservations' ? 403 : 404, p === '/api/v1/admin/orders/reservations' ? 'FORBIDDEN' : 'NOT_FOUND');
       }
       expectCode(await c.request('POST', `/api/v1/orders/${randomUUID()}/cancel`, { body: {} }), 404, 'NOT_FOUND');
+      expectCode(await c.request('POST', `/api/v1/admin/orders/${randomUUID()}/refund`, { body: {} }), 404, 'NOT_FOUND');
     }));
 });

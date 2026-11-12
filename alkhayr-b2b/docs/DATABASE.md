@@ -257,3 +257,66 @@ stage 09 reserves at confirmation through the 0003 ledger pairing.
 
 **Fixtures:** `insertOrder` creates unfinished orders by default (invisible to the API); `finalize: true`
 writes the creation event under the same rules.
+
+## 14. Migration 0005 — fulfillment and per-order reservations (stage 09)
+**Reservation model.** Table `order_allocations` (STRICT), one row per order line once the order is
+confirmed: `(order_id, product_id)` (PK and FK → `order_items`), `quantity` (= the line's cartons),
+`status ∈ {reserved, released, consumed}`, `reserve_ledger_id` (the `reserve` ledger row that created it,
+unique), `settle_ledger_id` (the `release` or `ship` ledger row that ended it, unique; NULL while reserved),
+`created_at`, `settled_at`. `outstanding = quantity` while `reserved`, else 0. Rows are never deleted.
+
+| Question | Answer |
+|---|---|
+| Which order owns a reservation? | `order_allocations.order_id` |
+| Quantity originally reserved | `quantity` (= `reserve_ledger.reserved_delta` = `order_items.cartons`) |
+| Quantity still outstanding | `quantity` if `status = 'reserved'`, else 0 (no partial fulfillment) |
+| Released or consumed? | `status` + `settle_ledger_id` → a `release` (reserved −q) or `ship` (on_hand −q, reserved −q) row |
+
+**Reconciliation equations** (checkable by query at any time; tested):
+- `products.reserved = Σ outstanding allocations of that product` — for every product whose reservations
+  were all made since 0005 (a fresh pilot has no others).
+- every `inventory_ledger` row with kind `reserve`/`release`/`ship` is the `reserve_ledger_id` or
+  `settle_ledger_id` of exactly one allocation of the same order and product (unique indexes + triggers;
+  an unbacked row blocks the order's next state change and cannot move stock).
+- order state ↔ allocations: `confirmed`/`preparing` ⇒ all lines `reserved`; `shipped`/`delivered` ⇒ all
+  `consumed`; `cancelled` from confirmed/preparing ⇒ all `released`; `pending`/`cancelled` from pending ⇒ none.
+
+**Write sequence** (one transaction): per line — ledger row → allocation insert/settle → linked product
+update (0003 pairing) — then the transition event → the order state/version update.
+
+| Object | Rule (any write path) |
+|---|---|
+| `order_allocations_insert_guard` | created `reserved` only, for the full line quantity, from its own `reserve` ledger row |
+| `order_allocations_update_guard` | only `reserved → released/consumed`, once, by its own matching `release`/`ship` row; identity columns immutable |
+| `order_allocations_no_delete` | no deletes |
+| `inventory_ledger_order_movement_uq` | at most one reserve, one release, one ship row per order line |
+| `inventory_ledger_reserve_guard` | reserve only for a finalized **pending** order line with the same quantity and the product's **current pack size equal to the line's snapshot**, not yet allocated |
+| `inventory_ledger_settle_guard` | release/ship only against **this order's own outstanding allocation** of the same quantity; release while confirmed/preparing, ship while preparing |
+| `products_order_movement_requires_allocation` | a product stock change linked to an order movement must be referenced by an allocation |
+| `products_pack_size_locked_while_stocked` | `pack_size` cannot change while `on_hand` or `reserved` ≠ 0 (before or after) |
+| `order_events` + `operation_key`, `operation_digest`, `order_version_after`; `order_events_operation_uq` | transition idempotency per administrator `(actor_user_id, operation_key)` |
+| `order_events_transition_guard` | a transition event starts from the order's current state **and** latest event, is written by an administrator, has a reason (≥ 3 chars) for cancellation, records key+digest together and `order_version_after = version + 1` |
+| `orders_transition_consistency` | a legal state change needs the matching latest event (same states and resulting version), no order movement without its allocation, allocations matching the target state, and an approved buyer for confirmed/preparing/shipped |
+
+**Enforcement boundary (exact):**
+- *Database-enforced (tested in SQL and through raw-SQL bypass attempts):* per-order attribution of every
+  order stock movement; no settlement of another order's reservation even when the product's aggregate
+  `reserved` would suffice; each allocation settled once; allocation states consistent with the order
+  state; every state change preceded by its event; buyer approval for forward steps; administrator actor;
+  cancellation reason; packaging lock while stocked; pack-size equality at reservation; stock CHECKs and
+  ledger pairing from 0003.
+- *Service-enforced (supported transaction `services/fulfillment.ts`):* recent administrator authentication
+  re-checked at commit; idempotency lookup before version/state checks and digest comparison; the client
+  `expectedVersion` (pre-check **and** `WHERE version = expectedVersion`; the event's
+  `order_version_after` check is a third layer); product/category activity at confirmation; readable 409
+  codes; audit rows.
+- *Not enforced by the database:* that an event is always followed by its state change (the service writes
+  both in one transaction; a lone event blocks further transitions and is detectable as
+  `latest event.new_state ≠ orders.state`); that a reserve row is immediately followed by its allocation.
+- **Fixture rule change:** `fixtureReserve` now performs a real confirmation (finalized order, reserve row,
+  allocation, linked update, event, state); free-standing fixture reservations are no longer possible.
+
+**Policies.** Deactivating a product or category blocks only *new* confirmations; existing allocations can
+always be prepared, shipped or released. A buyer that is not approved blocks confirm/prepare/ship
+(database and service), never cancels or releases anything automatically; cancellation and delivery of an
+already shipped order stay possible.

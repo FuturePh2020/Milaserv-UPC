@@ -29,7 +29,7 @@ function migrationsCopy(): string {
 }
 
 const EXPECTED_TABLES = [
-  'audit_logs', 'auth_users', 'business_settings', 'inventory_ledger', 'merchants', 'order_events', 'order_items',
+  'audit_logs', 'auth_users', 'business_settings', 'inventory_ledger', 'merchants', 'order_allocations', 'order_events', 'order_items',
   'orders', 'product_categories', 'products', 'rate_limits', 'schema_migrations', 'sessions',
 ];
 
@@ -139,7 +139,7 @@ describe('immutability and version guards', () => {
     }
     const u = createTestDatabase();
     try {
-      u.db.exec('PRAGMA user_version = 7');
+      u.db.exec(`PRAGMA user_version = ${LATEST_VERSION + 1}`);
       assert.equal(code(() => inspectSchema(u.db, loadMigrations(MIGRATIONS_DIR))), 'SCHEMA_TOO_NEW');
     } finally {
       u.cleanup();

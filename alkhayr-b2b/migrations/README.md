@@ -12,6 +12,9 @@ Versioned, checksum-verified SQL migrations: `NNNN_name.sql`, contiguous from `0
 - `0004_order_finalization.sql` — the order creation event is a guarded finalization marker (consistent
   subtotal, 1–100 items, uniform demo flag, once, by the creator); no items after it, no transition or
   state change before it (stage 08).
+- `0005_order_fulfillment.sql` — per-order reservations (`order_allocations`) tied to reserve/release/ship
+  ledger rows; transition events with operation keys; state changes require their event, matching
+  allocations and an approved buyer for forward steps; pack size locked while stocked (stage 09).
 
 Rules (enforced by `src/server/database/migrations.ts`, see `docs/DATABASE.md` §5 and `docs/MIGRATION.md`):
 - **Never edit an applied migration.** Its SHA-256 is verified on every startup; changes go into a new file.

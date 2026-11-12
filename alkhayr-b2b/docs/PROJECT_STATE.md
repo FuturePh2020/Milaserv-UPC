@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **08 — Authoritative order creation, snapshots & idempotency: COMPLETE** |
-| Next stage | **09 — Order state machine & atomic fulfillment** (awaiting owner prompt) |
+| Current stage | **09 — Administrative order fulfillment & atomic reservations: COMPLETE** |
+| Next stage | **10 — Premium Arabic RTL design system** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001 + 0002 + 0003 + **0004** (order finalization guards) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, **pending-order creation and own-order reads**. No fulfillment, administrator order handling or UI screens yet. |
+| Schema | Migrations 0001–0004 + **0005** (fulfillment, per-order reservations) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, **administrator order fulfillment with per-order reservations**. No UI screens yet. |
 
 ## Stage log
 
@@ -23,10 +23,134 @@
 | 05 | ✅ Done (merchant lifecycle) | Commit `c2c5a31` |
 | 06 | ✅ Done (products + catalog) | Commit `0437953` |
 | 07 | ✅ Done (inventory + ledger) | Commit `105f672` |
-| 08 | ✅ Done (order creation + own-order reads) | 391/391 tests ×3 clean-copy runs, typecheck clean, 40 mutations with attribution, audit 0 — below |
-| 09–18 | ⏳ Not started | — |
+| 08 | ✅ Done (order creation + own-order reads) | Commit `2849466` |
+| 09 | ✅ Done (fulfillment + allocations) | 415/415 tests ×3 clean-copy runs, typecheck clean, 44 mutations with attribution, audit 0 — below |
+| 10–18 | ⏳ Not started | — |
 
-## Stage 08 — what was built
+## Stage 09 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| Per-order reservations | `migrations/0005_order_fulfillment.sql` | `order_allocations` (order line → reserved / released / consumed, linked to its reserve and settle ledger rows); guards on ledger, allocations, products, events and orders; pack-size lock while stocked; transition events carry operation key, digest and resulting version |
+| Admin endpoints | `src/server/services/fulfillment.ts`, `routes/admin-orders.ts` | `GET /api/v1/admin/orders` (state, merchant, search, demo, sort, signed cursors), `GET /api/v1/admin/orders/:id` (snapshots + allocations + current stock + events), `POST …/:id/transitions` |
+| Transitions | `services/fulfillment.ts` | re-validate (recent admin) → idempotency (per admin, digest) → version → state machine → buyer approval → confirmation checks → per line ledger/allocation/product → event → order `WHERE version = expectedVersion` → audit; one transaction |
+| Packaging integrity | `services/products.ts` + 0005 trigger | `PACKAGING_LOCKED` while stocked/reserved; `CONFIRM_PACKAGING_CHANGED` when the snapshot differs |
+| Errors / audit | `shared/errors.ts`, `services/audit.ts` | `ORDER_STATE_CONFLICT`, `BUYER_NOT_APPROVED`, `CONFIRM_PRODUCT_UNAVAILABLE`, `CONFIRM_PACKAGING_CHANGED`, `CONFIRM_STOCK_INSUFFICIENT`, `ORDER_RESERVATION_MISMATCH`, `PACKAGING_LOCKED`; `order.transitioned` |
+| Shared helpers | `services/orders.ts` | exported `OrderRow`, `FINALIZED`, `orderDetail` (no logic change; comment on trader events) |
+| Fixtures | `tests/helpers/database.ts` | `fixtureReserve` = real confirmation; new `fixtureTransition` (same write sequence as the service); order items take a pack size |
+
+Model, reconciliation equations and the exact database/service boundary: DATABASE.md §14.
+
+## Checks run in stage 09 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Full suite (stages 01–09) | `npm run check` (typecheck + build + `npm test`) | ✅ **415 tests, 104 suites, 415 pass, 0 fail** |
+| — fulfillment (HTTP) / schema (+4 tests for 0005) / orders | `node --test <file>` | ✅ 20 / 41 / 28 |
+| Regression tests adjusted | see below | No protection removed or weakened |
+| Clean reproduction ×3 | tracked + new files → `npm ci` → typecheck + `npm test` ×3 | ✅ 0 type errors; 415/415 each run |
+| Dependency audit | `npm audit` | ✅ 0 vulnerabilities; package.json/lockfile unchanged |
+| Immutable migrations | `git diff` 0001–0004 | ✅ unchanged |
+| Concurrency | concurrent HTTP requests against one server process (confirm vs cancel, 6 competing confirmations, two orders for the same stock, triple cancellation) | ✅ one commit each time; no overselling |
+| Multi-process / load testing | — | NOT RUN (single-instance deployment by design) |
+| Browser QA | — | NOT RUN (no UI) |
+| Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
+
+Regression tests adjusted (all required by the new rules, assertions preserved):
+- Stage-08 snapshot test: pieces-per-carton is now changed after emptying the stock with a traceable
+  `set_total` adjustment (previously changed on a stocked product); its snapshot assertions are unchanged.
+- Schema tests: the state-transition and event tests drive legal steps through `fixtureTransition`
+  (ledger/allocation/event sequence) and use an administrator actor for transition events; the 0004
+  unfinished-order test accepts either the 0004 or the 0005 trigger message (both refuse; SQLite does not
+  specify which reports first); table count 13 → 14.
+- "Database newer than the release" tests: hard-coded `user_version` 5/7 replaced by latest + 1 (5 had
+  become current).
+- Stage boundary tests (auth-security, server, orders): administrator order routes now exist (403 for
+  traders); refund/cancel/summary/reservation endpoints still absent.
+
+### Mutation evidence (44 scripted edits, each restored; fulfillment or schema test file)
+| Mutation | Result | Attribution |
+|---|---|---|
+| F01 no commit-time re-validation / F02 without recency | caught | slow-body logout and recency-expiry tests |
+| F03 replay ignores digest / F28 digest omits expectedVersion | caught | changed-content tests |
+| F04 no idempotency lookup | caught | replay-after-advance test (409 instead of 200) |
+| F27 idempotency after the version check | caught | replay-after-advance test |
+| F05 no version pre-check | caught (expected 409) | **data protected** by the 0005 event `order_version_after` check (500) |
+| F06 `WHERE` binds the read version | **survived** | **blocked by the independent pre-check** (and the event version check) |
+| F07 both service version layers removed (event version follows the order) | caught | concurrent-administrator tests (both commit) |
+| F08 shipped → cancelled allowed | caught (expected 409) | **data protected** by the 0001 event transition CHECK (500) |
+| F09 / F10 no buyer approval check (all / preparing) | caught (expected 409) | **data protected** by the 0005 buyer check (500) |
+| X02 service AND database buyer checks removed | caught | suspended buyer's order confirmed |
+| F11 no product/category activity check | caught | deactivation test (order confirmed) |
+| F12 no packaging check at confirmation | caught (expected 409) | **data protected** by the 0005 reserve guard (500) |
+| X01 service packaging check AND 0005 reserve guard removed | caught | repacked order confirmed |
+| F13 no stock check / F14 stock check ignores reserved | caught (expected 409) | **data protected** by ledger/products CHECKs (500) |
+| F15 ship moves only reserved / F16 release restocks | caught | **data protected** by the ledger kind CHECKs (500) |
+| F17 preparation reserves again / F18 pending cancellation releases | caught | **data protected** by the 0005 reserve/settle guards (500) |
+| F19 no own-allocation pre-check before settling | **survived** | **unreachable through the supported path**: 0005 guarantees allocations match the order state; the settle guard and `changes` check would refuse anyway |
+| F20 cancellation reason optional | caught (expected 400) | **data protected** by the 0005 reason check (500) |
+| F21 non-strict body / F22 no audit / F23 cursor ignores state / F29 no finalized filter | caught | schema, audit, cursor and unfinished-order tests |
+| F24 / F25 list / detail without admin guard | caught | access-control tests |
+| F26 no packaging lock in the product service | caught (expected 409) | **data protected** by the 0005 pack-size trigger (500) |
+| X03 service lock AND pack-size trigger removed | caught | stocked product repacked |
+| F30 event written but order not updated | caught | lifecycle tests |
+| D01–D11 each 0005 trigger/check disabled (pack size, settle, reserve, allocation backing, allocation state, buyer, admin actor, event-required, allocation update, cancel reason, event chain) | caught (11/11) | SQL tests |
+
+### Required tests → evidence (real HTTP unless noted)
+| Requirement | Test |
+|---|---|
+| Every allowed / forbidden transition | lifecycle; 6 states × every disallowed target → 409, nothing changed |
+| Anonymous / trader / pending / suspended | 401 / 403 / 403 / 401 on list, detail, transition |
+| Live admin, recency, CSRF/Origin/content type | reads after 16 min 200, transition 428, re-login works; 403/403/415 |
+| Logout / suspension (session revocation) / recency expiry during body | slow body → 401 / 401 / 428, nothing written |
+| Stale version, simultaneous administrators | confirm vs cancel concurrently → [201, 409]; 6 concurrent confirmations → one 201 |
+| Identical / changed-content retries; retry after advance | 200 replay, no extra rows; 4 variants → 409; replay after shipped returns the original confirm operation and the current order |
+| Failed attempt leaves key reusable | insufficient stock → receipt → same key 201 |
+| Two competing orders | concurrent confirmations for 7 and 6 of 10 → one 201, one `CONFIRM_STOCK_INSUFFICIENT` |
+| Multi-line later failure | 3rd line short → nothing reserved; 8 injected failures (ledger, allocation, product, event, order, audit, ship and release settlement) → full rollback |
+| Per-order attribution / another order's reservation | shared product A 5, B 7, C 7; ship A leaves B's allocation; raw SQL release/ship under C, re-release of A, partial release of B, re-settle of B → refused |
+| Preparation / shipment / delivery | no ledger or version change / on_hand and reserved −q once / no second deduction |
+| Cancellation | pending: no stock change; confirmed and preparing: released once under 3 concurrent requests |
+| Product/category deactivation | before: `CONFIRM_PRODUCT_UNAVAILABLE`; after reservation: prepare, ship, cancel still work |
+| Packaging | PATCH while stocked/reserved → `PACKAGING_LOCKED`; raw SQL refused; name change allowed; after emptying → allowed; old pending order → `CONFIRM_PACKAGING_CHANGED`, can be cancelled |
+| Buyer suspension | nothing cancelled or released; confirm/prepare/ship → `BUYER_NOT_APPROVED`; cancel and deliver work; returned-to-review buyer blocked too |
+| Snapshots | price, tax, shipping, buyer, items unchanged after catalog/settings/profile changes and full lifecycle |
+| Trader availability | normal → low → out of stock → back, no counts in responses |
+| Continued protections | full stage 01–08 suites (database, static files, auth) pass |
+
+## Limitations (known)
+- **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
+- No partial fulfillment, returns, post-shipment cancellation, payments or shipping integrations (out of scope).
+- The database does not force an event to be followed by its state change, nor a reserve row by its
+  allocation; the service writes them in one transaction and inconsistencies would block the order (DATABASE.md §14).
+- Concurrency verified within the supported single-server deployment only; no multi-process or load testing.
+- Traders do not see cancellation reasons (D-104); trader-facing messaging may be added deliberately later.
+- No UI yet (stages 10–12); summary/print (14); reports (14); exports (13).
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 10.
+
+## Files changed in stage 09 (all under `alkhayr-b2b/`)
+New: `migrations/0005_order_fulfillment.sql`, `src/server/services/fulfillment.ts`, `src/server/routes/admin-orders.ts`,
+`tests/integration/fulfillment.test.ts`.
+Modified: `src/server/app.ts`, `src/server/services/{audit,orders,products}.ts`, `src/shared/errors.ts`,
+`tests/helpers/database.ts`, `tests/integration/{auth-security,database,orders,server}.test.ts`,
+`tests/unit/{database-migrations,database-schema}.test.ts`, `migrations/README.md`, `README.md`,
+`docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
+Not touched: migrations 0001–0004, dependencies/lockfile, web UI, repository-root files.
+
+## How to continue
+Next: send **PROMPT 10**. The UI must call these APIs only (no browser-side state of record), show
+availability statuses to traders, and generate fresh request/operation keys per intended action (reusing
+them only for retries of the same action).
+
+---
+
+## Stage 08 record (retained)
+
+### What was built
 | Area | Files | Summary |
 |---|---|---|
 | Finalization guards | `migrations/0004_order_finalization.sql` | Creation event (`NULL → pending`) accepted once, by the creator, for a pending v1 order with 1–100 items, `subtotal = Σ line totals` and uniform demo flag; no items after it; no transition/state change before it |
@@ -41,7 +165,7 @@ Financial rule: `line = price × cartons`; `subtotal = Σ`; `taxBase = subtotal 
 `tax = ⌊(taxBase × bps + 5000) / 10000⌋` (half-up); `total = subtotal + shipping + tax`; subtotal/total
 > 1e13 rejected (never clamped); minimum order on the subtotal. Exact enforcement boundary: DATABASE.md §13.
 
-## Checks run in stage 08 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 08 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -55,7 +179,7 @@ Financial rule: `line = price × cartons`; `subtotal = Σ`; `taxBase = subtotal 
 | Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
 | Multi-process concurrent order creation | — | NOT RUN (single process by design (exclusive instance lock, T25); concurrency tested in-process on `BEGIN IMMEDIATE`; the `UNIQUE(merchant_id, request_key)` index is the cross-connection backstop, exercised by mutation M05) |
 
-### Mutation evidence (40 scripted edits, each restored; orders or schema test file)
+#### Mutation evidence (40 scripted edits, each restored; orders or schema test file)
 | Mutation | Result | Attribution |
 |---|---|---|
 | M01 no approval re-check at commit | caught | **by another layer**: the access-version comparison (409 `ACCESS_CHANGED` instead of 403). Every status change advances `access_version` (0002), so this check cannot be isolated |
@@ -88,7 +212,7 @@ Financial rule: `line = price × cartons`; `subtotal = Σ`; `taxBase = subtotal 
 | M33 / M34 / M38 / M39 / M40 0004 subtotal / demo / once / creator-pending / transition guards off | caught | SQL tests (first attempt of M33/M34 was an invalid SQL edit and is not counted) |
 | M35 / M36 0004 items-frozen / state-change guards off | caught | SQL tests |
 
-### Required tests → evidence (real HTTP unless noted)
+#### Required tests → evidence (real HTTP unless noted)
 | Requirement | Test |
 |---|---|
 | Own merchant only; ids in body/headers; admin own profile | ids rejected (400), headers ignored, foreign read 404, admin order uses admin profile |
@@ -109,7 +233,7 @@ Financial rule: `line = price × cartons`; `subtotal = Σ`; `taxBase = subtotal 
 | Rate limit | 31st attempt in 10 min → 429 with Retry-After; other merchant unaffected; window reset |
 | Database (SQL) | 0004: once/creator, subtotal mismatch, demo mismatch, items frozen, no transition/state change before creation |
 
-## Limitations (known)
+### Limitations at the end of stage 08
 - **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
 - Stock availability at creation is a check, not a reservation: a pending order can be confirmable later or not (stage 09 re-checks atomically).
 - Exact availability can be bounded by repeated order attempts (T57); slowed by the per-merchant limit, not eliminated.
@@ -117,26 +241,13 @@ Financial rule: `line = price × cartons`; `subtotal = Σ`; `taxBase = subtotal 
 - Order summary/print view deferred to stage 14 (D-097). No administrator order endpoints yet (stage 09). No UI yet (stages 10–12).
 - Tax/shipping defaults are implementation defaults (0), not a legal tax determination; configure before production.
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 09.
-
-## Files changed in stage 08 (all under `alkhayr-b2b/`)
+### Files changed in stage 08 (all under `alkhayr-b2b/`)
 New: `migrations/0004_order_finalization.sql`, `src/server/services/orders.ts`, `src/server/routes/orders.ts`,
 `tests/integration/orders.test.ts`.
 Modified: `src/server/app.ts`, `src/server/auth/rate-limit.ts`, `src/server/services/audit.ts`, `src/shared/errors.ts`,
 `tests/helpers/database.ts`, `tests/integration/{auth-security,server}.test.ts`, `tests/unit/database-schema.test.ts`,
 `migrations/README.md`, `README.md`, `docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
 Not touched: migrations 0001–0003, dependencies/lockfile, web UI, repository-root files.
-
-## How to continue
-Next: send **PROMPT 09**. Confirmation must re-check availability and write `reserve` ledger rows + linked
-product updates (`last_ledger_id`, `version + 1`) per order line inside the transition transaction;
-cancel/ship write `release`/`ship` rows. Transitions must insert an `order_events` row (0004 requires the
-creation event first) and update `orders.state`/`version` with `WHERE version = expectedVersion`. Reuse
-`revalidateAtCommit`, strict schemas, and the stage-07 inventory module.
 
 ---
 

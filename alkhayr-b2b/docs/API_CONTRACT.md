@@ -105,9 +105,9 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 | GET `/api/v1/admin/inventory` | D (live admin session) | All products incl. inactive. Query (strict): `q` (literal name/brand or exact barcode), `category`, `active∈{true,false}`, `status∈{out_of_stock,low_stock,normal}`, `sort∈{name,available_asc,available_desc,updated}` (default name), `limit` 1–100, `cursor` (bound to admin, sort, filters and the current threshold). → `{items:[{product:{id,name,brand,category,barcode,active,isDemo}, onHand, reserved, available, status, statusLabelAr, version, updatedAt}], nextCursor}` | **07 ✅** |
 | POST `/api/v1/admin/inventory/:id/adjustments` | D R (session token) | One of (strict): `{type:"receipt", quantity≥1}` · `{type:"correction_delta", delta≠0}` · `{type:"set_total", total≥0}`, each with `expectedVersion`, `operationKey` (UUID v4), `reason` (3–300), `reference?` (1–100). No reserved/available/balances/order/actor fields. → **201** `{replayed:false, operation:LedgerEntry, product:InventoryItem}`; identical retry → **200** `{replayed:true, operation:<original>, product:<current>}`; never activates a product. | **07 ✅** |
 | GET `/api/v1/admin/inventory/:id/ledger` | D | `{product:InventoryItem, items:[LedgerEntry], nextCursor}`, newest first; `limit` 1–100, `cursor` bound to admin and product. LedgerEntry = `{id, productId, kind, adjustmentType, onHandDelta, reservedDelta, onHandAfter, reservedAfter, availableAfter, reason, reference, orderId, actor, productVersionAfter, createdAt}`. No update/delete routes (405). | **07 ✅** |
-| GET `/api/v1/admin/orders` | D | `state, merchantId, from, to, includeDemo`, cursor | 09 |
-| GET `/api/v1/admin/orders/:id` | D | order, items, events | 09 |
-| POST `/api/v1/admin/orders/:id/transitions` | D R | `{to, expectedVersion, note?}` | 09 |
+| GET `/api/v1/admin/orders` | D (live admin session) | All finalized orders. Query (strict): `state`, `merchantId`, `q` (exact display number, case-insensitive, or literal substring of the buyer business name), `demo∈{true,false}`, `sort∈{newest,oldest}`, `limit` 1–100, `cursor` (bound to admin, sort, filters). → `{items:[{id, displayNumber, merchantId, buyerBusinessName, buyerGovernorate, state, version, isDemo, lineCount, totalCents, createdAt, updatedAt}], nextCursor}` | **09 ✅** |
+| GET `/api/v1/admin/orders/:id` | D | `{order: AdminOrder}` (§4) | **09 ✅** |
+| POST `/api/v1/admin/orders/:id/transitions` | D R (session token) | Strict `{to, expectedVersion, operationKey (UUID v4), reason? (3–300; required for cancelled)}`; 4 KiB. → **201** `{replayed:false, operation, order}`; identical retry → **200** `{replayed:true, operation:<original>, order:<current>}` (§4) | **09 ✅** |
 | GET/PATCH `/api/v1/admin/settings` | D, PATCH R | settings with version | 14 |
 | GET `/api/v1/admin/reports/overview` | D | DB-wide metrics (demo/cancelled excluded from value) | 14 |
 | GET `/api/v1/admin/exports/orders.csv` | D R | formula-safe CSV, bounded (≤ 10,000 rows per request, date range) | 13 |
@@ -184,14 +184,40 @@ re-reads the target, checks `expectedVersion`, updates `status`, `version`+1, `a
 `merchant.status_changed` `{from, to, reason?, sessions_revoked, version}`. Any failure rolls back all of it.
 Reason: 3–200 characters, stored in the audit log and shown in the merchant's status history.
 
-## 4. Order status transitions (POST …/transitions)
+## 4. Order status transitions (POST /api/v1/admin/orders/:id/transitions)
 | from \ to | confirmed | preparing | shipped | delivered | cancelled |
 |---|---|---|---|---|---|
-| pending | ✔ reserve | ✘ | ✘ | ✘ | ✔ no stock effect |
-| confirmed | ✘ | ✔ | ✘ | ✘ | ✔ release |
-| preparing | ✘ | ✘ | ✔ deduct+release | ✘ | ✔ release |
-| shipped | ✘ | ✘ | ✘ | ✔ | ✘ |
+| pending | ✔ reserve all lines (approved buyer) | ✘ | ✘ | ✘ | ✔ no stock effect |
+| confirmed | ✘ | ✔ no movement (approved buyer) | ✘ | ✘ | ✔ release this order's allocations |
+| preparing | ✘ | ✘ | ✔ deduct on_hand and reserved, consume allocations (approved buyer) | ✘ | ✔ release |
+| shipped | ✘ | ✘ | ✘ | ✔ no movement (any buyer status) | ✘ |
 | delivered / cancelled | ✘ | ✘ | ✘ | ✘ | ✘ |
 
-Illegal → `409 ORDER_STATE_CONFLICT` with current `state` and `version`.
-Insufficient stock on confirm → `409 INSUFFICIENT_STOCK` with per-line `{productId, requested, available}`.
+Body: strict `{to, expectedVersion, operationKey, reason?}`; actor, merchant, prices, totals, stock,
+quantities, source state and any other field → 400. `reason` required for `cancelled`.
+
+Processing (ONE write transaction, no awaits): re-validate administrator (session, role, recent auth) →
+look up `(administrator, operationKey)` in `order_events`: same digest → **200 replay** of the original
+operation (works even if the order advanced since; nothing reapplied), different digest or order → `409
+IDEMPOTENCY_KEY_REUSED` → order (404 if unknown/unfinished) → `expectedVersion` (`409 VERSION_CONFLICT`,
+`details.current.order {state, version}`) → state machine (`409 ORDER_STATE_CONFLICT`, same details) →
+buyer approved for confirm/prepare/ship (`409 BUYER_NOT_APPROVED`, `details.current.buyerStatus`) →
+confirmation checks: product and category active (`409 CONFIRM_PRODUCT_UNAVAILABLE`), pack size equal to
+the snapshot (`409 CONFIRM_PACKAGING_CHANGED`, `{productId, lineNo, orderedPackSize, currentPackSize}` —
+cancel and let the trader re-order; quantities are never reinterpreted), availability (`409
+CONFIRM_STOCK_INSUFFICIENT`, `{productId, lineNo, requested, available}` — counts shown to administrators
+only) → per line ledger row + allocation + product update → event (reason, key, digest, version after) →
+order update `WHERE version = expectedVersion` → audit `order.transitioned`. Any failure rolls back
+everything; the key stays unused.
+Digest = SHA-256 of `["order.transition.v1", orderId, to, expectedVersion, reason|null]`. Operation-key
+namespace: per administrator, separate from inventory adjustment keys.
+
+**operation** = `{eventId, fromState, toState, orderVersionAfter, reason, actor, at}` (the committed
+operation). **order** = AdminOrder as it is now: the trader Order fields (§3c, snapshots unchanged) plus
+`merchant {id, username, currentStatus, currentBusinessName}`, per item `allocation {status, quantity,
+outstanding} | null` and `currentProduct {active, packSize, onHand, reserved, available}`, `events [{id,
+fromState, toState, reason, versionAfter, actor, at}]`, `allowedTransitions`. No digests.
+Traders' own-order views keep `events [{fromState, toState, at}]` (no administrator names or reasons).
+
+Product PATCH: `packSize` while the product has stock or reservations → `409 PACKAGING_LOCKED` with
+`details.current.product` (empty it with a traceable adjustment first; other fields stay editable).

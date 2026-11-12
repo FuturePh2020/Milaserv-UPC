@@ -137,7 +137,7 @@ export function computeAmounts(lines: ReadonlyArray<{ price: number; cartons: nu
 
 // ------------------------------------------------------------------ representations
 
-interface OrderRow {
+export interface OrderRow {
   id: string;
   display_number: string;
   merchant_id: string;
@@ -177,18 +177,19 @@ interface ItemRow {
 }
 
 /** Only finalized orders (creation event present, migration 0004) are ever read. */
-const FINALIZED = "EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.old_state IS NULL)";
+export const FINALIZED = "EXISTS (SELECT 1 FROM order_events e WHERE e.order_id = o.id AND e.old_state IS NULL)";
 
 function loadOwnOrder(ctx: RequestContext, merchantId: string, id: string): OrderRow | undefined {
   return ctx.services.db.prepare(`SELECT o.* FROM orders o WHERE o.id = ? AND o.merchant_id = ? AND ${FINALIZED}`).get(id, merchantId) as unknown as OrderRow | undefined;
 }
 
 /** Order representation built from snapshots only (never from current product/profile/settings). */
-function orderDetail(ctx: RequestContext, o: OrderRow) {
+export function orderDetail(ctx: RequestContext, o: OrderRow) {
   const { db } = ctx.services;
   const items = db
     .prepare('SELECT line_no, product_id, product_name, product_brand, product_barcode, pack_size, unit_price_cents, cartons, line_total_cents FROM order_items WHERE order_id = ? ORDER BY line_no')
     .all(o.id) as unknown as ItemRow[];
+  // Traders see the state history without administrator identities or reasons.
   const events = db.prepare('SELECT old_state, new_state, created_at FROM order_events WHERE order_id = ? ORDER BY id').all(o.id) as unknown as Array<{ old_state: string | null; new_state: string; created_at: number }>;
   return {
     id: o.id,
