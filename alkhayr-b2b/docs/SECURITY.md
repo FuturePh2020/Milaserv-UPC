@@ -2,7 +2,7 @@
 
 Status: **Policy defined in stage 00; controls implemented so far are listed in §12 with the stage
 that tested them (03: password hashing, TOTP, secret encryption, administrator bootstrap; 04: login,
-registration, sessions, CSRF, request boundaries, rate limits, authorization guards; 05: merchant profile ownership, administrator review/approval, access versioning; 06: product administration and the approved catalog).** Historical results from
+registration, sessions, CSRF, request boundaries, rate limits, authorization guards; 05: merchant profile ownership, administrator review/approval, access versioning; 06: product administration and the approved catalog; 07: inventory adjustments and ledger).** Historical results from
 the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this codebase.
 
 ## 1. Prohibited in every build
@@ -188,6 +188,22 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   exact barcode/brand match, HMAC cursors bound to user, endpoint (catalog vs admin), sort and filters;
   filter choices derived only from active products.
 
+## 7c. Inventory (implemented stage 07)
+- Reads (`/api/v1/admin/inventory…`) need a live administrator session; adjustments need recent
+  authentication (re-checked at commit, also for idempotent replays), the session CSRF token, exact
+  Origin, JSON and an 8 KiB body.
+- Strict per-type schemas (receipt / correction_delta / set_total); integers validated before SQLite;
+  reserved, available, balances, order, actor and product fields are rejected. Manual adjustments never
+  change `reserved`; receiving stock never activates a product.
+- One transaction: re-validate → idempotency lookup (per administrator, SHA-256 digest of the meaningful
+  request) → `expectedVersion` → balance rules → ledger row → linked product update `WHERE version =
+  expectedVersion` → audit. Any failure rolls everything back and leaves the operation key unused.
+- **Database-enforced since 0003:** products are inserted inactive with zero stock; every on_hand/reserved
+  change must be paired with a new matching ledger row (deltas, balances, version) — for every write path.
+  Exact boundary: DATABASE.md §12.
+- Audit `inventory.adjusted` stores type, delta, resulting on_hand, version and the ledger id; reason and
+  reference live in the append-only ledger.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -259,5 +275,9 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Barcode/null/uniqueness, category validation, image URL policy, demo rules | ✅ | ✅ 06 |
 | Catalog cap and duplicate barcode under concurrency | ✅ | ✅ 06 |
 | Two-layer optimistic concurrency (pre-check + WHERE expectedVersion) | ✅ | ✅ 06 (single and double mutations) |
+| Inventory adjustments: recency at commit, strict types, no reservation changes | ✅ | ✅ 07 (HTTP, slow bodies) |
+| Idempotent adjustments (replay before version check, 409 on changed content, per-admin scope) | ✅ | ✅ 07 (sequential, concurrent, lost response) |
+| Stock changes paired with ledger rows; inactive zero-stock inserts (database triggers) | ✅ | ✅ 07 (SQL and HTTP) |
+| Atomic ledger + balance + audit (rollback on any failure) | ✅ | ✅ 07 (three injected failures) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

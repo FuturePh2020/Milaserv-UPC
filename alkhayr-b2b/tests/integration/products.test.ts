@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { describe, test } from 'node:test';
 import { Client, count, createAdmin, createTrader, startTestApp, type TestApp } from '../helpers/app.ts';
+import { fixtureAdjustStock, fixtureReserve } from '../helpers/database.ts';
 
 // Synthetic accounts and products only. Stock is set ONLY through the test-only fixture connection.
 const MIN = 60_000;
@@ -35,9 +36,13 @@ function create(c: Client, extra: Record<string, unknown> = {}) {
   return c.request('POST', '/api/v1/admin/products', { body: { ...base, ...extra } });
 }
 
-/** TEST-ONLY: set stock directly on the fixture connection (stage 07 adds the real inventory service). */
+/**
+ * TEST-ONLY: establish stock through ledger-linked fixture movements (migration 0003 refuses raw
+ * stock updates). Assumes the product currently has zero stock.
+ */
 function setStock(app: TestApp, id: string, onHand: number, reserved = 0) {
-  app.fixtureDb.prepare('UPDATE products SET on_hand = ?, reserved = ?, version = version + 1 WHERE id = ?').run(onHand, reserved, id);
+  if (onHand) fixtureAdjustStock(app.fixtureDb, id, onHand);
+  if (reserved) fixtureReserve(app.fixtureDb, id, reserved);
 }
 
 const productRow = (app: TestApp, id: string) => app.fixtureDb.prepare('SELECT * FROM products WHERE id = ?').get(id) as any;

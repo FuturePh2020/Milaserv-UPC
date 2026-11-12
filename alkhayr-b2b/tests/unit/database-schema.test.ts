@@ -5,7 +5,7 @@ import { after, before, describe, test } from 'node:test';
 import { isForeignKeyError, SQLITE } from '../../src/server/database/errors.ts';
 import { PRODUCT_CATEGORIES } from '../../src/shared/categories.ts';
 import { BUSINESS_SETTING_DEFAULTS } from '../../src/shared/constants.ts';
-import { createTestDatabase, insertMerchant, insertOrder, insertProduct, insertUser, now, sqliteFailure, type TestDatabase } from '../helpers/database.ts';
+import { createTestDatabase, fixtureAdjustStock, fixtureReserve, insertMerchant, insertOrder, insertProduct, insertUser, now, sqliteFailure, type TestDatabase } from '../helpers/database.ts';
 
 let t: TestDatabase;
 let db: DatabaseSync;
@@ -202,14 +202,48 @@ describe('products', () => {
     fails(() => insertProduct(db, { price: 'abc' }), SQLITE.CONSTRAINT_DATATYPE);
   });
 
-  test('on_hand >= reserved >= 0 is enforced on insert and update', () => {
-    fails(() => insertProduct(db, { onHand: 5, reserved: 6 }), SQLITE.CONSTRAINT_CHECK, /products_reserved_le_on_hand/);
-    fails(() => insertProduct(db, { reserved: -1 }), SQLITE.CONSTRAINT_CHECK, /products_reserved_nonnegative/);
+  test('on_hand >= reserved >= 0 is enforced (ledger balance CHECK first, products CHECK behind it)', () => {
+    // Since 0003 every stock change needs a matching ledger row, and the ledger's own CHECK
+    // (reserved_after <= on_hand_after, both >= 0) rejects an invalid balance before the product row is touched.
+    fails(() => insertProduct(db, { onHand: 5, reserved: 6 }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_balance_after/);
+    fails(() => insertProduct(db, { onHand: -1 }), SQLITE.CONSTRAINT_CHECK);
+    fails(() => insertProduct(db, { reserved: -1 }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_(reserve|balance_after)/); // either ledger CHECK may report first
     const id = insertProduct(db, { onHand: 10, reserved: 4 });
-    fails(() => db.prepare('UPDATE products SET on_hand = 3, version = version + 1 WHERE id = ?').run(id), SQLITE.CONSTRAINT_CHECK, /products_reserved_le_on_hand/);
-    fails(() => db.prepare('UPDATE products SET reserved = 11, version = version + 1 WHERE id = ?').run(id), SQLITE.CONSTRAINT_CHECK);
-    db.prepare('UPDATE products SET reserved = 10, version = version + 1 WHERE id = ?').run(id);
+    fails(() => fixtureAdjustStock(db, id, -7), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_balance_after/);
+    fails(() => fixtureReserve(db, id, 7), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_balance_after/);
+    // Raw updates without a ledger row are refused outright.
+    fails(() => db.prepare('UPDATE products SET on_hand = 3, version = version + 1 WHERE id = ?').run(id), SQLITE.CONSTRAINT_TRIGGER, /inventory_ledger/);
+    fixtureReserve(db, id, 6);
     assert.equal(scalar('SELECT on_hand - reserved FROM products WHERE id = ?', id), 0);
+    // The products CHECKs remain in the schema as a further layer.
+    const sql = String(scalar("SELECT sql FROM sqlite_schema WHERE name = 'products'"));
+    assert.match(sql, /products_reserved_le_on_hand CHECK \(reserved <= on_hand\)/);
+    assert.match(sql, /products_reserved_nonnegative CHECK \(reserved >= 0\)/);
+  });
+
+  test('migration 0003: products are inserted inactive with zero stock; every stock change needs a NEW matching ledger row', () => {
+    const insert = (cols: string, vals: string) =>
+      db.prepare(`INSERT INTO products (id, name, brand, category, price_cents, pack_size, created_at, updated_at${cols}) VALUES (?, 'منتج', 'ب', 'candy', 100, 1, 1, 1${vals})`).run(randomUUID());
+    fails(() => insert('', ''), SQLITE.CONSTRAINT_TRIGGER, /inserted inactive/);
+    fails(() => insert(', active, reserved', ', 0, 1'), SQLITE.CONSTRAINT_TRIGGER, /inserted inactive/);
+    const id = insertProduct(db, { onHand: 0, active: false });
+    const ledgerRow = (delta: number, after: number, versionAfter: number) =>
+      Number(
+        db
+          .prepare("INSERT INTO inventory_ledger (product_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, product_version_after, created_at) VALUES (?, 'receipt', ?, 0, ?, 0, 'استلام', ?, 1)")
+          .run(id, delta, after, versionAfter).lastInsertRowid,
+      );
+    const link = (onHand: number, ledgerId: number) => db.prepare('UPDATE products SET on_hand = ?, version = version + 1, last_ledger_id = ? WHERE id = ?').run(onHand, ledgerId, id);
+    const v = Number(scalar('SELECT version FROM products WHERE id = ?', id));
+    const l1 = ledgerRow(5, 5, v + 1);
+    fails(() => link(6, l1), SQLITE.CONSTRAINT_TRIGGER, /matching new inventory_ledger/); // balance mismatch
+    link(5, l1);
+    fails(() => link(10, l1), SQLITE.CONSTRAINT_TRIGGER, /matching new inventory_ledger/); // ledger row reused
+    const l2 = ledgerRow(5, 10, v + 9);
+    fails(() => link(10, l2), SQLITE.CONSTRAINT_TRIGGER, /matching new inventory_ledger/); // product_version_after mismatch
+    fails(() => db.prepare('UPDATE products SET version = version + 1, last_ledger_id = ? WHERE id = ?').run(l2, id), SQLITE.CONSTRAINT_TRIGGER, /only together with a stock change/);
+    db.prepare("UPDATE products SET name = 'اسم آخر', version = version + 1 WHERE id = ?").run(id); // metadata unaffected
+    assert.deepEqual({ ...(db.prepare('SELECT on_hand, last_ledger_id FROM products WHERE id = ?').get(id) as object) }, { on_hand: 5, last_ledger_id: l1 });
   });
 
   test('available stock is not a stored column', () => {
@@ -219,14 +253,21 @@ describe('products', () => {
 
   test('every product update must advance version (stock changes included)', () => {
     const id = insertProduct(db);
-    fails(() => db.prepare('UPDATE products SET on_hand = on_hand + 5 WHERE id = ?').run(id), SQLITE.CONSTRAINT_TRIGGER, /version/);
+    // A stock change with a matching ledger row but WITHOUT a version bump is refused by the version trigger.
+    const v = Number(scalar('SELECT version FROM products WHERE id = ?', id));
+    const onHand = Number(scalar('SELECT on_hand FROM products WHERE id = ?', id));
+    const ledger = db
+      .prepare("INSERT INTO inventory_ledger (product_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, product_version_after, created_at) VALUES (?, 'correction', 5, 0, ?, 0, 'سبب', ?, 1)")
+      .run(id, onHand + 5, v);
+    fails(() => db.prepare('UPDATE products SET on_hand = on_hand + 5, last_ledger_id = ? WHERE id = ?').run(ledger.lastInsertRowid, id), SQLITE.CONSTRAINT_TRIGGER, /version/);
     fails(() => db.prepare('UPDATE products SET price_cents = 999, version = version + 2 WHERE id = ?').run(id), SQLITE.CONSTRAINT_TRIGGER);
-    db.prepare('UPDATE products SET on_hand = on_hand + 5, version = version + 1 WHERE id = ?').run(id);
+    fixtureAdjustStock(db, id, 5);
+    assert.equal(Number(scalar('SELECT version FROM products WHERE id = ?', id)), v + 1);
   });
 
   test('image URLs must be https', () => {
     const insertWithImage = (url: string) =>
-      db.prepare("INSERT INTO products (id, name, brand, category, image_url, price_cents, pack_size, created_at, updated_at) VALUES (?, 'منتج', 'ب', 'candy', ?, 100, 1, 1, 1)").run(randomUUID(), url);
+      db.prepare("INSERT INTO products (id, name, brand, category, image_url, price_cents, pack_size, active, created_at, updated_at) VALUES (?, 'منتج', 'ب', 'candy', ?, 100, 1, 0, 1, 1)").run(randomUUID(), url);
     fails(() => insertWithImage('http://img.example/x.png'), SQLITE.CONSTRAINT_CHECK, /products_image_https/);
     fails(() => insertWithImage('javascript:alert(1)'), SQLITE.CONSTRAINT_CHECK);
     insertWithImage('https://img.example/x.png');

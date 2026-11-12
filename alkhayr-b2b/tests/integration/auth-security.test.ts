@@ -495,12 +495,12 @@ describe('authorization guards (exercised through TEST-ONLY routes)', () => {
 });
 
 describe('stage boundary', () => {
-  test('no inventory or order endpoints exist yet', () =>
+  test('no order endpoints exist yet', () =>
     withApp(async (app) => {
       const t = await createTrader(app);
       const c = new Client(app, ip());
       await c.login(t.username, t.password);
-      for (const p of ['/api/v1/orders', '/api/v1/admin/inventory', '/api/v1/admin/orders']) {
+      for (const p of ['/api/v1/orders', '/api/v1/admin/orders', '/api/v1/admin/inventory/reservations']) {
         expectCode(await c.request('GET', p), 404, 'NOT_FOUND');
       }
     }));

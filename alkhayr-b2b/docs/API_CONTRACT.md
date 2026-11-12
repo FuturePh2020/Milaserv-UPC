@@ -1,6 +1,6 @@
 # ALKHAYR — HTTP API Contract (v1)
 
-Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04), the merchant lifecycle endpoints (05), and product administration plus the approved catalog (06). No inventory or order endpoint exists yet.** Each feature stage updates the
+Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /readyz` (02), the error envelope, 404/405, request-target/Host validation, the six `/api/v1/auth/*` endpoints with sessions, CSRF, Origin/Fetch-Metadata checks and rate limits (04), the merchant lifecycle endpoints (05), product administration plus the approved catalog (06), and inventory reads/adjustments with the ledger (07). No order endpoint exists yet.** Each feature stage updates the
 "Implemented in" column only after its tests pass.
 
 ## 1. Conventions
@@ -59,6 +59,8 @@ Status: **Specified in stage 00. Implemented so far: `GET /healthz` (01), `GET /
 | 414 | `URI_TOO_LONG` | request target > 2048 bytes |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | |
 | 422 | `BUSINESS_RULE`, `MINIMUM_ORDER_NOT_MET`, `AMOUNT_LIMIT_EXCEEDED`, `MIXED_DEMO_ITEMS`, `CATALOG_LIMIT` | valid shape, violates rule (`CATALOG_LIMIT`: 5000 products reached) |
+| 409 | `IDEMPOTENCY_KEY_REUSED` | an operation key already used by this administrator for a DIFFERENT request (product, type, amount, reason, reference or expectedVersion) |
+| 422 | `NO_CHANGE`, `INVENTORY_NEGATIVE`, `INVENTORY_BELOW_RESERVED`, `INVENTORY_LIMIT` | inventory adjustment would change nothing / make on_hand < 0 / make on_hand < reserved / exceed 1 000 000 000; `details.current.product` holds the current record |
 | 409 | `DUPLICATE` | unique value already used (e.g. product barcode); `details.fields[0].path` names the field |
 | 428 | `RECENT_AUTH_REQUIRED` | administrator credentials older than 15 min for a privileged operation — UI: sign in again (`POST /auth/login` with password + fresh TOTP), then retry (D-008, D-052) |
 | 429 | `RATE_LIMITED` | includes `Retry-After` |
@@ -100,9 +102,9 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 | POST `/api/v1/admin/products` | D R (session token) | Strict: `{name, brand, category, barcode?, imageUrl?, cartonPriceCents, packSize, minimumCartons, isDemo?}`. Server sets id, `active=false`, `on_hand=reserved=0`, version 1, timestamps. → `201 {product}`. Errors: `DUPLICATE` (barcode), `CATALOG_LIMIT`, `VALIDATION_FAILED` (incl. unknown/inactive category, `isDemo` in production). Opening stock is a stage-07 inventory operation. | **06 ✅** |
 | PATCH `/api/v1/admin/products/:id` | D R (session token) | Strict: `{expectedVersion, name?, brand?, category?, barcode? (null clears), imageUrl? (null clears), cartonPriceCents?, packSize?, minimumCartons?, active?}`. **No stock, reservation, demo, id, version or timestamp fields.** Changed fields only; version +1; nothing changed → 200 with the same version. Stale → `409 VERSION_CONFLICT` with `details.current.product`. No DELETE exists (405). | **06 ✅** |
 | POST `/api/v1/admin/products/import` | D R | normalized rows, mode, operationKey, stockPolicy | 13 |
-| GET `/api/v1/admin/inventory` | D | on_hand/reserved/available, low-stock filter | 07 |
-| POST `/api/v1/admin/inventory/:id/adjustments` | D R | `{kind∈{receipt,correction,set_total}, quantity, reason, externalRef?, expectedVersion, operationKey}` | 07 |
-| GET `/api/v1/admin/inventory/:id/ledger` | D | append-only movements, cursor | 07 |
+| GET `/api/v1/admin/inventory` | D (live admin session) | All products incl. inactive. Query (strict): `q` (literal name/brand or exact barcode), `category`, `active∈{true,false}`, `status∈{out_of_stock,low_stock,normal}`, `sort∈{name,available_asc,available_desc,updated}` (default name), `limit` 1–100, `cursor` (bound to admin, sort, filters and the current threshold). → `{items:[{product:{id,name,brand,category,barcode,active,isDemo}, onHand, reserved, available, status, statusLabelAr, version, updatedAt}], nextCursor}` | **07 ✅** |
+| POST `/api/v1/admin/inventory/:id/adjustments` | D R (session token) | One of (strict): `{type:"receipt", quantity≥1}` · `{type:"correction_delta", delta≠0}` · `{type:"set_total", total≥0}`, each with `expectedVersion`, `operationKey` (UUID v4), `reason` (3–300), `reference?` (1–100). No reserved/available/balances/order/actor fields. → **201** `{replayed:false, operation:LedgerEntry, product:InventoryItem}`; identical retry → **200** `{replayed:true, operation:<original>, product:<current>}`; never activates a product. | **07 ✅** |
+| GET `/api/v1/admin/inventory/:id/ledger` | D | `{product:InventoryItem, items:[LedgerEntry], nextCursor}`, newest first; `limit` 1–100, `cursor` bound to admin and product. LedgerEntry = `{id, productId, kind, adjustmentType, onHandDelta, reservedDelta, onHandAfter, reservedAfter, availableAfter, reason, reference, orderId, actor, productVersionAfter, createdAt}`. No update/delete routes (405). | **07 ✅** |
 | GET `/api/v1/admin/orders` | D | `state, merchantId, from, to, includeDemo`, cursor | 09 |
 | GET `/api/v1/admin/orders/:id` | D | order, items, events | 09 |
 | POST `/api/v1/admin/orders/:id/transitions` | D R | `{to, expectedVersion, note?}` | 09 |
@@ -119,6 +121,16 @@ No legacy `action`-style endpoint (BUILD_NEW, no old client).
 - **AdminProduct**: CatalogProduct fields minus `availability`, plus `active`, `stock:{onHand, reserved, available}` (available computed), `version`, `createdAt`, `updatedAt`.
 - Money is the integer **carton** price in piasters (`cartonPriceCents`). Per-piece price is not returned: it is informational, computed by the UI for display only (`cartonPriceCents / packSize`); orders are always in whole cartons.
 - `barcode`: `null` = none; `""` invalid; exact text (case and leading zeros kept). `imageUrl`: `null` or an https URL without credentials, stored canonically; the server never fetches it.
+
+## 3b. Inventory adjustments (stage 07)
+Processing order inside ONE write transaction: re-validate administrator (session, role, recent auth) →
+look up `(administrator, operationKey)`: same digest → replay the committed operation (no new movement,
+ledger or audit row; works even if the product version moved on since), different digest → 409
+`IDEMPOTENCY_KEY_REUSED` → load product, compare `expectedVersion` (409 `VERSION_CONFLICT` with
+`details.current.product`) → compute delta (`set_total`: target − on_hand) → reject 0 / < 0 / < reserved /
+> 1e9 → insert ledger row → update product (`on_hand`, `version`+1, `last_ledger_id`) `WHERE version =
+expectedVersion` → audit `inventory.adjusted`. Any failure rolls back all of it, and the key stays unused.
+Digest = SHA-256 of `["inventory.adjustment.v1", productId, type, amount, reason, reference|null, expectedVersion]`.
 
 ## 4a. Merchant status transitions (PATCH /api/v1/admin/merchants/:id)
 | from \ to | pending | approved | suspended |

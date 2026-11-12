@@ -27,7 +27,7 @@ const BODY_LIMIT = 16 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const ARABIC = /[؀-ۿ]/;
 
-interface ProductRow {
+export interface ProductRow {
   id: string;
   name: string;
   brand: string;
@@ -47,12 +47,12 @@ interface ProductRow {
   updated_at: number;
 }
 
-const SELECT_PRODUCT = `SELECT p.id, p.name, p.brand, p.category, c.label_ar AS category_label_ar, p.barcode, p.image_url, p.price_cents,
+export const SELECT_PRODUCT = `SELECT p.id, p.name, p.brand, p.category, c.label_ar AS category_label_ar, p.barcode, p.image_url, p.price_cents,
                                p.on_hand, p.reserved, p.pack_size, p.minimum_cartons, p.active, p.is_demo, p.version, p.created_at, p.updated_at
                           FROM products p JOIN product_categories c ON c.id = p.category`;
 
 /** Full administrative record. `available` is computed from authoritative columns, never stored. */
-function adminProduct(p: ProductRow) {
+export function adminProduct(p: ProductRow) {
   return {
     id: p.id,
     name: p.name,
@@ -202,7 +202,7 @@ type UpdatableField = keyof typeof UPDATE_COLUMNS;
 
 // ------------------------------------------------------------------ shared helpers
 
-function assertCategory(ctx: RequestContext, id: string): void {
+export function assertCategory(ctx: RequestContext, id: string): void {
   const row = ctx.services.db.prepare('SELECT active FROM product_categories WHERE id = ?').get(id) as { active: number } | undefined;
   if (!row || row.active !== 1) throw new AppError('VALIDATION_FAILED', { fields: [{ path: 'category', message: 'القسم غير معروف أو غير مفعّل.' }] });
 }
@@ -221,14 +221,14 @@ function mapBarcodeConflict(err: unknown): never {
   throw err;
 }
 
-function loadProduct(ctx: RequestContext, id: string | undefined, where = ''): ProductRow {
+export function loadProduct(ctx: RequestContext, id: string | undefined, where = ''): ProductRow {
   if (!id || !UUID.test(id)) throw new AppError('NOT_FOUND');
   const row = ctx.services.db.prepare(`${SELECT_PRODUCT} WHERE p.id = ?${where}`).get(id) as unknown as ProductRow | undefined;
   if (!row) throw new AppError('NOT_FOUND');
   return row;
 }
 
-function lowStockThreshold(ctx: RequestContext): number {
+export function lowStockThreshold(ctx: RequestContext): number {
   return (ctx.services.db.prepare('SELECT low_stock_threshold_cartons AS t FROM business_settings WHERE id = 1').get() as { t: number }).t;
 }
 

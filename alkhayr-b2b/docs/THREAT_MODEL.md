@@ -30,7 +30,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | T9 | Price tampering in order request | trader | server-authoritative pricing; client prices only for stale detection | 08 |
 | T10 | Overselling via concurrent confirmations | admins concurrently | BEGIN IMMEDIATE, guarded UPDATE `available >= qty`, all-or-nothing | 09 |
 | T11 | Double order on retry/double click | trader/network | idempotency key + digest | 08 |
-| T12 | Stale admin form overwrites stock/price | admin | expectedVersion pre-check + WHERE expectedVersion; version +1 on every update incl. stock (trigger) | 06 ✅ (stock writes: 07) |
+| T12 | Stale admin form overwrites stock/price | admin | expectedVersion pre-check + WHERE expectedVersion; version +1 on every update incl. stock (trigger) | 06/07 ✅ |
 | T13 | SQL injection via search/sort | any | bound parameters, fixed sort/column maps, strict query parsing | 05/06 ✅ |
 | T14 | Stored XSS via product names, notes, addresses | admin/trader | React escaping, no `dangerouslySetInnerHTML`, strict CSP | 10–12 |
 | T15 | Malicious image URLs (javascript:, credentials, tracking) | admin | https-only, no userinfo (even empty), canonical storage, never fetched server-side, no-referrer, CSP img-src | 06 ✅ |
@@ -76,3 +76,8 @@ third-party content rendered by the browser only (never fetched server-side).
 | T48 | Catalog flooding beyond the 5000 cap | admin error / race | cap counted inside the serialized create transaction | 06 ✅ |
 | T49 | Stock changed through metadata endpoints (bypassing the ledger) | admin / attacker with admin session | strict schemas without stock fields; creation fixed at zero; stock only via stage-07 service | 06 ✅ |
 | T50 | Server-side request forgery through image URLs | admin | server never fetches URLs; no proxy or upload | 06 ✅ (by design) |
+| T51 | Double stock movement from a retried/duplicated request | network / double click | per-administrator operation key + request digest; replay checked before the version; concurrent identical requests serialized | 07 ✅ |
+| T52 | Stock changed without a traceable ledger entry (any write path, incl. raw SQL by a buggy feature) | bug / insider | 0003 trigger: every on_hand/reserved change needs a new matching ledger row; ledger append-only | 07 ✅ (database) |
+| T53 | Manual adjustment used to alter reservations or push on_hand below commitments | admin error / attacker with admin session | strict schemas without reserved; reserved floor check; ledger and products CHECKs | 07 ✅ |
+| T54 | Product created already active or stocked, bypassing review and ledger | bug / future import path | 0003 insert trigger (inactive, zero stock) | 07 ✅ (database) |
+| T55 | Portal stock diverges from stock sold through other channels | business process | documented: the business allocates/reconciles portal stock; no automatic sync | 07 (documented, operational) |

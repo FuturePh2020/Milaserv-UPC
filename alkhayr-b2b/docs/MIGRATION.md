@@ -83,6 +83,17 @@ Stage 05 ships `0002_merchant_access_version.sql`. A database initialized before
 server refuse to start with `MIGRATIONS_PENDING`; apply it with §2 (stop the server, back up, then
 `db:migrate --confirm-backup`). New installations get it automatically through `db:init`.
 
+### Stage 07 note: migration 0003 and stock operations
+`0003_inventory_integrity.sql` must be applied to databases created earlier (§2). After it:
+- New products are always created inactive with zero stock; activation and stock are separate steps.
+- **Opening stock:** this portal does not know about sales in other programs. Allocate a quantity to the
+  portal (count it, or set aside stock for online traders) and enter it as a `receipt` or `set_total` with
+  a reason such as "رصيد افتتاحي مخصص للبوابة — جرد 2026-11-15". Re-check it periodically against your
+  main system and record differences as corrections with a clear reason.
+- Mistakes are never edited or deleted: enter a compensating `correction_delta` referring to the wrong
+  movement in the reason.
+- Each adjustment needs a fresh operation key (the UI will generate it); retrying the same request is safe.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -119,6 +130,9 @@ None has been supplied (BUILD_NEW). If one is:
 - احتفظ بقيمة `APP_SECRET` الأصلية؛ تغييرها يمنع تشغيل الخادم حتى تُستعاد، ولا تُعاد تهيئة حسابات المديرين تلقائيًا.
 - واجهة تسجيل الدخول (API) متاحة منذ المرحلة 04؛ في أول دخول للمدير انتظر الرمز التالي في تطبيق المصادقة، فالرمز المستخدم في التسجيل لا يُقبل مرة ثانية.
 - الخادم لا يعمل دون `APP_SECRET` في أي وضع.
+- المرحلة 07 أضافت الترحيل 0003: المنتجات الجديدة تُنشأ غير مفعّلة وبرصيد صفر، وأي تغيير في الرصيد يجب أن يقابله قيد في سجل الحركة.
+- رصيد الافتتاح: البوابة لا تعرف المبيعات في البرامج الأخرى؛ خصّص كمية للبوابة وسجّلها كاستلام أو كتحديد للإجمالي مع ذكر السبب، وراجعها دوريًا.
+- لا تُعدَّل الحركات القديمة ولا تُحذف؛ الخطأ يُصحَّح بحركة تسوية عكسية مع ذكر السبب.
 - المرحلة 05 أضافت الترحيل 0002؛ قواعد البيانات الأقدم تحتاج `db:migrate --confirm-backup` بعد إيقاف الخادم وأخذ نسخة احتياطية.
 - اعتماد التاجر أو تعليقه يتم من حساب مدير سجّل الدخول خلال آخر 15 دقيقة، مع ذكر سبب عند التعليق أو الإرجاع للمراجعة؛ التعليق يُنهي كل جلسات التاجر فورًا، والاعتماد لا يرسل أي رسائل.
 - اضبط `TRUST_PROXY` على عنوان الوكيل العكسي فقط إذا كان الخادم لا يُصل إليه إلا عبره.

@@ -82,14 +82,20 @@ export interface ProductInput {
   reserved?: unknown;
   pack?: unknown;
   min?: unknown;
+  active?: boolean;
 }
 
+/**
+ * TEST-ONLY product fixture following the valid lifecycle enforced since
+ * migration 0003: insert inactive with zero stock, then (optionally) a
+ * ledger-linked stock movement, reservation and activation.
+ */
 export function insertProduct(db: DatabaseSync, o: ProductInput = {}): string {
   const id = o.id ?? randomUUID();
   const t = now();
   db.prepare(
     `INSERT INTO products (id, name, brand, category, barcode, image_url, price_cents, on_hand, reserved, pack_size, minimum_cartons, active, is_demo, version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, 1, 0, 1, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, NULL, ?, 0, 0, ?, ?, 0, 0, 1, ?, ?)`,
   ).run(
     id,
     o.name ?? 'شيكولاتة بالبندق',
@@ -97,14 +103,52 @@ export function insertProduct(db: DatabaseSync, o: ProductInput = {}): string {
     o.category ?? 'chocolate',
     o.barcode === undefined ? null : o.barcode,
     (o.price ?? 12550) as number,
-    (o.onHand ?? 100) as number,
-    (o.reserved ?? 0) as number,
     (o.pack ?? 24) as number,
     (o.min ?? 1) as number,
     t,
     t,
   );
+  const onHand = o.onHand ?? 100;
+  if (onHand !== 0) fixtureAdjustStock(db, id, onHand);
+  const reserved = o.reserved ?? 0;
+  if (reserved !== 0) fixtureReserve(db, id, reserved);
+  if (o.active !== false) db.prepare('UPDATE products SET active = 1, version = version + 1 WHERE id = ?').run(id);
   return id;
+}
+
+/**
+ * TEST-ONLY: ledger-linked change of on_hand by `delta` (kind correction).
+ * Mirrors what the inventory service does; never used by production code.
+ */
+export function fixtureAdjustStock(db: DatabaseSync, productId: string, delta: unknown): void {
+  const p = db.prepare('SELECT on_hand, reserved, version FROM products WHERE id = ?').get(productId) as { on_hand: number; reserved: number; version: number };
+  const ledger = db
+    .prepare(
+      `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, product_version_after, created_at)
+       VALUES (?, NULL, 'correction', ?, 0, ?, ?, 'TEST-ONLY fixture', ?, ?)`,
+    )
+    .run(productId, delta as number, p.on_hand + (delta as number), p.reserved, p.version + 1, now());
+  db.prepare('UPDATE products SET on_hand = ?, version = version + 1, last_ledger_id = ? WHERE id = ?').run(p.on_hand + (delta as number), ledger.lastInsertRowid, productId);
+}
+
+/**
+ * TEST-ONLY: ledger-linked reservation of `quantity` cartons against a fixture
+ * order (a reservation always references an order). Stage 09 implements the
+ * real reservation inside order confirmation.
+ */
+export function fixtureReserve(db: DatabaseSync, productId: string, quantity: unknown): string {
+  const userId = insertUser(db);
+  const merchantId = insertMerchant(db, userId);
+  const orderId = insertOrder(db, { userId, merchantId, items: [{ productId, cartons: 1, unitPrice: 100 }] });
+  const p = db.prepare('SELECT on_hand, reserved, version FROM products WHERE id = ?').get(productId) as { on_hand: number; reserved: number; version: number };
+  const ledger = db
+    .prepare(
+      `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, order_id, product_version_after, created_at)
+       VALUES (?, NULL, 'reserve', 0, ?, ?, ?, NULL, ?, ?, ?)`,
+    )
+    .run(productId, quantity as number, p.on_hand, p.reserved + (quantity as number), orderId, p.version + 1, now());
+  db.prepare('UPDATE products SET reserved = ?, version = version + 1, last_ledger_id = ? WHERE id = ?').run(p.reserved + (quantity as number), ledger.lastInsertRowid, productId);
+  return orderId;
 }
 
 export interface OrderInput {

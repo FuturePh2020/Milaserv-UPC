@@ -4,7 +4,7 @@ import { describe, test } from 'node:test';
 import { openDatabase } from '../../src/server/database/connection.ts';
 import { DatabaseBusyError } from '../../src/server/database/errors.ts';
 import { AsyncTransactionError, NestedTransactionError, readTransaction, writeTransaction } from '../../src/server/database/transaction.ts';
-import { createTestDatabase, insertMerchant, insertOrder, insertProduct, insertUser } from '../helpers/database.ts';
+import { createTestDatabase, fixtureReserve, insertMerchant, insertOrder, insertProduct, insertUser } from '../helpers/database.ts';
 
 const count = (db: { prepare(s: string): { get(): unknown } }, table: string) => Number(Object.values(db.prepare(`SELECT count(*) FROM ${table}`).get() as object)[0]);
 
@@ -60,16 +60,17 @@ describe('writeTransaction', () => {
     const t = createTestDatabase();
     try {
       const p = insertProduct(t.db, { onHand: 10, reserved: 0 });
+      const before = { ...(t.db.prepare('SELECT reserved, version FROM products WHERE id = ?').get(p) as object) };
+      const counts = snapshot(t.db);
       assert.throws(() =>
         writeTransaction(t.db, () => {
           insertUser(t.db);
-          t.db.prepare('UPDATE products SET reserved = 5, version = version + 1 WHERE id = ?').run(p);
-          t.db.prepare('UPDATE products SET reserved = reserved + 6, version = version + 1 WHERE id = ?').run(p); // 11 > 10
+          fixtureReserve(t.db, p, 5); // valid: ledger row + product update + fixture order
+          fixtureReserve(t.db, p, 6); // 11 > 10: rejected
         }),
       );
-      assert.equal(count(t.db, 'auth_users'), 0);
-      const row = t.db.prepare('SELECT reserved, version FROM products WHERE id = ?').get(p) as { reserved: number; version: number };
-      assert.deepEqual({ ...row }, { reserved: 0, version: 1 });
+      assert.deepEqual(snapshot(t.db), counts, 'users, orders and ledger rows of the earlier statements are rolled back');
+      assert.deepEqual({ ...(t.db.prepare('SELECT reserved, version FROM products WHERE id = ?').get(p) as object) }, before);
     } finally {
       t.cleanup();
     }

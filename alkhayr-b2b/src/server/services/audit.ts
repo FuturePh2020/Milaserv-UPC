@@ -21,6 +21,8 @@ const METADATA_ALLOW_LIST: Readonly<Record<string, readonly string[]>> = {
   'product.created': ['version', 'category', 'price_to', 'active_to', 'is_demo'],
   /** Changed field NAMES; price and activation transitions explicitly; never the full body. */
   'product.updated': ['fields', 'version', 'price_from', 'price_to', 'active_from', 'active_to'],
+  /** The ledger row (ledger_id) holds the reason and reference; the audit row stays minimal. */
+  'inventory.adjusted': ['type', 'on_hand_delta', 'on_hand_after', 'version', 'ledger_id'],
 };
 
 export type AuditAction = keyof typeof METADATA_ALLOW_LIST;

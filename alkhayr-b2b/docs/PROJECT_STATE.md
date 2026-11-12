@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **06 — Product management & approved catalog: COMPLETE** |
-| Next stage | **07 — Inventory, receipts, adjustments & ledger** (awaiting owner prompt) |
+| Current stage | **07 — Inventory movements, adjustments & ledger: COMPLETE** |
+| Next stage | **08 — Authoritative pricing & idempotent order creation** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001 + 0002 (no migration added in stage 06) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, **product administration and approved catalog**. No inventory movements, orders or UI screens yet. |
+| Schema | Migrations 0001 + 0002 + **0003** (inventory integrity) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, **inventory adjustments and ledger**. No orders, fulfillment or UI screens yet. |
 
 ## Stage log
 
@@ -21,10 +21,131 @@
 | 03 | ✅ Done (security primitives + setup-admin) | Commit `4894196` |
 | 04 | ✅ Done (authentication) | Commit `50ed3fa` |
 | 05 | ✅ Done (merchant lifecycle) | Commit `c2c5a31` |
-| 06 | ✅ Done (products + catalog) | 344/344 tests ×3 clean-copy runs, typecheck clean, mutation checks with safeguard attribution, audit 0 — below |
-| 07–18 | ⏳ Not started | — |
+| 06 | ✅ Done (products + catalog) | Commit `0437953` |
+| 07 | ✅ Done (inventory + ledger) | 359/359 tests ×3 clean-copy runs, typecheck clean, mutation checks with attribution, audit 0 — below |
+| 08–18 | ⏳ Not started | — |
 
-## Stage 06 — what was built
+## Stage 07 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| Activation gap closed | `migrations/0003_inventory_integrity.sql` | INSERT trigger: products must be inserted inactive with zero stock; defaulted `active = 1` inserts are rejected (default unchanged, no table rebuild) |
+| Database ledger pairing | `migrations/0003…` | `products.last_ledger_id` + triggers: every on_hand/reserved change needs a new, exactly matching ledger row; ledger gains `product_version_after`, `adjustment_type` |
+| Inventory endpoints | `src/server/services/inventory.ts`, `routes/admin-inventory.ts` | `GET /api/v1/admin/inventory`, `GET …/:id/ledger`, `POST …/:id/adjustments` (receipt / correction_delta / set_total) |
+| Atomic adjustment | `services/inventory.ts` | re-validate → idempotency (per admin, digest) → expectedVersion → balance rules → ledger → linked update (`WHERE version = expectedVersion`) → audit |
+| Shared helpers | `services/products.ts` | exported `adminProduct`, `loadProduct`, `assertCategory`, `lowStockThreshold`, `SELECT_PRODUCT` (no logic change) |
+| Errors / audit | `shared/errors.ts`, `services/audit.ts` | `IDEMPOTENCY_KEY_REUSED`, `NO_CHANGE`, `INVENTORY_NEGATIVE`, `INVENTORY_BELOW_RESERVED`, `INVENTORY_LIMIT`; `inventory.adjusted` |
+| Fixtures | `tests/helpers/database.ts` | `insertProduct` follows the valid lifecycle; `fixtureAdjustStock`, `fixtureReserve` (test-only, ledger-linked, reservation against a fixture order) |
+
+### Inventory model (documented)
+`on_hand` = physical cartons allocated to this portal; `reserved` = confirmed/preparing commitments
+(stage 09 only); `available = on_hand − reserved` (computed). The portal does not know about sales in
+other programs — the business must allocate and periodically reconcile portal stock (operator guide).
+Traders still see only the status (0 → out of stock, 1–10 → limited, > 10 → available, threshold
+configurable). Not purchasing, costing, warehouses, expiry batches or accounting.
+
+### Enforcement boundary
+Database (every write path): stock CHECKs, 1:1 ledger pairing with matching deltas/balances/version,
+append-only ledger, inactive zero-stock inserts, version +1 per update. Service (supported transaction):
+authorization, reasons, idempotency, expectedVersion, no manual reservation changes (also blocked by the
+ledger CHECK for receipt/correction rows), Arabic errors. Details: DATABASE.md §12.
+
+### Stage-09 boundary
+Order confirm/cancel/ship will write `reserve`/`release`/`ship` ledger rows per order line and the linked
+product updates inside the order-transition transaction, through the same module. No reservation endpoint
+or placeholder exists.
+
+## Checks run in stage 07 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Full suite (stages 01–07) | `npm test` | ✅ **359 tests, 85 suites, 359 pass, 0 fail** |
+| — inventory (HTTP) / schema (+0003) / products (fixtures updated) | `node --test <file>` | ✅ 14 / 33 / 22 |
+| Migration probe | 0001–0003 on a scratch DB | ✅ defaulted/stocked inserts and raw stock updates refused; linked update accepted; reuse/mismatch refused |
+| Regression tests adjusted | schema (4 tests now assert the layered ledger/products behaviour; products CHECKs asserted present in schema), transaction (rollback via valid fixture reservations), products (`setStock` via ledger fixtures), auth-security (stage boundary) | No protection removed or weakened |
+| Clean reproduction ×3 | tracked files → `npm ci` → typecheck + `npm test` ×3 | ✅ 0 type errors; 359/359 each run |
+| Dependency audit | `npm audit` | ✅ 0 findings (57 packages); lockfile unchanged |
+| Immutable migrations | `git diff` 0001, 0002 | ✅ unchanged |
+| Browser QA | — | NOT RUN (no UI) |
+| Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
+
+### Mutation evidence (15 single + 1 double; inventory, schema and product test files)
+| Mutation | Result | Detected by the changed control's test / blocked by another layer |
+|---|---|---|
+| No idempotency lookup | caught (2) | retry and lost-response tests (the per-admin unique index would also refuse the duplicate key → 500) |
+| No digest comparison | caught (1) | changed-content 409 test |
+| Version check before idempotency | caught (3) | lost-response and retry tests |
+| No commit-time re-validation | caught (1) | slow-body logout/recency test |
+| No reserved-floor check | caught (1) | test expects 422 `INVENTORY_BELOW_RESERVED`; **data was still protected** by the ledger CHECK (the API returned 500) |
+| No negative check | caught (1) | expects 422 `INVENTORY_NEGATIVE`; data still protected by the ledger CHECK |
+| No maximum check | caught (1) | expects 422 `INVENTORY_LIMIT`; data still protected by the products CHECK |
+| No no-op check | caught (1) | expects 422 `NO_CHANGE`; data still protected by the ledger nonzero CHECK |
+| No `expectedVersion` pre-check | **survived** | **blocked by the independent `WHERE version = expectedVersion` guard** |
+| WHERE binds read version | **survived** | **blocked by the independent pre-check** |
+| Both version layers removed | caught (3) | metadata-vs-inventory conflict and idempotency tests |
+| No audit event | caught (3) | audit assertions |
+| Receipt schema not strict | caught (1) | unexpected-field test |
+| Product update without ledger link | caught (12) | refused by the 0003 trigger (database layer) |
+| 0003 insert guard disabled | caught (2) | SQL and HTTP database-protection tests |
+| 0003 ledger-pairing trigger disabled | caught (3) | SQL tests (raw stock update accepted) |
+
+### Required tests → evidence (real HTTP unless noted)
+| Requirement | Test |
+|---|---|
+| Anonymous/trader/pending/suspended denied | list, ledger, adjustment → 401/403/403/401 |
+| Admin reads vs recent-auth mutations | reads after 16 min 200; adjustment 428; re-login 201 |
+| Logout / recency expiry during body | slow-body → 401 / 428, no movement |
+| Receipt, ±correction, set_total | balances 24 → 29 → 26 → 10, computed delta −16, ledger fields, version, audit |
+| Integer/type/overflow bounds | 30 invalid bodies incl. strings, fractions, 2^53, 1e400, wrong amount field, unknown type; 1e9 + 1 → `INVENTORY_LIMIT` |
+| Missing reason, unexpected/reservation fields | reason/key/version missing, reserved/available/orderId/actorUserId/onHandAfter/productId/reservedDelta → 400 |
+| Zero/no-op | `delta: 0` → 400; `set_total` = current → `NO_CHANGE` |
+| Below reserved / below zero | fixture reservation 8: total 7 and −3 → `INVENTORY_BELOW_RESERVED`; −11 → `INVENTORY_NEGATIVE`; total 8 OK; reserved unchanged |
+| Inactive product receipt | stays inactive |
+| DB rejects active/defaulted inserts | SQL (unit + HTTP-suite fixture connection) |
+| Metadata endpoints reject stock | PATCH/POST with `onHand` → 400 |
+| Version advances per movement | versions 2…5; ledger `productVersionAfter`; `last_ledger_id` |
+| Metadata vs inventory conflicts | both directions → 409 with current record |
+| Concurrent adjustments | [201, 409], one ledger row |
+| Identical / concurrent identical / changed-content retries | 200 replay same operation; [201, 200, 200] one row; 5 changed variants → 409 |
+| Lost-response retry | replay after later movement (stale version) → original result, no double movement; requires current eligibility (401/428); other admin's same key → new op |
+| Rollback on ledger/balance/audit failure | three injected triggers → 500, product/ledger/audit unchanged, key reusable |
+| Ledger immutability, compensating correction | SQL update/delete refused; HTTP PATCH/DELETE 405; −27 correction restores 3 |
+| Inventory/ledger pagination & authorization | 4 sorts paginate fully; status filters; ledger newest-first pages; cursor bound to product and admin |
+| Trader status, thresholds 0/1/10/11 | out_of_stock / low_stock / low_stock / normal / out_of_stock; no counts in catalog |
+| Existing protections | full stage 01–06 suites pass |
+
+## Limitations (known)
+- **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
+- Portal stock must be allocated/reconciled by the business; no automatic synchronization with other sales channels.
+- Database pairing does not prove the history of products stocked before 0003 (none in a fresh pilot) and does not check that the ledger actor is an administrator (service-enforced).
+- No bulk/CSV stock import yet (stage 13); no inventory UI yet (stage 12).
+- Reservations exist only as test fixtures until stage 09.
+- Not purchasing, costing, multiple warehouses, expiry batches or accounting.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 08.
+
+## Files changed in stage 07 (all under `alkhayr-b2b/`)
+New: `migrations/0003_inventory_integrity.sql`, `src/server/services/inventory.ts`, `src/server/routes/admin-inventory.ts`,
+`tests/integration/inventory.test.ts`.
+Modified: `src/server/app.ts`, `src/server/services/{audit,products}.ts`, `src/shared/errors.ts`, `tests/helpers/database.ts`,
+`tests/integration/{auth-security,products}.test.ts`, `tests/unit/{database-schema,database-transaction}.test.ts`,
+`migrations/README.md`, `README.md`, `docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
+Not touched: migrations 0001/0002, dependencies/lockfile, web UI, repository-root files.
+
+## How to continue
+Next: send **PROMPT 08**. Order creation must not reserve stock (pending orders only snapshot); stage 09
+reservations must go through ledger rows + linked product updates (`last_ledger_id`, `version + 1`) inside
+the transition transaction; reuse `revalidateAtCommit`, client-version WHERE guards, strict schemas and
+the idempotency pattern (key + canonical digest, replay before version checks).
+
+---
+
+## Stage 06 record (retained)
+
+### What was built
 | Area | Files | Summary |
 |---|---|---|
 | Admin endpoints | `src/server/services/products.ts`, `routes/admin-products.ts` | `GET/POST /api/v1/admin/products`, `GET/PATCH /api/v1/admin/products/:id`; no DELETE (405) |
@@ -35,11 +156,11 @@
 | Search | `src/server/http/search.ts` | Shared literal LIKE escaping (merchant search refactored to use it) |
 | Audit / errors | `services/audit.ts`, `shared/errors.ts` | `product.created`, `product.updated` (field names, version, price/activation transitions); `DUPLICATE`, `CATALOG_LIMIT` |
 
-### Defects found and fixed during this stage
+#### Defects found and fixed during this stage
 - `https://@host/…` image URLs were accepted (URL parser silently dropped an empty userinfo) → now refused (D-076).
 - Optimistic-concurrency WHERE clauses bound the just-read version instead of the client's `expectedVersion`, so they were not an independent second check (products and the stage-05 merchant updates) → fixed (D-077).
 
-## Checks run in stage 06 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 06 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -52,7 +173,7 @@
 | Browser QA | — | NOT RUN (no UI change) |
 | Real proxy / TLS / Docker | — | ⛔ NOT RUN (stage 17) |
 
-### Mutation evidence (accurate attribution)
+#### Mutation evidence (accurate attribution)
 Single mutations against `tests/integration/products.test.ts` (13 real; 2 script placeholders not counted):
 
 | Mutation | Result | Detected by / blocked by |
@@ -83,7 +204,7 @@ After D-077 (client version bound in WHERE):
 | Merchant profile: **both** layers removed | caught (1) | stale-version test |
 | Barcode: pre-check **and** 409 mapping removed | caught (2) | duplicate/race tests (index still prevents the duplicate row; API answers 500) |
 
-### Required tests → evidence (real HTTP)
+#### Required tests → evidence (real HTTP)
 | Requirement | Test |
 |---|---|
 | Anonymous/pending/suspended catalog access | 401/403/401 on list, detail and filters; no prices or names in pending responses |
@@ -108,7 +229,7 @@ After D-077 (client version bound in WHERE):
 | Demo/admin bypasses | demo refused in production, not convertible; no DELETE; no stock path |
 | Existing protections | full stage 01–05 suites pass |
 
-## Limitations (known)
+### Limitations (known)
 - **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
 - Inventory movements (opening stock, receipts, corrections) do not exist yet: every product has 0 stock and shows "غير متوفر" until stage 07.
 - Product images are hosted by the business; the server neither validates that the URL resolves nor stores images.
@@ -116,27 +237,13 @@ After D-077 (client version bound in WHERE):
 - End-to-end proof that product edits leave order snapshots unchanged waits for stages 08–09.
 - Brand filter matches exact text; there is no brand normalization or merging.
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 07.
-
-## Files changed in stage 06 (all under `alkhayr-b2b/`)
+### Files changed in stage 06 (all under `alkhayr-b2b/`)
 New: `src/server/services/products.ts`, `src/server/routes/{products,admin-products}.ts`, `src/server/http/search.ts`,
 `tests/integration/products.test.ts`.
 Modified: `src/server/app.ts`, `src/server/services/{audit,merchants}.ts` (shared search helper; WHERE binds client version),
 `src/shared/errors.ts`, `tests/integration/{server,auth-security}.test.ts`, `README.md`,
 `docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,PROJECT_STATE}.md`.
 Not touched: migrations, dependencies/lockfile, web UI, repository-root files.
-
-## How to continue
-Next: send **PROMPT 07**. The inventory service must change `on_hand`/`reserved` only together with
-`version = version + 1` and an `inventory_ledger` row in the same transaction, bind the client's
-`expectedVersion`, use `revalidateAtCommit(ctx, auth, { admin: 'recent' })`, and keep products' stock
-untouched by the metadata endpoints.
-
----
 
 ## Stage 05 record (retained)
 

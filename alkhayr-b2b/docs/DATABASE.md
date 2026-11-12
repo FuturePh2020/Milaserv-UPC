@@ -1,6 +1,6 @@
 # ALKHAYR — Database Contract
 
-Status: **Implemented in stage 02 (0001); stage 05 appended migration 0002 (`merchants.access_version`, §10). Stages 03–04 needed no schema change (§8–§9).** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
+Status: **Implemented in stage 02 (0001); stage 05 appended 0002 (`merchants.access_version`, §10); stage 07 appended 0003 (inventory integrity, §12). Stages 03, 04 and 06 needed no schema change.** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
 `db:status` / `db:init` / `db:migrate`). The SQL file is the authoritative schema; this document
 explains it. Operator procedures: [`MIGRATION.md`](MIGRATION.md).
 
@@ -63,11 +63,11 @@ barcode — compared as exact text, leading zeros included — appears at most o
 | `merchants` | UUID PK; `user_id` UNIQUE FK→auth_users; business/contact name, optional email, phone (digits/+), governorate, address with length CHECKs; `status ∈ {pending, approved, suspended}`; `version` must increase by exactly 1 on every UPDATE (trigger); **`access_version`** (0002) increases by exactly 1 on every status change and never otherwise (triggers). |
 | `sessions` | `token_hash` PK = SHA-256 hex of the raw token (CHECK 64 lowercase hex; a raw token cannot fit); FK user **ON DELETE CASCADE** (credentials, not history); created/last_seen/expires/auth_at/password_changed_at with time-order CHECK. `csrf_secret` removed (D-030). WITHOUT ROWID. |
 | `product_categories` | `id` PK (`chocolate`, `candy`, `wafers_biscuits`, `snacks_nuts`), unique Arabic `label_ar`, unique `sort_order`, `active`. Seeded by 0001; must equal `src/shared/categories.ts` (test). Deletion blocked (deactivate instead). |
-| `products` | UUID PK; name/brand; `category` FK→product_categories; `barcode` TEXT or NULL (NULL = the product has no barcode; otherwise 1–32 of `[0-9A-Za-z-]`, leading zeros kept; `''` invalid), unique among non-NULL values via a partial UNIQUE index; `image_url` https only; `price_cents` 1…100,000,000; `on_hand` 0…1e9; `reserved ≥ 0`; **`reserved ≤ on_hand`**; `pack_size` 1…10,000; `minimum_cartons` 1…100,000; `active`, `is_demo`; `version` +1 on every UPDATE including stock/reservation changes. |
+| `products` | (0003: inserted inactive with zero stock; `last_ledger_id` links every stock change to its ledger row.) UUID PK; name/brand; `category` FK→product_categories; `barcode` TEXT or NULL (NULL = the product has no barcode; otherwise 1–32 of `[0-9A-Za-z-]`, leading zeros kept; `''` invalid), unique among non-NULL values via a partial UNIQUE index; `image_url` https only; `price_cents` 1…100,000,000; `on_hand` 0…1e9; `reserved ≥ 0`; **`reserved ≤ on_hand`**; `pack_size` 1…10,000; `minimum_cartons` 1…100,000; `active`, `is_demo`; `version` +1 on every UPDATE including stock/reservation changes. |
 | `orders` | UUID PK; `display_number` `AK-YYMMDD-XXXXXX` UNIQUE; FKs merchant/creator; `state` (6 values); snapshot of `subtotal_cents` (≥1), `shipping_cents`, `shipping_taxable`, `tax_bps`, `tax_base_cents` (= subtotal + taxable shipping, CHECK), `tax_cents` (≤ base), `total_cents` (= subtotal + tax + shipping, ≤ 1e13), `minimum_order_cents`; buyer name/contact/phone/governorate/address snapshot; `note`; `is_demo`; `request_key` UUID + `request_digest` SHA-256 hex; **`UNIQUE(merchant_id, request_key)`**; `version`. Triggers: insert only as `pending`/version 1; every UPDATE bumps version by 1; **only `state`, `version`, `updated_at` may change**; legal transitions only; no DELETE. |
 | `order_items` | PK `(order_id, product_id)` → one line per product; `UNIQUE(order_id, line_no)`; product name/brand/barcode/pack-size/unit-price snapshot; `cartons` 1…100,000; `line_total_cents = unit_price_cents × cartons` (CHECK). Immutable (no UPDATE/DELETE). WITHOUT ROWID. |
 | `order_events` | Autoincrement id; FK order/actor; `(old_state, new_state)` CHECK allows only `NULL→pending` and the legal transitions; append-only. |
-| `inventory_ledger` | Autoincrement id; FK product/actor/order; `kind ∈ {opening, receipt, correction, reserve, release, ship, import}`; deltas + balances after (`0 ≤ reserved_after ≤ on_hand_after`); per-kind rules (manual kinds need a reason and no reservation change; opening/receipt positive; reserve/release/ship need an order and the correct delta signs; ship deducts both equally); non-zero movement; `operation_key`/`operation_digest` paired, `UNIQUE(actor_user_id, operation_key)`; append-only. |
+| `inventory_ledger` | (0003: `product_version_after`, `adjustment_type`.) Autoincrement id; FK product/actor/order; `kind ∈ {opening, receipt, correction, reserve, release, ship, import}`; deltas + balances after (`0 ≤ reserved_after ≤ on_hand_after`); per-kind rules (manual kinds need a reason and no reservation change; opening/receipt positive; reserve/release/ship need an order and the correct delta signs; ship deducts both equally); non-zero movement; `operation_key`/`operation_digest` paired, `UNIQUE(actor_user_id, operation_key)`; append-only. |
 | `audit_logs` | Autoincrement id; nullable actor (NULL = anonymous); controlled `action` `[a-z0-9_.]`; target; `metadata` must be a JSON **object** ≤ 2 KiB; `ip_hmac` hex; `request_id` UUID. No UPDATE; DELETE only for rows older than 365 days (trigger). |
 | `rate_limits` | `key` PK (16–128 chars, derived/HMAC), `count ≥ 0`, `window_ends_at`; index on window. WITHOUT ROWID. Rows are disposable. |
 | `business_settings` | Single row `id = 1`. Company name/phone/email/address **NULL until the operator sets them** (nothing invented). `shipping_cents` 0…10,000,000, `shipping_taxable` 0/1, `tax_bps` 0…10,000, `minimum_order_cents` 0…1e9, `low_stock_threshold_cartons` 0…100,000, `version` +1 on update, no DELETE. Seeded with the pilot defaults below. |
@@ -186,3 +186,40 @@ The 0001 `products` table already holds every field stage 06 needs; no migration
   (changed field names, version, price_from/price_to, active_from/active_to).
 - **Order snapshots:** product edits never touch `order_items` (0001 immutability triggers); the
   end-to-end check with API-created orders is part of stages 08–09.
+
+## 12. Migration 0003 — inventory integrity (stage 07)
+| Change | Rule |
+|---|---|
+| Trigger `products_insert_inactive_without_stock` | Any INSERT into `products` must have `active = 0`, `on_hand = 0`, `reserved = 0`, `last_ledger_id IS NULL`. The 0001 default `active DEFAULT 1` therefore cannot take effect: an insert that omits `active` is **rejected** (fail closed). The stored default is unchanged because changing it would require a table rebuild; inserts must state `active = 0` explicitly. Activation is a separate, versioned, audited PATCH. |
+| Column `products.last_ledger_id` (FK → inventory_ledger) | Link to the ledger row of the most recent stock change. |
+| Trigger `products_stock_change_requires_ledger` | Any UPDATE changing `on_hand` or `reserved` must set `last_ledger_id` to a NEWER ledger row (id > previous) for the same product whose `on_hand_delta`, `reserved_delta`, `on_hand_after`, `reserved_after` and `product_version_after` exactly match the update. |
+| Trigger `products_ledger_link_only_with_stock_change` | `last_ledger_id` cannot change without a stock change. |
+| Columns `inventory_ledger.product_version_after`, `adjustment_type` | Committed result for traceability and idempotent replays; `adjustment_type ∈ {receipt, correction_delta, set_total}` for manual adjustments (ledger `kind` is `receipt` or `correction`). |
+
+**Enforcement boundary (exact):**
+- *Database-enforced for every write path* (HTTP service, operator SQL, future import/fulfillment):
+  `on_hand ≥ reserved ≥ 0` and limits (CHECKs on products and ledger); every change of `on_hand`/`reserved`
+  is paired 1:1 with a new ledger row whose deltas and balances match; ledger rows are append-only;
+  product inserts start inactive with zero stock; the product version advances on every update.
+- *Service-enforced (supported transaction only)*: who may adjust and with which reason/operation key,
+  idempotent replay, `expectedVersion` comparison, the rule that manual adjustments never change
+  `reserved` (the ledger CHECK `inventory_ledger_manual_rules` additionally forbids reserved deltas on
+  receipt/correction rows), and the Arabic error codes. The database does **not** verify that the
+  first ledger row of a product starts from zero for products stocked before 0003 (none exist in a
+  fresh pilot), nor that `actor_user_id` is an administrator.
+- Not modelled: purchasing, costs/valuation, multiple warehouses, expiry batches, accounting.
+
+**Idempotency storage:** the 0001 columns `inventory_ledger.operation_key` / `operation_digest` and the
+partial unique index `(actor_user_id, operation_key) WHERE operation_key IS NOT NULL`: one manual
+adjustment = one ledger row = one key per administrator. Fulfillment movements (stage 09) are keyed by
+the order transition, leave `operation_key` NULL and are therefore unaffected by this index, even when
+one transition writes several ledger rows (one per order line).
+
+**Stage-09 boundary:** confirm / cancel / ship will call the same inventory module inside the order
+transition transaction: for each order line insert a `reserve` / `release` / `ship` ledger row
+(`order_id` set, `reserved_delta`/`on_hand_delta` as in SPEC §5.3) and update the product with
+`last_ledger_id`, `version + 1`, guarded so the availability check and the update happen in one
+transaction. There is no separate stock implementation and no reservation endpoint.
+
+Test fixtures (`tests/helpers/database.ts`: `insertProduct`, `fixtureAdjustStock`, `fixtureReserve`)
+follow these same database rules through a test-only connection; they are never part of the application.
