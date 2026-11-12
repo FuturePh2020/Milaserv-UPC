@@ -1,21 +1,86 @@
-/* Provisional design tokens (stage 10 finalizes the design system).
-   Palette per D-011: cream surfaces, warm red primary, logo blue as accent. */
+/* ALKHAYR design tokens (stage 10). Contrast ratios (WCAG 2.x) were computed for every
+   text/background pairing listed in docs/DESIGN_SYSTEM.md; all text pairs are >= 4.5:1.
+   --color-border-subtle and --color-text-subtle-decor are NOT text colours (3.9:1). */
 :root {
-  --color-surface: #fbf6ee;
-  --color-surface-raised: #ffffff;
-  --color-border: #e8dccb;
-  --color-text: #2a211c;
-  --color-text-muted: #6b5d52;
-  --color-primary: #b3121b;
-  --color-primary-strong: #8e0e15;
-  --color-accent: #1f5fae;
-  --color-success: #2f6b3a;
-  --color-danger: #a1131a;
-  --radius-md: 12px;
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 16px;
-  --space-4: 24px;
-  --space-5: 40px;
-  --font-body: 'Segoe UI', Tahoma, 'Noto Sans Arabic', 'Noto Naskh Arabic', Arial, sans-serif;
+  /* Surfaces */
+  --color-bg: #faf7f2; /* owner palette: main background */
+  --color-surface: #ffffff;
+  --color-surface-warm: #f5efe6;
+  --color-surface-sunken: #efe9e2;
+
+  /* Text */
+  --color-text: #352c2b; /* owner palette: 12.7:1 on bg */
+  --color-text-muted: #6b5d58; /* 5.9:1 on bg */
+  --color-text-subtle-decor: #857873; /* decorative/icons only (3.98:1) */
+  --color-text-on-primary: #ffffff; /* 6.8:1 on primary */
+
+  /* Brand */
+  --color-primary: #a72e35; /* owner palette: 6.4:1 on bg */
+  --color-primary-strong: #8a242a; /* hover/pressed: 8.9:1 with white */
+  --color-primary-tint: #f7e4e4;
+  --color-accent: #1f5fae; /* logo blue: focus ring and links-in-tables only */
+
+  /* Lines */
+  --color-border: #e7ddd0;
+  --color-border-strong: #8c7f79; /* form control borders: 3.9:1 (non-text UI >= 3:1) */
+
+  /* Status (text on tint, all >= 6:1) */
+  --color-success: #2b6338;
+  --color-success-tint: #e8f3ea;
+  --color-warning: #7a4d00;
+  --color-warning-tint: #fff3d6;
+  --color-danger: #9b1c22;
+  --color-danger-tint: #fbe9e9;
+  --color-info: #1d4f8c;
+  --color-info-tint: #e6eef8;
+  --color-neutral: #4a403d;
+  --color-neutral-tint: #efe9e2;
+
+  /* Category accents (restrained, packaging-inspired; text on tint >= 5.7:1) */
+  --cat-chocolate: #5c3420;
+  --cat-chocolate-tint: #f3e8e1;
+  --cat-candy: #8e2f5e;
+  --cat-candy-tint: #f7e6ee;
+  --cat-wafers: #6e4c0e;
+  --cat-wafers-tint: #f8eedb;
+  --cat-snacks: #3f6630;
+  --cat-snacks-tint: #e9f1e3;
+
+  /* Type */
+  --font-sans: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, 'Noto Sans Arabic', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --leading: 1.7;
+
+  /* Space, radius, elevation */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --shadow-1: 0 1px 2px rgb(53 44 43 / 0.06), 0 1px 1px rgb(53 44 43 / 0.04);
+  --shadow-2: 0 4px 16px rgb(53 44 43 / 0.1);
+  --shadow-3: 0 12px 40px rgb(53 44 43 / 0.18);
+
+  /* Layout */
+  --header-height: 3.5rem;
+  --sidebar-width: 15rem;
+  --content-max: 76rem;
+  --tap-target: 2.75rem; /* 44px */
+
+  /* Motion (disabled under prefers-reduced-motion) */
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
 }

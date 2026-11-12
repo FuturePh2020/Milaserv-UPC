@@ -7,7 +7,8 @@ import { useEffect, useState } from 'react';
 export function currentHashPath(): string {
   const raw = window.location.hash.replace(/^#/, '');
   if (raw === '' || raw === '/') return '/';
-  return raw.startsWith('/') ? raw.split('?')[0] ?? '/' : '/' + raw;
+  const path = raw.startsWith('/') ? (raw.split('?')[0] ?? '/') : '/' + raw;
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
 }
 
 export function useHashPath(): string {

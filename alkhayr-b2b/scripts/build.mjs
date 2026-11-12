@@ -41,10 +41,16 @@ export function serverOptions({ outDir }) {
   };
 }
 
+/**
+ * Browser bundle. Production uses `src/web/main.tsx` only. Development builds use
+ * `src/web/main.dev.tsx`, which additionally registers the component gallery
+ * (`#/__gallery`, synthetic fixtures). The gallery modules are never imported by the
+ * production entry, so they cannot appear in a release (verified by tests).
+ */
 export function webOptions({ dev, outDir }) {
   return {
     absWorkingDir: projectRoot,
-    entryPoints: ['src/web/main.tsx'],
+    entryPoints: [dev ? 'src/web/main.dev.tsx' : 'src/web/main.tsx'],
     outdir: path.join(outDir, 'web', 'assets'),
     publicPath: '/assets',
     entryNames: '[name]-[hash]',
@@ -58,6 +64,8 @@ export function webOptions({ dev, outDir }) {
     minify: !dev,
     sourcemap: dev ? 'linked' : false,
     legalComments: 'eof',
+    // Emit UTF-8 (Arabic text stays readable and smaller; files are served as utf-8).
+    charset: 'utf8',
     metafile: true,
     logLevel: 'warning',
     // The ONLY value injected into browser code. Never add secrets here.

@@ -2,12 +2,13 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 09 complete — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Stage 10 complete — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
 review/approval/suspension), product administration, the approved catalog, inventory
 adjustments with an append-only ledger, pending-order creation with own-order reads, and
-administrator order fulfillment with per-order stock reservations (no UI screens yet). See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+administrator order fulfillment with per-order stock reservations, and the Arabic RTL design system
+with application shells (business screens arrive in stages 11–12). See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
 
 ## Quick start (Node.js 24.22.1 required)
 ```sh
@@ -20,6 +21,7 @@ npm start                 # 3. or: npm run dev  -> http://localhost:3000
 npm run check             # typecheck + build + tests
 ```
 Health: `GET /healthz` (process alive) · `GET /readyz` (database ready).
+Component gallery (development builds only): `npm run dev`, then `http://localhost:3000/#/__gallery`.
 Operator procedures (database, administrator enrollment, upgrades): [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
 Production requires `NODE_ENV=production`, an `https://` `APP_ORIGIN`, and independently generated
@@ -37,6 +39,8 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/DATABASE.md` | Implemented schema, constraints, retention and migration policy |
 | `docs/MIGRATION.md` | Operator guide: init → admin enrollment → start, upgrades, startup refusals, recovery |
 | `docs/API_CONTRACT.md` | `/api/v1` endpoints, errors, transitions |
+| `docs/DESIGN_SYSTEM.md` | Tokens, contrast, typography, components, shells, gallery |
+| `docs/FRONTEND_API.md` | Browser API client and identity rules |
 | `docs/SECURITY.md` | Security policy and verification status |
 | `docs/THREAT_MODEL.md` | Threats and controls |
 | `docs/DECISIONS.md` | Decision log |

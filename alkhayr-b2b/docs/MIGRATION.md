@@ -117,6 +117,13 @@ submit pending orders through the API (`POST /api/v1/orders`):
 - Before this upgrade no order can be confirmed (stage 08 orders are all pending), so no reservation data
   needs conversion.
 
+### Stage 10 note: web interface (no migration)
+Stage 10 changes only the browser application (design system and page frames); the database schema
+is unchanged. The release contains the production web build only; the component gallery
+(`#/__gallery`) exists solely in development builds (`npm run dev`). Fonts are served from the server
+itself (no internet font service). Sign-in screens arrive in stage 11; until then, accounts sign in
+through the API.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -156,6 +163,7 @@ None has been supplied (BUILD_NEW). If one is:
 - المرحلة 07 أضافت الترحيل 0003: المنتجات الجديدة تُنشأ غير مفعّلة وبرصيد صفر، وأي تغيير في الرصيد يجب أن يقابله قيد في سجل الحركة.
 - رصيد الافتتاح: البوابة لا تعرف المبيعات في البرامج الأخرى؛ خصّص كمية للبوابة وسجّلها كاستلام أو كتحديد للإجمالي مع ذكر السبب، وراجعها دوريًا.
 - لا تُعدَّل الحركات القديمة ولا تُحذف؛ الخطأ يُصحَّح بحركة تسوية عكسية مع ذكر السبب.
+- المرحلة 10 أضافت الهوية البصرية وإطارات الواجهة فقط، بدون ترحيل لقاعدة البيانات؛ معرض المكونات موجود في نسخة التطوير فقط ولا يظهر في نسخة الإنتاج.
 - المرحلة 09 أضافت الترحيل 0005: الإدارة تؤكد الطلب (يُحجز المخزون لهذا الطلب تحديدًا)، ثم التجهيز، ثم الشحن (يُخصم المخزون)، ثم التسليم، أو الإلغاء مع ذكر السبب (يُفك الحجز). كل خطوة تتطلب تسجيل دخول خلال آخر 15 دقيقة.
 - لا يمكن تغيير عدد القطع في الكرتونة أثناء وجود رصيد أو حجوزات للمنتج؛ صفّر الرصيد بحركة موثّقة أولًا. الطلبات المعلّقة بالتعبئة القديمة لا تُؤكَّد، بل تُلغى ويُطلب من التاجر طلب جديد.
 - تعليق حساب التاجر لا يلغي طلباته ولا يفك الحجز تلقائيًا.

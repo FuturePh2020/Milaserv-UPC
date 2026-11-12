@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **09 — Administrative order fulfillment & atomic reservations: COMPLETE** |
-| Next stage | **10 — Premium Arabic RTL design system** (awaiting owner prompt) |
+| Current stage | **10 — Premium Arabic RTL design system & application shells: COMPLETE** |
+| Next stage | **11 — Complete merchant experience** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
 | Schema | Migrations 0001–0004 + **0005** (fulfillment, per-order reservations) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, **administrator order fulfillment with per-order reservations**. No UI screens yet. |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, **Arabic RTL design system, typed browser API client and application shells**. Business screens: stages 11–12. |
 
 ## Stage log
 
@@ -24,10 +24,118 @@
 | 06 | ✅ Done (products + catalog) | Commit `0437953` |
 | 07 | ✅ Done (inventory + ledger) | Commit `105f672` |
 | 08 | ✅ Done (order creation + own-order reads) | Commit `2849466` |
-| 09 | ✅ Done (fulfillment + allocations) | 415/415 tests ×3 clean-copy runs, typecheck clean, 44 mutations with attribution, audit 0 — below |
-| 10–18 | ⏳ Not started | — |
+| 09 | ✅ Done (fulfillment + allocations) | Commit `6b5f592` |
+| 10 | ✅ Done (design system + shells) | 442/442 tests ×3 clean-copy runs, 119/119 Chromium checks, 14 mutations, audit 0 — below |
+| 11–18 | ⏳ Not started | — |
 
-## Stage 09 — what was built
+## Stage 10 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| Tokens and styles | `src/web/styles/{tokens,fonts,base,components,layouts}.css` | owner palette with computed contrast; IBM Plex Sans Arabic (OFL 1.1) bundled locally; logical properties; visible offset focus ring; reduced-motion support |
+| Formatting | `src/web/format.ts`, `labels.ts` | exact integer EGP formatting (`1,255.50 ج.م`), informational per-piece price, Arabic plural forms for cartons/pieces/lines, basis points, Cairo dates; shared Arabic status labels |
+| Components | `src/web/components/*` | buttons/icon buttons (busy state), form fields (password, OTP, errors), search/filter bar, status/availability/merchant/allocation/category badges, spinner/skeleton, empty/error/conflict states, data table + keyset "load more", modal dialog/confirm/drawer, product card + image fallback, quantity control, order timeline, totals, toasts, LTR/money primitives, icons |
+| Shells and states | `src/web/layouts/{Shells,States}.tsx`, `pages/Account.tsx` | AuthLayout, MerchantLayout (bottom tabs on phones), AdminLayout (sidebar / drawer); loading, signed out, expired, pending, reauthentication, forbidden, not found, network failure; read-only account page |
+| API client and identity | `src/web/api/{client,contracts}.ts`, `session/identity.tsx` | typed contracts from the real responses, distinct failure kinds, branded session vs pre-login CSRF tokens, no storage, no auto-retry; identity → shell; real logout |
+| App and entries | `App.tsx`, `main.tsx` (production), `main.dev.tsx` (development + gallery), `router.tsx` | honest placeholders for stage 11/12 areas; no administrator data before identity |
+| Development gallery | `src/web/gallery/*` | every component and identity state with synthetic fixtures; dev builds only |
+| Build | `scripts/build.mjs` | entry chosen by mode (gallery never in production); UTF-8 output |
+| Font licence | `licenses/IBM-Plex-Sans-Arabic-OFL-1.1.txt`, preserved CSS notice | |
+| Dependency | `@fontsource/ibm-plex-sans-arabic@5.3.0` (devDependency, exact) | fonts only; `npm audit` 0 |
+
+Design rules, contrast table and component catalogue: `docs/DESIGN_SYSTEM.md`; client rules: `docs/FRONTEND_API.md`.
+**No server code, migration, business rule, price calculation or stock logic changed** (`git diff src/server migrations src/shared` empty).
+
+## Checks run in stage 10 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check (server, tests, web) | `npm run typecheck` | ✅ 0 errors (includes the compile-time CSRF-type separation assertions) |
+| Production build | `npm run build` | ✅ 1 JS (≈ 257 KB minified, UTF-8), 1 CSS (≈ 25 KB), 8 woff2 (≈ 257 KB), logo; all in the manifest with their types |
+| Full suite | `npm run check` | ✅ **442 tests, 109 suites, 442 pass, 0 fail** (+27: format 4, client 8, components 9, build/preview/source 6) |
+| Clean reproduction ×3 | tracked + new files → `npm ci` → typecheck + `npm test` ×3 | ✅ 442/442 each run |
+| Dependency audit | `npm audit` | ✅ 0 vulnerabilities (one new exact-pinned font package) |
+| Static-file / CSP regressions | existing server tests + new build tests | ✅ manifest allow-list, traversal, canary and integrity tests pass; CSP string unchanged |
+| Contrast | WCAG formula script over every token pair | ✅ all text pairs ≥ 5.76:1 (table in DESIGN_SYSTEM.md); two non-text pairs documented |
+| **Real browser (Chromium, Playwright)** | real server processes (production and development builds), temporary database, real accounts signed in through the API | ✅ **119/119 checks** at 375×812, 768×1024, 1366×900 |
+| Automated accessibility audit (axe or similar) | — | NOT RUN (no tool installed; keyboard, focus, labels and contrast checked as listed) |
+| Screen reader (NVDA/VoiceOver/TalkBack) | — | NOT RUN |
+| Other browsers (Firefox, Safari/iOS, Android Chrome) | — | NOT RUN (Chromium only) |
+| Real HTTPS / proxy | — | NOT RUN (stage 17); over plain HTTP Chrome reports COOP as ignored (expected) |
+
+**What the browser checks cover — component previews vs real workflows.**
+- *Real (production build, real sessions):* signed-out shell; `lang="ar" dir="rtl"`; bundled font loaded;
+  approved trader shell (no admin links, catalog/orders links, logout reachable) on all widths; trader
+  on an admin path → forbidden view; account page; **real logout** back to signed-out; pending
+  merchant (no catalog/orders/admin links); administrator shell with sidebar (desktop) and drawer
+  (phone/tablet: keyboard open, focus inside, logout inside, Escape closes, focus restored); skip link is
+  the first Tab stop; `/auth/me` network failure → network error state (not "signed out"); no
+  horizontal page overflow; **no CSP violations**; `#/__gallery` in production shows the normal app.
+- *Component previews only (development build, synthetic data):* product cards show status text and
+  no stock numbers; barcode in an isolated LTR run; missing/broken images → placeholder; modal dialog
+  initial focus, Tab wrap, Escape, focus restoration; busy confirm dialog ignores Escape; tables scroll
+  inside their region on phone/tablet; every layout preview without page overflow; reduced motion
+  disables animations; the gallery makes no API calls and no external requests.
+- **Not verified, because it does not exist yet:** sign-in/registration screens, catalog browsing,
+  cart and order submission, order history screens, administrator business screens. A gallery
+  screenshot is not evidence that registration, ordering or fulfillment works end-to-end in the UI.
+
+Console output in the real-shell runs contained only explained, expected messages (COOP ignored over
+plain HTTP; the 401 of `/auth/me` while signed out; the request the network-failure check aborts); the
+script lists them separately and fails on anything else.
+
+**Defects found and fixed during visual review:** Arabic words split mid-word («العنوا/ن»;
+`overflow-wrap: anywhere` → `break-word`); Tab could leave a modal dialog for the browser UI (focus
+wrap added); logout arrow not mirrored in the drawer button (directional icons mirror by default);
+tables squeezed columns on phones instead of scrolling (minimum table width + `wide` columns);
+product placeholder too tall on phones; sticky gallery banner hid the shell header in previews.
+
+### Mutation evidence (14 scripted edits, each restored)
+| Mutation | Result | Caught by |
+|---|---|---|
+| W01 production entry imports the gallery | caught | bundle test (gallery/fixture strings in production) |
+| W02 client stores the CSRF token in localStorage / W03 bundle uses sessionStorage | caught | client test (storage access fails) / bundle scan |
+| W04 catalog guard accepts stock counts | caught | client contract test |
+| W05 428 mapped to forbidden / W12 automatic retry after network failure | caught | client tests |
+| W06 merchant shell shows admin links / W07 pending merchant gets catalog/orders | caught | shell markup test |
+| W08 identifiers not LTR-isolated / W09 piece price labelled as the selling price | caught | product card test |
+| W10 CSP gains `unsafe-inline` | caught | CSP test |
+| W11 retry offered for 403 | caught | error-state test |
+| W13 remote `@import` font in CSS | **survived first**, then caught | the test only rejected `@import url(http…)`; esbuild emits `@import "https://…"`. Test tightened to reject any `@import` (a real gap, not score padding) |
+| W14 trader timeline shows an actor | caught | timeline test |
+Interaction behaviours (focus trap, Escape, drawer) are covered by the Chromium checks, not by mutants.
+
+## Limitations (known)
+- **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
+- Stage 09 database/service boundary limitations stay as recorded (DATABASE.md §14) for stage 16; the UI does not repair or hide them.
+- Sign-in, registration and all business screens are not built yet (stages 11–12); in stage 10 accounts sign in through the API only.
+- Browser verification: Chromium only; no screen-reader or automated axe audit; no real HTTPS.
+- Product photos depend on administrator-supplied https URLs; none exist yet (placeholder shown).
+- Logo derivative is a PNG (76 KB); an SVG or smaller WebP derivative could be produced later from the original.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 11.
+
+## Files changed in stage 10 (all under `alkhayr-b2b/`)
+New: `src/web/{format.ts,labels.ts,main.dev.tsx}`, `src/web/components/*` (14 files), `src/web/layouts/{Shells,States}.tsx`,
+`src/web/pages/Account.tsx`, `src/web/session/identity.tsx`, `src/web/gallery/{Gallery.tsx,fixtures.ts,types.ts,gallery.css}`,
+`src/web/styles/{fonts,base,components,layouts}.css`, `licenses/IBM-Plex-Sans-Arabic-OFL-1.1.txt`, `docs/{DESIGN_SYSTEM,FRONTEND_API}.md`,
+`tests/helpers/web.ts`, `tests/unit/{web-format,web-client,web-components}.test.ts`, `tests/integration/web-build.test.ts`.
+Modified: `scripts/build.mjs`, `src/web/{App.tsx,main.tsx,router.tsx}`, `src/web/api/{client,contracts}.ts`, `src/web/styles/tokens.css`,
+`package.json`, `package-lock.json`, `README.md`, `docs/{SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
+Deleted: `src/web/styles/globals.css` (replaced). Not touched: server code, migrations, shared business rules.
+
+## How to continue
+Next: send **PROMPT 11**. Build sign-in (with the pre-login CSRF token and admin TOTP field), registration,
+catalog, cart and order screens on these components and `apiPreLogin`/`apiGet`/`apiMutate`; keep one
+request key per intended order; show 409 conflicts with current terms; never display stock counts to traders.
+
+---
+
+## Stage 09 record (retained)
+
+### What was built
 | Area | Files | Summary |
 |---|---|---|
 | Per-order reservations | `migrations/0005_order_fulfillment.sql` | `order_allocations` (order line → reserved / released / consumed, linked to its reserve and settle ledger rows); guards on ledger, allocations, products, events and orders; pack-size lock while stocked; transition events carry operation key, digest and resulting version |
@@ -40,7 +148,7 @@
 
 Model, reconciliation equations and the exact database/service boundary: DATABASE.md §14.
 
-## Checks run in stage 09 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 09 (2026-11-12, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -67,7 +175,7 @@ Regression tests adjusted (all required by the new rules, assertions preserved):
 - Stage boundary tests (auth-security, server, orders): administrator order routes now exist (403 for
   traders); refund/cancel/summary/reservation endpoints still absent.
 
-### Mutation evidence (44 scripted edits, each restored; fulfillment or schema test file)
+#### Mutation evidence (44 scripted edits, each restored; fulfillment or schema test file)
 | Mutation | Result | Attribution |
 |---|---|---|
 | F01 no commit-time re-validation / F02 without recency | caught | slow-body logout and recency-expiry tests |
@@ -95,7 +203,7 @@ Regression tests adjusted (all required by the new rules, assertions preserved):
 | F30 event written but order not updated | caught | lifecycle tests |
 | D01–D11 each 0005 trigger/check disabled (pack size, settle, reserve, allocation backing, allocation state, buyer, admin actor, event-required, allocation update, cancel reason, event chain) | caught (11/11) | SQL tests |
 
-### Required tests → evidence (real HTTP unless noted)
+#### Required tests → evidence (real HTTP unless noted)
 | Requirement | Test |
 |---|---|
 | Every allowed / forbidden transition | lifecycle; 6 states × every disallowed target → 409, nothing changed |
@@ -117,7 +225,7 @@ Regression tests adjusted (all required by the new rules, assertions preserved):
 | Trader availability | normal → low → out of stock → back, no counts in responses |
 | Continued protections | full stage 01–08 suites (database, static files, auth) pass |
 
-## Limitations (known)
+### Limitations at the end of stage 09
 - **Username-lockout availability risk is still open** (SECURITY §7, T40) — stage 16 / release gate.
 - No partial fulfillment, returns, post-shipment cancellation, payments or shipping integrations (out of scope).
 - The database does not force an event to be followed by its state change, nor a reserve row by its
@@ -126,13 +234,7 @@ Regression tests adjusted (all required by the new rules, assertions preserved):
 - Traders do not see cancellation reasons (D-104); trader-facing messaging may be added deliberately later.
 - No UI yet (stages 10–12); summary/print (14); reports (14); exports (13).
 
-## Open questions
-None.
-
-## Remaining blockers
-None for stage 10.
-
-## Files changed in stage 09 (all under `alkhayr-b2b/`)
+### Files changed in stage 09 (all under `alkhayr-b2b/`)
 New: `migrations/0005_order_fulfillment.sql`, `src/server/services/fulfillment.ts`, `src/server/routes/admin-orders.ts`,
 `tests/integration/fulfillment.test.ts`.
 Modified: `src/server/app.ts`, `src/server/services/{audit,orders,products}.ts`, `src/shared/errors.ts`,
@@ -140,11 +242,6 @@ Modified: `src/server/app.ts`, `src/server/services/{audit,orders,products}.ts`,
 `tests/unit/{database-migrations,database-schema}.test.ts`, `migrations/README.md`, `README.md`,
 `docs/{API_CONTRACT,DATABASE,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
 Not touched: migrations 0001–0004, dependencies/lockfile, web UI, repository-root files.
-
-## How to continue
-Next: send **PROMPT 10**. The UI must call these APIs only (no browser-side state of record), show
-availability statuses to traders, and generate fresh request/operation keys per intended action (reusing
-them only for retries of the same action).
 
 ---
 

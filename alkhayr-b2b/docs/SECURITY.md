@@ -244,6 +244,22 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - Administrators see stock counts in conflicts; traders still see only availability statuses.
 - Audit `order.transitioned`: from, to, version, event id, movement kind, line count (reason in the event).
 
+## 7f. Browser application (implemented stage 10)
+- Same-origin cookie authentication only; the client refuses non-API URLs and never persists session,
+  password, MFA or CSRF values in browser storage or cookies (tested on source and bundles).
+- Distinct session vs pre-login CSRF types; mutations are never retried automatically; a network failure
+  of a mutation is reported as "outcome unknown — retry the same request".
+- Navigation visibility (admin/merchant/pending) is presentation only; authorization stays on the server.
+  No administrator data is requested before `/auth/me` identifies an administrator.
+- No `dangerouslySetInnerHTML`, `innerHTML`, `eval`/`new Function` in `src/web` (test); React escaping
+  is the stored-XSS control for names, notes and addresses (T14).
+- CSP unchanged (no `unsafe-inline`/`unsafe-eval`, fonts and scripts `'self'`); fonts bundled locally;
+  no remote stylesheet/script/font (tests reject `@import` and non-`/assets` CSS URLs).
+- The development component gallery and its synthetic fixtures are excluded from production builds
+  (separate entry point; tested on the bundles and in a browser).
+- Product images: `img-src https:` already allowed; loaded with `referrerPolicy="no-referrer"`, lazy,
+  with a placeholder on failure; never fetched server-side.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -330,6 +346,9 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Packaging lock while stocked; snapshot pack size at confirmation | ✅ | ✅ 09 |
 | Buyer-approval gate for forward steps; no automatic release | ✅ | ✅ 09 |
 | Atomic transitions (ledger, allocation, product, event, order, audit failure rollback) | ✅ | ✅ 09 (8 injected failures) |
+| Browser client: same-origin only, no credential storage, typed CSRF split, no auto-retry, failure kinds | ✅ | ✅ 10 (unit + bundle scan) |
+| Production bundle excludes gallery/fixtures; no remote assets; CSP unchanged | ✅ | ✅ 10 (build tests + Chromium) |
+| Shell visibility by role/approval (presentation only) | ✅ | ✅ 10 (markup tests + Chromium with real sessions) |
 | Atomic ledger + balance + audit (rollback on any failure) | ✅ | ✅ 07 (three injected failures) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

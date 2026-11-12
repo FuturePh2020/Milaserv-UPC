@@ -32,7 +32,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | T11 | Double order on retry/double click | trader/network | per-merchant idempotency key + canonical digest; replay before current-state rules; serialized writes | 08 ✅ |
 | T12 | Stale admin form overwrites stock/price | admin | expectedVersion pre-check + WHERE expectedVersion; version +1 on every update incl. stock (trigger) | 06/07 ✅ |
 | T13 | SQL injection via search/sort | any | bound parameters, fixed sort/column maps, strict query parsing | 05/06 ✅ |
-| T14 | Stored XSS via product names, notes, addresses | admin/trader | React escaping, no `dangerouslySetInnerHTML`, strict CSP | 10–12 |
+| T14 | Stored XSS via product names, notes, addresses | admin/trader | React escaping, no `dangerouslySetInnerHTML`/`innerHTML`/`eval` in `src/web` (test), strict CSP unchanged | 10 ✅ components (screens: 11–12) |
 | T15 | Malicious image URLs (javascript:, credentials, tracking) | admin | https-only, no userinfo (even empty), canonical storage, never fetched server-side, no-referrer, CSP img-src | 06 ✅ |
 | T16 | CSV formula injection in exports | trader-controlled text | prefix `'` for cells starting (after trim/BOM/control) with = + - @ ; quote escaping | 13 |
 | T17 | Oversized/abusive bodies, slowloris | external | streaming body limit (auth 8 KiB), server timeouts, general per-IP API limit; proxy limits (17) | 01/04 ✅ |
@@ -92,3 +92,6 @@ third-party content rendered by the browser only (never fetched server-side).
 | T64 | Suspended buyer's orders keep moving forward, or suspension silently releases stock | admin action | approval gate for confirm/prepare/ship (service + database); no automatic cancellation/release | 09 ✅ |
 | T65 | State changed without an audit trail (raw SQL) | bug / insider | state change requires its matching latest event; events append-only, administrator actor, reason for cancellation | 09 ✅ (database) |
 | T66 | Replayed operation result disclosed after the administrator lost access | stale session | eligibility re-checked before idempotency lookup | 09 ✅ |
+| T67 | Credentials or CSRF tokens persisted in the browser and stolen by another script/user of the device | XSS / shared device | memory-only tokens, no storage APIs in source or bundles (tests), HttpOnly cookie | 10 ✅ |
+| T68 | Development preview (fake data, synthetic states) shipped to production and mistaken for real records | build error | separate dev entry; bundle tests for gallery code/fixture marker; browser check of `#/__gallery` in production | 10 ✅ |
+| T69 | Third-party font/script CDN as tracking or supply-chain vector | supply chain | fonts bundled from a pinned OFL package; CSP `'self'`; build tests reject remote CSS/JS references | 10 ✅ |
