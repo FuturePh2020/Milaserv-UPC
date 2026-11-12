@@ -92,6 +92,8 @@ describe('browser source rules', () => {
     for (const f of files) {
       const code = (await readFile(path.join(projectRoot, 'src', 'web', f), 'utf8')).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
       assert.doesNotMatch(code, /dangerouslySetInnerHTML|innerHTML\s*=|\beval\(|new Function\(|document\.cookie/, f);
+      // Keys must come from the CSPRNG only (client.ts newRequestKey): no weak randomness anywhere.
+      assert.doesNotMatch(code, /Math\.random/, f);
       if (f !== DRAFT_MODULE) assert.doesNotMatch(code, /localStorage|sessionStorage/, `${f}: browser storage is only allowed in ${DRAFT_MODULE}`);
     }
     // The draft module stores order drafts only: never tokens, passwords or authenticator codes.

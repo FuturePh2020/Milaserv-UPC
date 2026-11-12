@@ -38,3 +38,26 @@ export function useLoad<T>(key: string, fetcher: (signal: AbortSignal) => Promis
   const reload = useCallback(() => setAttempt((a) => a + 1), []);
   return { ...state, reload };
 }
+
+/**
+ * Like useLoad, but keeps showing the last successfully loaded record while a reload runs (and if
+ * a reload fails), so forms with unsent operator drafts are not unmounted by a refresh. The caller
+ * shows `refreshing` / `failure` alongside the retained data. Data of another `scope` (record id)
+ * is never shown.
+ */
+export function useStickyLoad<T>(scope: string, generation: number, fetcher: (signal: AbortSignal) => Promise<ApiResult<T>>) {
+  const load = useLoad(`${scope}#${generation}`, fetcher);
+  const [last, setLast] = useState<{ scope: string; data: T } | null>(null);
+  const fresh = load.status === 'ok' ? load.data : null;
+  useEffect(() => {
+    if (fresh !== null) setLast({ scope, data: fresh });
+  }, [fresh, scope]);
+  const data = fresh ?? (last && last.scope === scope ? last.data : null);
+  return {
+    data,
+    refreshing: load.status === 'loading' && data !== null,
+    failure: load.status === 'error' ? load.failure : null,
+    initialLoading: load.status === 'loading' && data === null,
+    reload: load.reload,
+  };
+}

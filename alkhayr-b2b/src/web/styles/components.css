@@ -885,3 +885,50 @@
   gap: var(--space-3);
   padding-block-start: var(--space-2);
 }
+.c-image-preview {
+  max-inline-size: 16rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.c-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--space-3);
+}
+.c-stat {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.c-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
+  gap: var(--space-3);
+}
+.c-action-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.c-action-list > li > p {
+  margin: 0;
+}
+.c-history {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  display: grid;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.c-reauth {
+  border-inline-start: 4px solid var(--color-warning);
+}
+.c-link-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

@@ -31,6 +31,12 @@ interface IdentityApi {
   markExpired: () => void;
   /** The server ended every session (password change): show the signed-out state, not "expired". */
   signedOut: () => void;
+  /**
+   * Re-reads /auth/me WITHOUT passing through "loading" (screens and their unsent drafts stay
+   * mounted). Used after administrator re-authentication to pick up the new session and CSRF token.
+   * Resolves false if the identity could not be confirmed (state is then updated accordingly).
+   */
+  refresh: () => Promise<boolean>;
   /** Real POST /api/v1/auth/logout. On failure the session is still valid (API contract). */
   logout: () => Promise<ApiFailure | null>;
   /**
@@ -114,7 +120,18 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     [markExpired, reload],
   );
 
-  const api = useMemo(() => ({ state, reload, markExpired, signedOut, logout, handleAuthFailure }), [state, reload, markExpired, signedOut, logout, handleAuthFailure]);
+  const refresh = useCallback(async () => {
+    const r = await apiGet('/api/v1/auth/me', isMeResponse);
+    if (r.ok) {
+      wasAuthenticated.current = true;
+      setState({ status: 'authenticated', me: r.data, csrf: sessionCsrf(r.data.csrfToken) });
+      return true;
+    }
+    if (r.kind === 'unauthenticated') setState({ status: 'expired' });
+    return false;
+  }, []);
+
+  const api = useMemo(() => ({ state, reload, markExpired, signedOut, refresh, logout, handleAuthFailure }), [state, reload, markExpired, signedOut, refresh, logout, handleAuthFailure]);
   return <IdentityContext.Provider value={api}>{children}</IdentityContext.Provider>;
 }
 

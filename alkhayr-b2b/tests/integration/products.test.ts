@@ -505,3 +505,38 @@ describe('search, filters and pagination', () => {
       assert.deepEqual(inactive.json.items.map((p: any) => p.name), ['غير مفعّل']);
     }));
 });
+
+describe('inactive categories (stage 12 consistency fix)', () => {
+  test('trader list, detail, filters and brand counts exclude products of an inactive category; administration still sees them', () =>
+    withApp(async (app) => {
+      const { c } = await admin(app);
+      const visible = await activate(c, await created(c, { brand: 'Visible Brand', category: 'chocolate' }));
+      const hidden = await activate(c, await created(c, { name: 'كاندي مخفي', brand: 'Hidden Brand', category: 'candy' }));
+      const trader = await createTrader(app);
+      const t = await signedIn(app, trader);
+      const ids = async (q = '') => ((await t.request('GET', `/api/v1/products${q}`)).json.items as Array<{ id: string }>).map((p) => p.id).sort();
+      assert.deepEqual(await ids(), [visible.id, hidden.id].sort());
+      app.fixtureDb.prepare("UPDATE product_categories SET active = 0 WHERE id = 'candy'").run();
+      assert.deepEqual(await ids(), [visible.id]);
+      // Filtering by the inactive category itself is refused like an unknown category (stage-06 rule).
+      expectCode(await t.request('GET', '/api/v1/products?category=candy'), 400, 'VALIDATION_FAILED');
+      assert.deepEqual(await ids('?brand=Hidden%20Brand'), []);
+      assert.deepEqual(await ids(`?q=${encodeURIComponent('كاندي')}`), []);
+      // Detail: the same non-disclosing 404 as for a missing or inactive product.
+      const gone = await t.request('GET', `/api/v1/products/${hidden.id}`);
+      const missing = await t.request('GET', `/api/v1/products/${randomUUID()}`);
+      expectCode(gone, 404, 'NOT_FOUND');
+      assert.equal(gone.json.error.message, missing.json.error.message);
+      const filters = (await t.request('GET', '/api/v1/catalog/filters')).json;
+      assert.equal(filters.categories.some((x: { id: string }) => x.id === 'candy'), false);
+      assert.equal(filters.brands.some((b: { name: string }) => b.name === 'Hidden Brand'), false);
+      assert.deepEqual(filters.brands.map((b: { name: string; productCount: number }) => [b.name, b.productCount]), [['Visible Brand', 1]]);
+      // Administration views are unchanged.
+      assert.equal((await c.request('GET', `/api/v1/admin/products/${hidden.id}`)).status, 200);
+      assert.ok((await c.request('GET', '/api/v1/admin/products?limit=100')).json.items.some((p: { id: string }) => p.id === hidden.id));
+      assert.ok((await c.request('GET', '/api/v1/admin/inventory?limit=100')).json.items.some((i: { product: { id: string } }) => i.product.id === hidden.id));
+      // Reactivating the category restores trader visibility.
+      app.fixtureDb.prepare("UPDATE product_categories SET active = 1 WHERE id = 'candy'").run();
+      assert.deepEqual(await ids(), [visible.id, hidden.id].sort());
+    }));
+});

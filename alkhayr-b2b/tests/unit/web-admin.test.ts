@@ -1,0 +1,116 @@
+import assert from 'node:assert/strict';
+import { describe, it } from 'node:test';
+import { ADJUSTMENT_ERROR, adjustmentPreview, barcodeValue, MAX_ON_HAND, MERCHANT_TRANSITIONS, moneyInputText, parseImageUrl, parseMoneyInput, parseWhole } from '../../src/web/admin/logic.ts';
+import { hasUnresolved, trackUnresolved } from '../../src/web/admin/unresolved.ts';
+import { loadWebModules } from '../helpers/web.ts';
+
+describe('administrator money input (exact pounds -> piastres)', () => {
+  it('converts exactly, with integer arithmetic', () => {
+    assert.deepEqual(parseMoneyInput('125.50'), { ok: true, value: 12550 });
+    assert.deepEqual(parseMoneyInput('125.5'), { ok: true, value: 12550 });
+    assert.deepEqual(parseMoneyInput('125'), { ok: true, value: 12500 });
+    assert.deepEqual(parseMoneyInput('0.01'), { ok: true, value: 1 });
+    assert.deepEqual(parseMoneyInput('1,234.05'), { ok: true, value: 123405 });
+    // values whose float multiplication would be inexact (0.29 * 100 = 28.999999999999996)
+    assert.deepEqual(parseMoneyInput('0.29'), { ok: true, value: 29 });
+    assert.deepEqual(parseMoneyInput('1.15'), { ok: true, value: 115 });
+    assert.deepEqual(parseMoneyInput('١٢٥٫٥٠'), { ok: true, value: 12550 }, 'Arabic-Indic digits and decimal separator');
+  });
+  it('rejects extra precision instead of rounding, and every non-amount', () => {
+    const extra = parseMoneyInput('125.505');
+    assert.equal(extra.ok, false);
+    assert.match(!extra.ok ? extra.message : '', /رقمين عشريين/);
+    for (const bad of ['', ' ', '-5', '+5', '1e3', '12.', '.5', 'abc', '0', '0.00', 'Infinity', '12.5.0', '0x10']) assert.equal(parseMoneyInput(bad).ok, false, bad);
+  });
+  it('enforces the maximum carton price', () => {
+    assert.equal(parseMoneyInput('1000000').ok, true);
+    assert.equal(parseMoneyInput('1000000.01').ok, false);
+  });
+  it('round-trips through the price field text', () => {
+    for (const cents of [1, 10, 99, 100, 12550, 100_000_000]) {
+      const r = parseMoneyInput(moneyInputText(cents));
+      assert.deepEqual(r, { ok: true, value: cents });
+    }
+    assert.equal(moneyInputText(12505), '125.05');
+  });
+});
+
+describe('administrator whole-number input', () => {
+  it('accepts whole numbers in range only', () => {
+    assert.deepEqual(parseWhole('12', 1, 100, 'x'), { ok: true, value: 12 });
+    assert.deepEqual(parseWhole('١٢', 1, 100, 'x'), { ok: true, value: 12 });
+    for (const bad of ['0', '101', '1.5', '-3', '', '1e2', ' 1 2']) assert.equal(parseWhole(bad, 1, 100, 'x').ok, false, bad);
+    assert.deepEqual(parseWhole('-3', -10, 10, 'x', true), { ok: true, value: -3 });
+  });
+});
+
+describe('inventory adjustment preview', () => {
+  const cur = { onHand: 50, reserved: 20 };
+  it('computes before/after/delta and leaves reserved unchanged', () => {
+    assert.deepEqual(adjustmentPreview(cur, 'receipt', 10), { before: 50, after: 60, delta: 10, reserved: 20, availableAfter: 40, error: null });
+    assert.deepEqual(adjustmentPreview(cur, 'correction_delta', -5), { before: 50, after: 45, delta: -5, reserved: 20, availableAfter: 25, error: null });
+    assert.deepEqual(adjustmentPreview(cur, 'set_total', 30), { before: 50, after: 30, delta: -20, reserved: 20, availableAfter: 10, error: null });
+  });
+  it('flags no-op, negative, below-reserved and above-maximum results', () => {
+    assert.equal(adjustmentPreview(cur, 'set_total', 50).error, 'no_change');
+    assert.equal(adjustmentPreview(cur, 'correction_delta', 0).error, 'no_change');
+    assert.equal(adjustmentPreview({ onHand: 5, reserved: 0 }, 'correction_delta', -6).error, 'negative');
+    assert.equal(adjustmentPreview(cur, 'set_total', 19).error, 'below_reserved');
+    assert.equal(adjustmentPreview(cur, 'set_total', 20).error, null, 'exactly the reserved quantity is allowed');
+    assert.equal(adjustmentPreview(cur, 'receipt', MAX_ON_HAND).error, 'above_max');
+    for (const k of Object.keys(ADJUSTMENT_ERROR)) assert.ok(ADJUSTMENT_ERROR[k as keyof typeof ADJUSTMENT_ERROR].length > 0);
+  });
+});
+
+describe('merchant status choices offered to administrators', () => {
+  it('matches the documented server table (API_CONTRACT §4a)', () => {
+    const flat = Object.entries(MERCHANT_TRANSITIONS).flatMap(([from, list]) => list.map((t) => `${from}>${t.to}:${t.reasonRequired ? 'R' : '-'}${t.endsSessions ? 'S' : '-'}`));
+    assert.deepEqual(flat.sort(), ['approved>pending:RS', 'approved>suspended:RS', 'pending>approved:--', 'pending>suspended:RS', 'suspended>approved:R-', 'suspended>pending:R-'].sort());
+  });
+});
+
+describe('product field values', () => {
+  it('keeps a barcode exactly as typed; only an empty field is null', () => {
+    assert.equal(barcodeValue(''), null);
+    assert.equal(barcodeValue('000123'), '000123');
+    assert.equal(barcodeValue('AbC-01'), 'AbC-01');
+    assert.notEqual(barcodeValue(''), '');
+  });
+  it('accepts https image URLs without credentials only', () => {
+    assert.deepEqual(parseImageUrl(''), { ok: true, value: null });
+    assert.deepEqual(parseImageUrl('https://img.example/a.png'), { ok: true, value: 'https://img.example/a.png' });
+    for (const bad of ['http://img.example/a.png', 'javascript:alert(1)', 'data:image/png;base64,AAAA', 'https://u:p@img.example/a.png', 'https://u@img.example/a.png', 'not a url']) assert.equal(parseImageUrl(bad).ok, false, bad);
+  });
+});
+
+describe('unresolved administrator operations (sign-out guard)', () => {
+  it('counts tracked operations and releases each exactly once', () => {
+    assert.equal(hasUnresolved(), false);
+    const a = trackUnresolved();
+    const b = trackUnresolved();
+    assert.equal(hasUnresolved(), true);
+    a();
+    a(); // a double release must not hide b
+    assert.equal(hasUnresolved(), true);
+    b();
+    assert.equal(hasUnresolved(), false);
+  });
+});
+
+describe('administration markup', () => {
+  it('order actions explain stock effects; cancellation of a confirmed order releases only its own reservation', async () => {
+    const m = await loadWebModules<{ explainTransition: (from: string, to: string) => string }>(['src/web/pages/admin/AdminOrders.tsx']);
+    assert.match(m.explainTransition('pending', 'confirmed'), /كل الأصناف أو لا شيء/);
+    assert.match(m.explainTransition('pending', 'cancelled'), /لا يتغير المخزون/);
+    assert.match(m.explainTransition('confirmed', 'cancelled'), /لهذا الطلب فقط/);
+    assert.match(m.explainTransition('preparing', 'shipped'), /يخصم/);
+  });
+  it('the landing page shows links only, no figures', async () => {
+    const m = await loadWebModules<{ AdminHomePage: () => unknown }>(['src/web/pages/admin/AdminHome.tsx']);
+    const html = m.renderToStaticMarkup(m.createElement(m.AdminHomePage));
+    assert.match(html, /href="#\/admin\/orders\?state=pending"/);
+    assert.match(html, /href="#\/admin\/merchants\?status=pending"/);
+    const text = html.replace(/<[^>]+>/g, ' ').replace(/15 دقيقة/, '');
+    assert.doesNotMatch(text, /[0-9٠-٩]/, 'no counts or statistics are rendered');
+  });
+});

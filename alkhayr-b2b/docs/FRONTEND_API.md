@@ -81,3 +81,39 @@ identity re-read) and are rendered as errors, never as empty lists.
    a corrected cart becomes a new payload with a new key.
 4. While a submission is unresolved, a different payload cannot be sent; the panel warns when the cart has
    changed since (the retry sends the original order).
+
+## Administration (stage 12)
+Routes (administrator shell only; a trader gets the forbidden view and the client never requests an
+administration endpoint): `#/admin`, `#/admin/merchants` (`?status&q&sort`), `#/admin/merchants/<id>`,
+`#/admin/products` (`?q&category&active&sort`), `#/admin/products/new`, `#/admin/products/<id>` (`?created=1`),
+`#/admin/inventory` (`?q&status&active&sort`), `#/admin/inventory/<id>`, `#/admin/orders`
+(`?state&q&sort&merchantId`), `#/admin/orders/<id>`. Ids must be UUIDs.
+
+Functions: `api/admin.ts` — `listMerchants`, `getMerchant`, `changeMerchantStatus`, `listAdminProducts`,
+`getAdminProduct`, `createProduct`, `updateProduct`, `listInventory`, `getLedger`, `adjustInventory`,
+`listAdminOrders`, `getAdminOrder`, `transitionOrder`. Field names are the server's (`cartonPriceCents`,
+`expectedVersion`, `operationKey`).
+
+**Keys.** `newRequestKey()` uses `crypto.getRandomValues` only and throws `SecureRandomUnavailableError` when
+it is missing; callers show `SECURE_RANDOM_MESSAGE` and send nothing (no `Math.random`, time or counter
+fallback — enforced by a source rule). It works on plain HTTP (the browser test origin); this proves the key
+source, not transport security: production still requires HTTPS (secure cookies, HSTS).
+
+**`useOperation` (inventory adjustments, order transitions).** A new key is created only when the operator
+confirms a new intention. States: `sending` (buttons disabled; a second tap is ignored), `unknown` (no
+response, 5xx or malformed response: the exact payload and key are kept in memory, the form is locked, the
+only actions are "retry the same operation" or "discard after checking the history"), `reauth` (428: nothing
+executed), `rejected` (definite refusal: nothing applied; the record is re-read), `done` (result, possibly a
+replay — shown as "already recorded / not repeated" with the original operation and the current record).
+Refresh/close (`beforeunload`) and sign-out ask for confirmation while an operation is unresolved.
+
+**Re-authentication (428).** `ReauthPanel` is a dedicated sign-in form (username from the session, password,
+new authenticator code) posting to the real login endpoint with a fresh pre-login token; inputs are cleared;
+then `identity.refresh()` loads the new session and CSRF token silently and the screen re-reads its record.
+The prepared action stays unsent and must be confirmed again (a new key). It is never a generic confirmation
+dialog and never stores credentials.
+
+**Non-idempotent writes** (product create/edit, merchant status) are never retried automatically: an unclear
+outcome tells the operator to look at the current record (or search before creating again). Conflicts
+(`VERSION_CONFLICT`) keep the unsaved values and show the current record; the operator chooses to re-apply or
+discard. `useStickyLoad` keeps the last record on screen while re-reading, so drafts are not unmounted.

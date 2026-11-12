@@ -4,7 +4,13 @@ import type { MeResponse } from './api/contracts.ts';
 import { CartProvider, useCart } from './cart/CartContext.tsx';
 import { ToastProvider, useToast } from './components/Toast.tsx';
 import { AdminLayout, AuthLayout, MerchantLayout, type AccountView } from './layouts/Shells.tsx';
-import { ForbiddenView, IdentityLoadingScreen, NetworkFailureView, NotFoundView, PendingApprovalView, UpcomingScreen } from './layouts/States.tsx';
+import { hasUnresolved } from './admin/unresolved.ts';
+import { ForbiddenView, IdentityLoadingScreen, NetworkFailureView, NotFoundView, PendingApprovalView } from './layouts/States.tsx';
+import { AdminHomePage } from './pages/admin/AdminHome.tsx';
+import { AdminOrderDetailPage, AdminOrdersPage } from './pages/admin/AdminOrders.tsx';
+import { InventoryDetailPage, InventoryPage } from './pages/admin/Inventory.tsx';
+import { MerchantDetailPage, MerchantsPage } from './pages/admin/Merchants.tsx';
+import { ProductCreatePage, ProductEditPage, ProductsPage } from './pages/admin/Products.tsx';
 import { AccountPage } from './pages/Account.tsx';
 import { LoginPage } from './pages/auth/Login.tsx';
 import { PasswordChangePage } from './pages/auth/PasswordChange.tsx';
@@ -35,21 +41,43 @@ function purchasingScreen(route: Route, me: MeResponse, csrf: SessionCsrfToken, 
   return null;
 }
 
+/**
+ * Administration screens. Mounted ONLY inside the administrator shell (after /auth/me reported an
+ * administrator), so a trader never requests an administration endpoint; the server authorizes
+ * every call regardless.
+ */
+function adminScreen(route: Route, csrf: SessionCsrfToken): ReactNode {
+  const { path, query } = route;
+  const home = '#/admin';
+  const id = (re: RegExp) => {
+    const m = re.exec(path);
+    return m && UUID.test(m[1]!) ? m[1]! : m ? '' : null;
+  };
+  if (path === '/admin') return <AdminHomePage />;
+  if (path === '/admin/merchants') return <MerchantsPage query={query} />;
+  if (path === '/admin/products') return <ProductsPage query={query} />;
+  if (path === '/admin/products/new') return <ProductCreatePage csrf={csrf} />;
+  if (path === '/admin/inventory') return <InventoryPage query={query} />;
+  if (path === '/admin/orders') return <AdminOrdersPage query={query} />;
+  const merchant = id(/^\/admin\/merchants\/([^/]+)$/);
+  if (merchant) return <MerchantDetailPage key={merchant} id={merchant} csrf={csrf} />;
+  const product = id(/^\/admin\/products\/([^/]+)$/);
+  if (product) return <ProductEditPage key={product} id={product} csrf={csrf} created={query.get('created') === '1'} />;
+  const inventory = id(/^\/admin\/inventory\/([^/]+)$/);
+  if (inventory) return <InventoryDetailPage key={inventory} id={inventory} csrf={csrf} />;
+  const order = id(/^\/admin\/orders\/([^/]+)$/);
+  if (order) return <AdminOrderDetailPage key={order} id={order} csrf={csrf} />;
+  return <NotFoundView home={home} />;
+}
+
 /** Shell for one verified identity. Everything inside is remounted for another identity (key). */
 function SignedInShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeResponse; csrf: SessionCsrfToken; route: Route; onLogout: () => void; logoutBusy: boolean }) {
   const cart = useCart();
   const kind = shellKind(me);
   const account: AccountView = { businessName: me.merchant.businessName, username: me.user.username };
   if (kind === 'admin') {
-    const r = route.path === '/' ? { ...route, path: '/admin/orders' } : route;
-    let screen = purchasingScreen(r, me, csrf, '#/admin/orders');
-    if (!screen) {
-      if (r.path === '/admin/orders') screen = <UpcomingScreen title="الطلبات" stage={12} description="مراجعة الطلبات وتأكيدها وتجهيزها وشحنها." />;
-      else if (r.path === '/admin/products') screen = <UpcomingScreen title="المنتجات" stage={12} description="إضافة المنتجات وتعديل بياناتها وأسعارها." />;
-      else if (r.path === '/admin/inventory') screen = <UpcomingScreen title="المخزون" stage={12} description="أرصدة المخزون وحركاته." />;
-      else if (r.path === '/admin/merchants') screen = <UpcomingScreen title="التجار" stage={12} description="مراجعة حسابات التجار واعتمادها." />;
-      else screen = <NotFoundView home="#/admin/orders" />;
-    }
+    const r = route.path === '/' ? { ...route, path: '/admin' } : route;
+    const screen = purchasingScreen(r, me, csrf, '#/admin') ?? adminScreen(r, csrf);
     const recentExpired = me.session.recentAuthUntil !== null && me.session.recentAuthUntil <= Date.now();
     return (
       <AdminLayout
@@ -118,6 +146,8 @@ function Routes() {
   }
   const { me, csrf } = state;
   const onLogout = async () => {
+    // Signing out discards the in-memory key/payload of an operation whose outcome is unknown.
+    if (hasUnresolved() && !window.confirm('توجد عملية إدارية لم تتأكد نتيجتها. تسجيل الخروج يفقد إمكانية إعادة إرسالها بنفس المفتاح. تحقق من السجل أولًا. هل تريد تسجيل الخروج؟')) return;
     setLogoutBusy(true);
     const failure = await logout();
     setLogoutBusy(false);

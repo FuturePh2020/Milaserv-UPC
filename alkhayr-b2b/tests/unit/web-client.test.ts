@@ -184,3 +184,19 @@ describe('sign-in and registration requests', () => {
     assert.deepEqual(JSON.parse(String(seen[1]!.init.body)), { username: ' Mixed.Case ', password: '  pass word with spaces  ', totp: '012345' });
   });
 });
+
+describe('secure request keys without weak fallback', () => {
+  test('if crypto.getRandomValues is unavailable, key generation throws instead of falling back', async () => {
+    const { newRequestKey, SecureRandomUnavailableError } = await import('../../src/web/api/client.ts');
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'crypto')!;
+    try {
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: { randomUUID: () => 'not-used' } });
+      assert.throws(() => newRequestKey(), SecureRandomUnavailableError);
+      Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+      assert.throws(() => newRequestKey(), SecureRandomUnavailableError);
+    } finally {
+      Object.defineProperty(globalThis, 'crypto', original);
+    }
+    assert.match(newRequestKey(), /^[0-9a-f]{8}-[0-9a-f]{4}-4/);
+  });
+});

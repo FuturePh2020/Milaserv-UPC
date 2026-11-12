@@ -132,6 +132,15 @@ account cannot reset it either; there is no such feature yet). Shipping, tax and
 traders come from the business settings (defaults 0 until configured in stage 14). Before go-live, make sure
 the real tax/shipping values are configured.
 
+### Stage 12 note: administration screens (no migration)
+Administrators now manage merchants, products, stock and orders in the browser. Every change requires a
+sign-in within the last 15 minutes; when it has expired the screen asks for the password and a **new**
+authenticator code (wait for the next code if the current one was just used) and never executes the
+prepared action by itself. Products are created inactive with zero stock: receive stock in «المخزون», then
+activate the product. Products of an inactive category are no longer shown to traders. A second administrator
+cannot be created from the portal or with `setup-admin` (it refuses once an administrator exists); keep the
+first administrator's authenticator safe.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|

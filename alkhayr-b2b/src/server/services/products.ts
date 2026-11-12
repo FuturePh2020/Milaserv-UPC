@@ -287,7 +287,8 @@ function queryProducts(ctx: RequestContext, userId: string, o: ListOptions): { r
   const scope = [o.scope, sortName, o.query.q ?? '', o.query.category ?? '', o.query.brand ?? '', o.query.active ?? '', o.query.demo ?? ''].join('\0');
   const where: string[] = [];
   const params: Array<string | number> = [];
-  if (o.visibleOnly) where.push('p.active = 1');
+  // Trader catalog: an active product in an ACTIVE category (stage 12; orders refuse inactive categories).
+  if (o.visibleOnly) where.push('p.active = 1 AND c.active = 1');
   if (o.query.active) {
     where.push('p.active = ?');
     params.push(o.query.active === 'true' ? 1 : 0);
@@ -342,7 +343,7 @@ export function getCatalogProduct(ctx: RequestContext): void {
   requireApproved(auth);
   parseQuery(ctx.query, z.strictObject({}));
   // Inactive and non-existent products are indistinguishable for traders (404).
-  const row = loadProduct(ctx, ctx.params.id, ' AND p.active = 1');
+  const row = loadProduct(ctx, ctx.params.id, ' AND p.active = 1 AND c.active = 1');
   sendJson(ctx.res, 200, { product: catalogProduct(row, lowStockThreshold(ctx)) });
 }
 
@@ -359,7 +360,12 @@ export function catalogFilters(ctx: RequestContext): void {
         WHERE c.active = 1 GROUP BY c.id ORDER BY c.sort_order`,
     )
     .all() as Array<{ id: string; label_ar: string; n: number }>;
-  const brands = db.prepare('SELECT brand, count(*) AS n FROM products WHERE active = 1 GROUP BY brand ORDER BY brand COLLATE NOCASE LIMIT 500').all() as Array<{ brand: string; n: number }>;
+  const brands = db
+    .prepare(
+      `SELECT p.brand, count(*) AS n FROM products p JOIN product_categories c ON c.id = p.category
+        WHERE p.active = 1 AND c.active = 1 GROUP BY p.brand ORDER BY p.brand COLLATE NOCASE LIMIT 500`,
+    )
+    .all() as Array<{ brand: string; n: number }>;
   sendJson(ctx.res, 200, {
     categories: categories.map((c) => ({ id: c.id, labelAr: c.label_ar, productCount: c.n })),
     brands: brands.map((b) => ({ name: b.brand, productCount: b.n })),

@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-12 |
-| Current stage | **11 — Complete Arabic RTL merchant experience: COMPLETE** |
-| Next stage | **12 — Complete administration experience** (awaiting owner prompt) |
+| Current stage | **12 — Complete Arabic RTL administration experience: COMPLETE** |
+| Next stage | **13** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
 | Schema | Migrations 0001–0004 + **0005** (fulfillment, per-order reservations) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, **the complete merchant experience in the browser (register → approval → sign in → catalog → cart → quote → order → tracking → profile/password → sign out)**. Administration screens: stage 12. |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, the complete merchant experience in the browser, **and the administration screens (merchant review, products, inventory and ledger, order fulfillment) with safe re-authentication and idempotent retries**. |
 
 ## Stage log
 
@@ -26,10 +26,143 @@
 | 08 | ✅ Done (order creation + own-order reads) | Commit `2849466` |
 | 09 | ✅ Done (fulfillment + allocations) | Commit `6b5f592` |
 | 10 | ✅ Done (design system + shells) | Commit `e8a7ce8` |
-| 11 | ✅ Done (merchant experience) | 458/458 tests ×3 clean-copy runs, 87/87 end-to-end Chromium checks, axe 7 pages 0 violations, 19 mutants (21 runs) — below |
-| 12–18 | ⏳ Not started | — |
+| 11 | ✅ Done (merchant experience) | Commit `8be8fbe` — 458/458 tests ×3 clean-copy runs, 87/87 end-to-end Chromium checks, axe 7 pages 0 violations, 19 mutants (21 runs) — below |
+| 12 | ✅ Done (administration experience) | 473/473 tests ×3 clean-copy runs, 125/125 administration lifecycle checks + 87/87 merchant journey, axe 21 states 0 violations, 16 mutants — below |
+| 13–18 | ⏳ Not started | — |
 
-## Stage 11 — known weaknesses first
+## Stage 12 — known weaknesses first
+- **Username-lockout availability risk is still open** (SECURITY §7, T40): anyone can lock a username's sign-in
+  for 15 minutes, including an administrator's. Stage 16 / release gate.
+- **Stock inference** through repeated order or quote attempts (T57, T73) is slowed by per-merchant limits, not
+  eliminated.
+- **Stage-09 database consistency gaps** (event without state change; reserve row without allocation) remain
+  service-enforced only and are carried to stage 16. The administration UI shows what the server returns and
+  offers **no repair control** (nothing deletes history, edits allocations or changes stock silently).
+- **An unresolved administrator operation lives in memory only.** Refresh/close and sign-out ask for
+  confirmation, but navigating to another screen inside the app, or a session that expires, discards the kept
+  key and payload. The operator must then check the inventory ledger or the order history before acting again
+  (the server never applies a second movement for the same key, and a new attempt carries the old expected
+  version, so it is refused if the first one was applied — verified by mutation).
+- **Product create/edit and merchant status changes have no idempotency key** (server design since stages
+  05–06). An unclear outcome is never retried automatically: the UI tells the operator to look at the current
+  record (edit, status) or to search the list before creating again (create). A duplicate product after a lost
+  create response is therefore possible if the operator ignores that instruction; barcodes, when present, are
+  unique and stop exact duplicates.
+- Re-authentication needs a **new** authenticator code: a code already used in the same 30-second step is
+  refused (replay protection), so the operator may wait up to 30 seconds.
+- Product images are third-party https URLs loaded by the administrator's and traders' browsers
+  (`referrerPolicy=no-referrer`, CSP `img-src https:`); the image host learns viewers' IP addresses. Unchanged
+  from stage 06.
+- No category administration exists; category choices list active categories only. The inactive-category
+  fix (below) is preventive: categories can currently only change through the database.
+- The second test administrator in the browser run is a test-only database fixture (no administrator-creation
+  feature exists; `setup-admin` refuses a second bootstrap, verified in the same run).
+- Browser verification: Chromium only, plain HTTP test origin; axe-core automated rules only (no manual
+  screen-reader test). Toast messages stay visible briefly after navigating to another screen.
+
+## Stage 12 — what works end to end (verified in Chromium against the production build)
+Administrator 1 created with the real `setup-admin` in a pseudo-terminal (TOTP proof); a second bootstrap is
+refused → two merchants register in the UI → both administrators sign in with password + OTP → landing page
+(links only, no figures) → merchant review: pending filter, approval, a **stale second administrator** gets
+`VERSION_CONFLICT` with the current record and only currently valid choices; suspension requires a reason and
+explains that sessions end and orders/reservations are not cancelled → products: price with three decimals and
+an http image refused before any request; exact creation (12550 piastres, barcode `000123`, inactive, zero
+stock, no image); empty barcode stored as NULL; Arabic-Indic price; duplicate barcode shown on the field;
+**concurrent edit** keeps the unsaved value and shows the current record; no delete/demo control → inventory:
+preview, receipt recorded **once despite a double click**, packaging lock explained; activation → two orders
+confirmed (reservations 5 + 3) → total below reserved and no-op refused in the form → **adjustment response
+lost after commit**: "outcome unknown" with the key, form locked, same-key retry returns the original
+(applied once) → **transition response lost**: same-key retry shows the original operation and the current
+order → **expired re-authentication**: dedicated sign-in panel, nothing executed, new code, action still
+unsent, explicit re-confirmation with the kept reason → cancellation releases only that order's reservation →
+**suspension while an administrator has the order open**: shipping refused by the server, page re-read,
+shipping disabled with the explanation, cancellation still possible; trader sessions ended; order and
+reservation untouched → re-approval, shipping (stock consumed), delivery (terminal) → ledger sums equal
+balances → 429 (Retry-After) and 5xx (request reference) shown as errors, never empty lists → a slower older
+filter response never replaces a newer one → sign-out with an unresolved operation asks first → traders get
+the forbidden view on `#/admin/*` and **made no `/api/v1/admin` request**.
+
+## Stage 12 — what was built
+| Area | Files | Summary |
+|---|---|---|
+| **Catalog consistency (server)** | `src/server/services/products.ts` | Trader list, detail, brand filter and counts exclude products of **inactive categories** (detail → identical 404; `?category=<inactive>` → existing 400). Administrator views unchanged; snapshots/reservations untouched |
+| **Secure keys** | `src/web/api/client.ts`, `pages/cart/Checkout.tsx` | `newRequestKey` throws `SecureRandomUnavailableError` without `crypto.getRandomValues` (no fallback); checkout and admin screens show an explicit message and send nothing |
+| Admin API | `src/web/api/admin.ts` | one function per real endpoint (merchants, products, inventory, ledger, adjustments, orders, transitions) with response guards |
+| Admin logic | `src/web/admin/logic.ts`, `admin/unresolved.ts` | exact money parsing (no rounding), whole numbers, adjustment preview, merchant transition table (presentation), barcode/image rules; in-memory count of unresolved operations |
+| Safe operations | `hooks/useOperation.ts`, `pages/admin/{OperationNotice,Reauth}.tsx`, `session/identity.tsx` (`refresh`) | sending/unknown/reauth/rejected/done; one key per confirmed intention; same-key retry of the exact payload; real sign-in panel for 428, then identity refresh, record re-read, explicit re-confirmation |
+| Screens | `pages/admin/{AdminHome,Merchants,Products,Inventory,AdminOrders}.tsx` | landing, merchant list/detail/status, product list/create/edit/activation, inventory list/ledger/adjustment, order list/detail/transitions |
+| App | `App.tsx`, `layouts/Shells.tsx`, `hooks/useLoad.ts` (`useStickyLoad`), CSS | admin routes mounted only in the administrator shell; landing nav entry; record kept on screen while re-reading so drafts survive |
+
+## Checks run in stage 12 (2026-11-12 UTC, this container, Node 24.22.1 / npm 11.19.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Production build | `npm run build` | ✅ |
+| Full suite | `npm run check` | ✅ **473 tests, 473 pass, 0 fail** (+15: inactive categories 1 block, secure key 1, admin logic/markup 13) |
+| Clean reproduction ×3 | tracked + new files → `npm ci` → typecheck + `npm test` ×3 | ✅ 473/473 each run |
+| Dependency audit | `npm audit` | ✅ 0 vulnerabilities; package.json/lockfile and migrations unchanged |
+| **Administration lifecycle** | Chromium (Playwright), production build, real server process, disposable database, real sessions, 2 administrators + 2 merchants | ✅ **125/125 checks** (flow above); widths 360, 375, 768, 1366 on 10 administration pages without page-wide horizontal scroll; drawer opens/closes (Escape); collapsed filters on phones; no CSP violations or unexpected console errors |
+| Stage-11 merchant journey (regression) | same harness | ✅ 87/87 |
+| Automated accessibility | axe-core 4.10.2 (scratch install), WCAG 2.0/2.1 A+AA rules | ✅ 0 violations on 21 states: 10 administration pages at 360 px and 1366 px + drawer open. Automated rules only |
+| Screen readers, other browsers, real HTTPS | — | NOT RUN |
+
+Test-only setup outside the UI (disposable database): the second administrator row (see weaknesses), minimum
+order 0 (settings are stage 14), and moving one session's sign-in time back 16 minutes to expire recent
+authentication. Orders were placed by the merchants' own sessions through the real API; everything else went
+through the screens. Each browser context used its own client address via `TRUST_PROXY`.
+
+**Defects found by the browser run and fixed:** the re-authentication panel stayed on screen after a
+successful sign-in (operation state not cleared) → cleared, with an explicit "prepared action not executed"
+notice and a re-confirm button; the terminal-state message was missing after the final transition.
+
+### Mutation evidence (16 mutants, each restored)
+| Mutation | Result | Caught by |
+|---|---|---|
+| Trader list / detail / brand counts include inactive categories (3) | caught | products integration tests |
+| Weak `Math.random` fallback for keys | caught | client unit test + source rule |
+| Money: 3 decimals accepted / float multiplication | caught | admin logic tests (0.29, 1.15 cases) |
+| Barcode: empty string kept / trimmed or zeros stripped | caught | admin logic tests |
+| Preview: total equal to reserved refused / no-op not flagged | caught | admin logic tests |
+| Image: non-https allowed | caught | admin logic tests |
+| Merchant table: approved→pending without reason | caught | admin logic tests |
+| Unresolved counter released twice | caught | admin logic tests |
+| Cancellation explanation loses "this order only" | caught | markup test |
+| **Same-key retry sends a NEW key** (browser) | caught | lifecycle run — and **also blocked by another layer**: the new request carried the old expected version and the server refused it, so no second movement was written |
+
+Not mutation-tested (verified by the browser run only): no automatic execution after re-authentication, the
+sign-out guard, stale admin filter responses.
+
+## Limitations (known)
+See "known weaknesses" above. Not in this stage by design: CSV import, settings administration, reports,
+print/export, backup/recovery, password/MFA recovery, payments, deployment, category and administrator
+management.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 13.
+
+## Files changed in stage 12 (all under `alkhayr-b2b/`)
+Server: `src/server/services/products.ts`.
+Web new: `src/web/api/admin.ts`, `src/web/admin/{logic,unresolved}.ts`, `src/web/hooks/useOperation.ts`,
+`src/web/pages/admin/{AdminHome,AdminOrders,Inventory,Merchants,OperationNotice,Products,Reauth}.tsx`.
+Web modified: `src/web/{App.tsx}`, `src/web/api/client.ts`, `src/web/hooks/useLoad.ts`, `src/web/layouts/Shells.tsx`,
+`src/web/pages/cart/Checkout.tsx`, `src/web/session/identity.tsx`, `src/web/styles/components.css`.
+Tests: new `tests/unit/web-admin.test.ts`; modified `tests/integration/{products,web-build}.test.ts`, `tests/unit/web-client.test.ts`.
+Docs: `README.md`, `docs/{API_CONTRACT,FRONTEND_API,DESIGN_SYSTEM,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
+Not touched: migrations, package files, other server services.
+
+## How to continue
+Next: send **PROMPT 13**. The administration screens are in place on the existing endpoints; later stages
+(import, settings, reports/print, backup, recovery, deployment) plug into the same shell, `useOperation`
+and the re-authentication panel.
+
+---
+
+## Stage 11 record (retained)
+
+### Stage 11 — known weaknesses first
 - **Username-lockout availability risk is still open** (SECURITY §7, T40): anyone can lock a username's
   sign-in for 15 minutes. Stage 16 / release gate.
 - **Stock inference** through repeated order or quote attempts (T57, T73) is slowed by per-merchant limits,
@@ -41,12 +174,12 @@
   logout gets a new key).
 - No password reset or MFA recovery exists in the portal (documented on the sign-in page).
 - Products in an inactive category still appear in the trader catalog (stage-06 behaviour); ordering them is
-  refused by the server with `PRODUCT_UNAVAILABLE` and the UI explains it. No category administration
-  endpoint exists to deactivate categories yet.
+  refused by the server with `PRODUCT_UNAVAILABLE` and the UI explains it. **Fixed in stage 12** (hidden from
+  the trader catalog).
 - Browser verification: Chromium only, plain HTTP test origin; axe-core automated rules only (no manual
   screen-reader test).
 
-## Stage 11 — what works end to end (verified in Chromium against the production build)
+### Stage 11 — what works end to end (verified in Chromium against the production build)
 Register (generic response, no auto sign-in) → pending account (profile correction only; no catalog/order
 requests) → administrator approval through the real API → explicit status refresh → catalog (server
 categories/brands, search, sort, load more, stale-search protection, filters kept when returning from a
@@ -61,7 +194,7 @@ UI → logout (server revocation verified, draft cleared, back button shows noth
 sessions ended, old password refused, new accepted) → administrator sign-in with the explicit OTP option
 (missing/wrong OTP and missing option all generic).
 
-## Stage 11 — what was built
+### Stage 11 — what was built
 | Area | Files | Summary |
 |---|---|---|
 | **Server (minimal addition)** | `src/server/services/orders.ts`, `routes/orders.ts`, `auth/rate-limit.ts` | `evaluateOrderLines` extracted unchanged from order creation (stage 08/09 tests pass unchanged); new read-only `POST /api/v1/orders/quote` (approved, CSRF/Origin/JSON, strict body, read transaction, no writes, `order_quote_account` 60/10 min) |
@@ -76,7 +209,7 @@ sessions ended, old password refused, new accepted) → administrator sign-in wi
 | App | `App.tsx`, `router.tsx`, `layouts/Shells.tsx` | routes per identity (pending / merchant / admin incl. own-company purchasing), UI keyed by user+merchant, internal-only navigation |
 | Components | `ErrorSummary.tsx`, `Form.tsx`, `QuantityStepper.tsx`, `Summary.tsx`, `Toast.tsx`, CSS | error summary, stable field ids, accessible label suffix, LTR-isolated rates, top-positioned toasts, cart/filter styles |
 
-## Checks run in stage 11 (2026-11-12 UTC, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 11 (2026-11-12 UTC, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -121,17 +254,17 @@ LTR-isolated rate. No protection removed.
 | J03 stale-search check and loop abort removed | **survived** | **blocked by the independent effect-cleanup abort** (the old request is cancelled on query change) |
 | J04 all three stale-search layers removed | caught | browser journey (older results replaced newer ones) |
 
-## Limitations (known)
+### Limitations (known)
 See "known weaknesses" above. Additionally: no print/export (stage 14), no administration screens (stage 12),
 no trader cancellation (no such endpoint), Chromium-only verification.
 
-## Open questions
+### Open questions
 None.
 
-## Remaining blockers
+### Remaining blockers
 None for stage 12.
 
-## Files changed in stage 11 (all under `alkhayr-b2b/`)
+### Files changed in stage 11 (all under `alkhayr-b2b/`)
 Server: `src/server/services/orders.ts` (evaluation extracted + quote handler), `src/server/routes/orders.ts`,
 `src/server/auth/rate-limit.ts`.
 Web new: `src/web/api/endpoints.ts`, `src/web/cart/{model.ts,storage.ts,CartContext.tsx}`, `src/web/checkout/submission.ts`,
@@ -144,7 +277,7 @@ Tests: new `tests/unit/web-cart.test.ts`; modified `tests/integration/{orders,we
 Docs: `README.md`, `docs/{API_CONTRACT,FRONTEND_API,DESIGN_SYSTEM,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
 Not touched: migrations, package files, other server services.
 
-## How to continue
+### How to continue
 Next: send **PROMPT 12** (administration screens) on the existing admin endpoints (merchants, products,
 inventory, orders/transitions), reusing these components, the `usePaged`/`useLoad` hooks, per-administrator
 operation keys and the 428 re-authentication flow (`#/login?admin=1&reason=reauth`).

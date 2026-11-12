@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ApiFailure, SessionCsrfToken } from '../../api/client.ts';
+import { SECURE_RANDOM_MESSAGE, SecureRandomUnavailableError, type ApiFailure, type SessionCsrfToken } from '../../api/client.ts';
 import type { OrderQuote } from '../../api/contracts.ts';
 import { createOrder, quoteOrder } from '../../api/endpoints.ts';
 import { useCart } from '../../cart/CartContext.tsx';
@@ -157,7 +157,16 @@ export function CheckoutPage({ csrf }: { csrf: SessionCsrfToken }) {
 
   const submit = () => {
     if (cart.pending || send.status === 'sending') return;
-    const pending = newSubmission(cart.cart, note);
+    let pending: PendingSubmission;
+    try {
+      pending = newSubmission(cart.cart, note);
+    } catch (err) {
+      if (err instanceof SecureRandomUnavailableError) {
+        setInfo(SECURE_RANDOM_MESSAGE); // nothing is sent without a secure key
+        return;
+      }
+      throw err;
+    }
     cart.setPending(pending); // stored before the request leaves
     void transmit(pending);
   };

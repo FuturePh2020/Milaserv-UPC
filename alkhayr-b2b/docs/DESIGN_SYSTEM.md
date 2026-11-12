@@ -119,3 +119,20 @@ the CSSOM, which the CSP permits. No style exception was required.
 - Toasts moved to the top under the header (max two) so they never cover the bottom tab bar or actions.
 - Merchant bottom tabs: الكتالوج · السلة (count) · طلباتي · حسابي.
 - Rates inside Arabic text are LTR-isolated («(14%)»).
+
+## 11. Stage 12 additions (administration)
+- Administrator navigation: الرئيسية (landing, links only, no figures) · الطلبات · المنتجات · المخزون · التجار ·
+  company purchasing; the landing entry is current only on `#/admin`.
+- Tables (`DataTable`) stay inside their card and scroll horizontally only within the table; filters collapse
+  under "تصفية وترتيب" on phones (verified at 360, 375, 768, 1366 px without page-wide horizontal scroll).
+- Stock figures: `c-stat-row` (total / reserved / available); signed differences are LTR-isolated with a true
+  minus sign. Preview of an adjustment uses the summary rows (current, proposed, difference, reserved unchanged,
+  available after).
+- Destructive or consequential actions (suspension, deactivation, cancellation, stock movement) always pass
+  through `ConfirmDialog` with the consequence spelled out; danger tone for suspension, deactivation and
+  cancellation.
+- Operation notices: sending (status), outcome unknown (warning, with the operation key), refusal (danger),
+  replay ("already recorded — not repeated", success).
+- Snapshot vs current: order lines show the ordered name/price/packaging, and a separate "الآن" column with the
+  current product state, packaging changes and availability; buyer data at order time is separate from the
+  merchant's current account.

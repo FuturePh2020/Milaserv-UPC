@@ -26,7 +26,13 @@ export const MERCHANT_NAV: readonly NavItem[] = [
 export const PENDING_NAV: readonly NavItem[] = [{ href: '#/account', label: 'حسابي', icon: 'user' }];
 
 export const ADMIN_NAV: ReadonlyArray<{ heading: string; items: readonly NavItem[] }> = [
-  { heading: 'العمليات', items: [{ href: '#/admin/orders', label: 'الطلبات', icon: 'orders' }] },
+  {
+    heading: 'العمليات',
+    items: [
+      { href: '#/admin', label: 'الرئيسية', icon: 'shield' },
+      { href: '#/admin/orders', label: 'الطلبات', icon: 'orders' },
+    ],
+  },
   {
     heading: 'الكتالوج والمخزون',
     items: [
@@ -48,6 +54,7 @@ export const ADMIN_NAV: ReadonlyArray<{ heading: string; items: readonly NavItem
 
 const isCurrent = (path: string, href: string) => {
   const target = href.replace(/^#/, '');
+  if (target === '/admin') return path === '/admin'; // the landing page is not a section
   return path === target || path.startsWith(`${target}/`) || (target === '/cart' && path === '/checkout');
 };
 

@@ -100,3 +100,8 @@ third-party content rendered by the browser only (never fetched server-side).
 | T72 | Account discovery through the sign-in UI (separate OTP step, factor-specific errors) | external | single request with optional OTP chosen by the user; one generic message; no separate verification endpoint | 11 ✅ |
 | T73 | Quote endpoint used to probe stock or flood evaluation | approved trader | status-only errors; 60 / 10 min per merchant; same probing limits as T57 (residual: bounds remain inferable slowly) | 11 (residual, documented) |
 | T74 | Stale client data (prices, packaging) silently ordered | trader | reviewed values sent as expected values; server conflict; new review and new key required | 08/11 ✅ |
+| T75 | Trader browser requests administration data | approved trader / bug | admin screens mounted only in the administrator shell; server role checks on every route | 12 ✅ (browser-verified: no `/api/v1/admin` request from trader contexts) |
+| T76 | Administrator credentials captured or replayed by a generic confirmation UI | bug / XSS | dedicated re-authentication panel posting to the real login; inputs cleared; no storage; TOTP replay protection | 12 ✅ |
+| T77 | Duplicate stock movement or transition after a lost response | network / operator | same key + exact payload retry (server replay); new attempts carry the old expected version and are refused | 09/12 ✅ |
+| T78 | Predictable operation keys from a weak random source | bug / old browser | `getRandomValues` only; refusal without it (no fallback) | 12 ✅ |
+| T79 | Products of inactive categories shown to traders | configuration | trader catalog list/detail/filters exclude inactive categories | 12 ✅ |

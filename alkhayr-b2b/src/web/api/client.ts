@@ -165,13 +165,28 @@ export function sessionCsrf(token: string): SessionCsrfToken {
   return token as SessionCsrfToken;
 }
 
+/** Thrown when no cryptographically secure random source exists; no weaker fallback is ever used. */
+export class SecureRandomUnavailableError extends Error {
+  constructor() {
+    super('crypto.getRandomValues is unavailable');
+    this.name = 'SecureRandomUnavailableError';
+  }
+}
+
+export const SECURE_RANDOM_MESSAGE =
+  'هذا المتصفح لا يوفر مولّد أرقام عشوائية آمنًا، لذلك لم يُرسل أي شيء. استخدم متصفحًا حديثًا (Chrome أو Edge أو Firefox أو Safari بإصدار حديث).';
+
 /**
- * Fresh UUID v4 for idempotency keys (one per intended action; reuse only for retries of it).
- * Built from crypto.getRandomValues (CSPRNG), which unlike crypto.randomUUID is also available
- * outside secure contexts (e.g. a plain-HTTP intranet test host).
+ * Fresh UUID v4 for idempotency/operation keys (one per intended action; reuse only for retries).
+ * Source: crypto.getRandomValues (Web Crypto CSPRNG). Unlike crypto.randomUUID and crypto.subtle it
+ * is exposed outside secure contexts too, so a plain-HTTP test host works; production still
+ * requires HTTPS for every other reason (cookies, transport). If it is missing, this THROWS:
+ * there is no Math.random, timestamp or counter fallback. Callers must not send the mutation.
  */
 export function newRequestKey(): string {
-  const b = crypto.getRandomValues(new Uint8Array(16));
+  const source = (globalThis as { crypto?: { getRandomValues?: <T extends ArrayBufferView>(a: T) => T } }).crypto;
+  if (!source || typeof source.getRandomValues !== 'function') throw new SecureRandomUnavailableError();
+  const b = source.getRandomValues(new Uint8Array(16));
   b[6] = (b[6]! & 0x0f) | 0x40; // version 4
   b[8] = (b[8]! & 0x3f) | 0x80; // RFC 4122 variant
   const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');

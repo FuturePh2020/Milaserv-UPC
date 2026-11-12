@@ -291,6 +291,29 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   writes nothing; returns merchant-safe amounts (no settings dump, no stock counts).
 - Traders still see no stock counts, administrator names or cancellation reasons.
 
+## 7h. Administration experience (implemented stage 12)
+- Administration screens mount only inside the administrator shell (after `/auth/me` reports an
+  administrator); traders reaching `#/admin/*` get the forbidden view and the browser run verified that no
+  trader context requested `/api/v1/admin`. The server authorizes every call regardless (stages 05–09).
+- Reads need a live administrator session; every mutation needs recent authentication (15 min), enforced by
+  the server (428). The client answers 428 with a **dedicated** sign-in panel (password + new TOTP code, fresh
+  pre-login token, real login endpoint); it never wraps credentials in a generic confirmation component, never
+  stores passwords, codes, CSRF or session tokens, and never executes the prepared action afterwards — the
+  operator re-reads the record and confirms again (new key).
+- Operation keys (inventory adjustments, order transitions, order requests) come from `crypto.getRandomValues`
+  only; without it nothing is sent (explicit message). Keys and exact payloads of unclear operations stay in
+  memory for a same-key retry; a key is never regenerated because a response was lost, and an edited form is
+  never sent under an old key.
+- Non-idempotent administrator writes (product create/edit, merchant status) are never retried automatically.
+- No repair, delete or history-editing control exists: the ledger and order history are read-only in the UI;
+  corrections are new reversing movements with a reason. Consistency recovery stays in stage 16.
+- No seeded/default administrators, no first-user-is-admin, no administrator-creation or recovery feature;
+  the only bootstrap is `setup-admin` on the host (refuses a second administrator).
+- Barcodes are sent exactly as typed (empty → `null`); prices are converted from decimal pounds to piastres
+  with integer arithmetic and extra precision is refused (never rounded); image URLs must be https without
+  credentials (the server re-validates and never fetches them). All text is rendered through React escaping.
+- Unchanged open risks: username lockout (T40) and slow stock inference (T57/T73).
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),

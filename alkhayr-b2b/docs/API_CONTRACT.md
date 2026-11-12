@@ -87,9 +87,9 @@ account-existence lookup, password-reset, MFA-reset or verification-email endpoi
 
 | GET `/api/v1/merchant/profile` | P/A/D | `{profile:{id,status,businessName,contactName,email,phone,governorate,address,version,updatedAt}}` of the session's own merchant. **No query parameters accepted** (400); no id in the path. | **05 ✅** |
 | PATCH `/api/v1/merchant/profile` | P/A/D (session token) | `{expectedVersion, businessName?, contactName?, email? (""/null clears), phone?, governorate?, address?}` (strict; at least one field). Same normalization as registration. Never changes status, role, credentials or access. 200 → `{profile}`; stale → `409 VERSION_CONFLICT` with `details.current.profile`. | **05 ✅** |
-| GET `/api/v1/products` | A/D (approved merchant or admin) | Active products only. Query (strict): `q` (1–80; literal substring of name/brand, or exact barcode), `category` (id from the database), `brand` (exact), `sort∈{name,newest,price_asc,price_desc}` (default name), `limit` 1–100 (25), `cursor`. → `{items:[CatalogProduct], nextCursor}` | **06 ✅** |
-| GET `/api/v1/products/:id` | A/D | `{product: CatalogProduct}`; inactive, unknown and malformed ids → identical 404 | **06 ✅** |
-| GET `/api/v1/catalog/filters` | A/D | `{categories:[{id,labelAr,productCount}], brands:[{name,productCount}]}` — categories from `product_categories` (active), counts and brands only from active products (≤ 500 brands) | **06 ✅** |
+| GET `/api/v1/products` | A/D (approved merchant or admin) | Active products **in active categories** only (stage 12). Query (strict): `q` (1–80; literal substring of name/brand, or exact barcode), `category` (id from the database), `brand` (exact), `sort∈{name,newest,price_asc,price_desc}` (default name), `limit` 1–100 (25), `cursor`. → `{items:[CatalogProduct], nextCursor}` | **06 ✅** |
+| GET `/api/v1/products/:id` | A/D | `{product: CatalogProduct}`; inactive product, product in an inactive category (stage 12), unknown and malformed ids → identical 404 | **06 ✅** |
+| GET `/api/v1/catalog/filters` | A/D | `{categories:[{id,labelAr,productCount}], brands:[{name,productCount}]}` — categories from `product_categories` (active), counts and brands only from active products in active categories (≤ 500 brands; stage 12) | **06 ✅** |
 | POST `/api/v1/orders` | A/D (session token) | Strict: `{requestKey (UUID v4), note? (≤ 500, NFC-trimmed; blank → null), items:[1–100 × {productId, cartons 1–100000, expectedCartonPriceCents, expectedPackSize}]}`. For the session's **own** merchant only (administrators: their own approved profile). → **201** `{replayed:false, order:Order}`; identical retry → **200** `{replayed:true, order:<original>}`. Details §3c. Limit 30 attempts / 10 min / merchant. | **08 ✅** |
 | POST `/api/v1/orders/quote` | A/D (session token) | **Read-only checkout preview (stage 11).** Strict `{items:[1–100 × {productId, cartons, expectedCartonPriceCents, expectedPackSize}]}` (no key, note, ids or amounts; 100-line limit first; 32 KiB). Same rules and errors as order creation (shared `evaluateOrderLines`). → `200 {quote:{items:[{lineNo, productId, name, brand, packSize, cartonPriceCents, cartons, lineTotalCents}], amounts:{…as Order.amounts}, minimumOrderMet, isDemo, quotedAt}}`. Writes nothing, reserves nothing, is not a price lock. Limit 60 / 10 min / merchant (`order_quote_account`). | **11 ✅** |
 | GET `/api/v1/orders` | A/D | Own finalized orders, newest first. Query (strict): `state∈{pending,confirmed,preparing,shipped,delivered,cancelled}`, `limit` 1–100 (25), `cursor` (bound to user, merchant and `state`). → `{items:[{id, displayNumber, state, isDemo, lineCount, cartonCount, totalCents, createdAt, updatedAt}], nextCursor}` | **08 ✅** |
@@ -234,3 +234,11 @@ Traders' own-order views keep `events [{fromState, toState, at}]` (no administra
 
 Product PATCH: `packSize` while the product has stock or reservations → `409 PACKAGING_LOCKED` with
 `details.current.product` (empty it with a traceable adjustment first; other fields stay editable).
+
+## 5. Stage 12 note: inactive categories in the trader catalog
+Before stage 12 a product whose category was inactive stayed visible in the trader catalog while ordering it
+was refused (`PRODUCT_UNAVAILABLE`). Now the trader list, search, brand filter, counts and detail exclude such
+products (detail answers the same 404 as a missing product; `?category=<inactive id>` keeps the existing 400
+`VALIDATION_FAILED`). Administrator product and inventory views still include them. Order snapshots,
+reservations and fulfillment are unchanged (confirmation of an order containing such a product is still
+refused with `CONFIRM_PRODUCT_UNAVAILABLE`). Covered by `tests/integration/products.test.ts` ("inactive categories").
