@@ -16,6 +16,7 @@
     "db:status": "node --env-file-if-exists=.env dist/server/cli.js db:status",
     "db:init": "node --env-file-if-exists=.env dist/server/cli.js db:init",
     "db:migrate": "node --env-file-if-exists=.env dist/server/cli.js db:migrate",
+    "setup-admin": "node --env-file-if-exists=.env dist/server/cli.js setup-admin",
     "typecheck": "tsc -p tsconfig.server.json && tsc -p tsconfig.web.json",
     "test": "node scripts/build.mjs && node --test --test-reporter=spec \"tests/**/*.test.ts\"",
     "check": "npm run typecheck && npm test"

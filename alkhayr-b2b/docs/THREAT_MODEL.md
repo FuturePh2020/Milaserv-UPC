@@ -20,7 +20,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | # | Threat | Actor | Control | Stage |
 |---|---|---|---|---|
 | T1 | Credential stuffing / brute force on login | external | scrypt, per-account + per-IP rate limits, generic errors, admin TOTP | 03/04 |
-| T2 | Admin TOTP replay or race | external w/ observed code | atomic last_otp_step guard | 04 |
+| T2 | Admin TOTP replay or race | external w/ observed code | `verifyTotp` returns the accepted step (03 ✅); enrollment step stored as baseline (03 ✅); atomic `last_otp_step` update at login (04) | 03/04 |
 | T3 | Self-registration as admin / mass assignment of role, status, prices | trader/visitor | strict schemas reject unknown fields; role only via CLI | 04/05 |
 | T4 | IDOR: trader reads another's orders/profile | approved trader | ownership in SQL WHERE, 404 for foreign IDs, signed cursors | 05/08 |
 | T5 | Pending/suspended trader sees prices or orders | trader | per-request status check; suspension revokes sessions | 05 |
@@ -44,7 +44,7 @@ third-party content rendered by the browser only (never fetched server-side).
 | T23 | Spoofed client IP to evade rate limits | external | XFF trusted only from configured proxy IPs | 04/17 |
 | T24 | Direct access to Node port bypassing proxy | external | bind to 127.0.0.1 / internal network; compose exposes proxy only; Host check | 17 |
 | T25 | Running two app instances on one SQLite file / NFS corruption | operator | exclusive instance lock (OS-released), network-filesystem refusal, documented constraint | 02 ✅ |
-| T26 | Loss of only admin (lost TOTP device) | operator | CLI reset-mfa on trusted host; cannot suspend sole admin via UI | 03/05/15 |
+| T26 | Loss of only admin (lost TOTP device) | operator | CLI reset-mfa on trusted host (15); cannot suspend sole admin via UI (05); setup-admin refuses a second bootstrap (03 ✅) | 03/05/15 |
 
 ## Accepted / residual risks (initial)
 - SQLite data file not encrypted at rest (rely on host disk encryption).
@@ -55,3 +55,9 @@ third-party content rendered by the browser only (never fetched server-side).
 | T27 | Schema changed or FKs disabled through an injected/buggy query on the HTTP path | bug / attacker with SQL injection | runtime connection authorizer denies DDL, ATTACH, PRAGMA writes, SAVEPOINT; parameters only | 02 ✅ |
 | T28 | Silent data loss or reset on startup/upgrade | operator error / bug | server never creates/migrates; explicit CLI; checksum + newer-schema guards; atomic migrations; `--confirm-backup` | 02 ✅ |
 | T29 | History tampering through ordinary UPDATE/DELETE | insider / bug | append-only and immutability triggers; RESTRICT foreign keys | 02 ✅ (database level) |
+| T30 | Hash-format abuse: stored/crafted hash with inflated scrypt cost exhausts CPU/RAM | attacker with DB write / bug | strict parser + parameter allow-list; no work for rejected params | 03 ✅ |
+| T31 | Password-hashing flood exhausts memory | external | ≤ 2 concurrent (≈ 258 MiB peak) and ≤ 32 queued; immediate rejection beyond | 03 ✅ (rate limits: 04) |
+| T32 | MFA secret disclosure from DB/backup | DB/backup theft | AES-256-GCM with HKDF key from APP_SECRET (not in DB), AAD per user; secret shown only in operator terminal; no QR service | 03 ✅ |
+| T33 | Wrong/rotated APP_SECRET silently disables or resets admin MFA | operator error | startup refuses (`MFA_KEY_MISMATCH`); nothing replaced | 03 ✅ |
+| T34 | Rogue or accidental admin creation (second bootstrap, trader promotion, web setup route) | operator / attacker | local TTY-only CLI with instance lock; refuses if an admin exists; never promotes; no HTTP route | 03 ✅ |
+| T35 | Password captured via shell history, process list or terminal echo | local observer | no CLI argument accepted; hidden raw-mode input; refused on non-TTY stdin | 03 ✅ (PTY-tested) |

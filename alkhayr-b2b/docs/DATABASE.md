@@ -1,6 +1,6 @@
 # ALKHAYR — Database Contract
 
-Status: **Implemented in stage 02** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
+Status: **Implemented in stage 02; stage 03 needed no schema change (see §8)** (`migrations/0001_initial.sql`, `src/server/database/*`, CLI
 `db:status` / `db:init` / `db:migrate`). The SQL file is the authoritative schema; this document
 explains it. Operator procedures: [`MIGRATION.md`](MIGRATION.md).
 
@@ -26,7 +26,35 @@ explains it. Operator procedures: [`MIGRATION.md`](MIGRATION.md).
 - Available stock is **never stored**: `available = on_hand − reserved`.
 
 ## 3. Tables (13)
-Twelve contract tables plus `product_categories` (D-029), which holds the owner-approved categories as data.
+The schema has **13 tables**: the 12 tables of the original blueprint plus **one additional table, `product_categories`**.
+
+| # | Table | Origin |
+|---:|---|---|
+| 1 | `auth_users` | blueprint |
+| 2 | `merchants` | blueprint |
+| 3 | `sessions` | blueprint |
+| 4 | `products` | blueprint |
+| 5 | `orders` | blueprint |
+| 6 | `order_items` | blueprint |
+| 7 | `order_events` | blueprint |
+| 8 | `inventory_ledger` | blueprint |
+| 9 | `audit_logs` | blueprint |
+| 10 | `rate_limits` | blueprint |
+| 11 | `business_settings` | blueprint |
+| 12 | `schema_migrations` | blueprint |
+| 13 | `product_categories` | **added in stage 02 (D-029)** |
+
+Why the 13th table: the owner asked to *persist* the four initial categories and not hardcode
+their labels. Storing them as rows (id, Arabic label, sort order, active flag) lets
+`products.category` reference them with a foreign key and lets later stages add or deactivate a
+category through a migration or administration, without rewriting a CHECK constraint. Nothing from the
+original 12-table design was removed or merged.
+
+**Absent barcode:** a product without a barcode has `barcode = NULL`. The empty string `''` is not a
+valid value (rejected by `products_barcode_format`); services must convert blank input to `NULL`
+before writing. Uniqueness applies only to non-NULL barcodes (partial unique index
+`WHERE barcode IS NOT NULL`), so any number of products may have no barcode, while each non-NULL
+barcode — compared as exact text, leading zeros included — appears at most once.
 
 | Table | Purpose / key rules |
 |---|---|
@@ -35,7 +63,7 @@ Twelve contract tables plus `product_categories` (D-029), which holds the owner-
 | `merchants` | UUID PK; `user_id` UNIQUE FK→auth_users; business/contact name, optional email, phone (digits/+), governorate, address with length CHECKs; `status ∈ {pending, approved, suspended}`; `version` must increase by exactly 1 on every UPDATE (trigger). |
 | `sessions` | `token_hash` PK = SHA-256 hex of the raw token (CHECK 64 lowercase hex; a raw token cannot fit); FK user **ON DELETE CASCADE** (credentials, not history); created/last_seen/expires/auth_at/password_changed_at with time-order CHECK. `csrf_secret` removed (D-030). WITHOUT ROWID. |
 | `product_categories` | `id` PK (`chocolate`, `candy`, `wafers_biscuits`, `snacks_nuts`), unique Arabic `label_ar`, unique `sort_order`, `active`. Seeded by 0001; must equal `src/shared/categories.ts` (test). Deletion blocked (deactivate instead). |
-| `products` | UUID PK; name/brand; `category` FK→product_categories; `barcode` TEXT (1–32 of `[0-9A-Za-z-]`, leading zeros kept, **NULL for none**, empty string rejected) with partial UNIQUE index; `image_url` https only; `price_cents` 1…100,000,000; `on_hand` 0…1e9; `reserved ≥ 0`; **`reserved ≤ on_hand`**; `pack_size` 1…10,000; `minimum_cartons` 1…100,000; `active`, `is_demo`; `version` +1 on every UPDATE including stock/reservation changes. |
+| `products` | UUID PK; name/brand; `category` FK→product_categories; `barcode` TEXT or NULL (NULL = the product has no barcode; otherwise 1–32 of `[0-9A-Za-z-]`, leading zeros kept; `''` invalid), unique among non-NULL values via a partial UNIQUE index; `image_url` https only; `price_cents` 1…100,000,000; `on_hand` 0…1e9; `reserved ≥ 0`; **`reserved ≤ on_hand`**; `pack_size` 1…10,000; `minimum_cartons` 1…100,000; `active`, `is_demo`; `version` +1 on every UPDATE including stock/reservation changes. |
 | `orders` | UUID PK; `display_number` `AK-YYMMDD-XXXXXX` UNIQUE; FKs merchant/creator; `state` (6 values); snapshot of `subtotal_cents` (≥1), `shipping_cents`, `shipping_taxable`, `tax_bps`, `tax_base_cents` (= subtotal + taxable shipping, CHECK), `tax_cents` (≤ base), `total_cents` (= subtotal + tax + shipping, ≤ 1e13), `minimum_order_cents`; buyer name/contact/phone/governorate/address snapshot; `note`; `is_demo`; `request_key` UUID + `request_digest` SHA-256 hex; **`UNIQUE(merchant_id, request_key)`**; `version`. Triggers: insert only as `pending`/version 1; every UPDATE bumps version by 1; **only `state`, `version`, `updated_at` may change**; legal transitions only; no DELETE. |
 | `order_items` | PK `(order_id, product_id)` → one line per product; `UNIQUE(order_id, line_no)`; product name/brand/barcode/pack-size/unit-price snapshot; `cartons` 1…100,000; `line_total_cents = unit_price_cents × cartons` (CHECK). Immutable (no UPDATE/DELETE). WITHOUT ROWID. |
 | `order_events` | Autoincrement id; FK order/actor; `(old_state, new_state)` CHECK allows only `NULL→pending` and the legal transitions; append-only. |
@@ -66,7 +94,7 @@ else is seeded: no users, passwords, sessions, products, orders, balances or aud
 | Orders, order items, order events, inventory ledger, schema history | Never deleted or updated (orders: only state/version/updated_at change) | Triggers |
 | Products, categories, merchants, users referenced by history | Cannot be deleted while referenced; deactivate/suspend instead | FKs `ON DELETE RESTRICT` (no cascades from history); category delete trigger |
 | Sessions | Disposable; deleted on logout/expiry; cascade with an (unreferenced) user | FK `ON DELETE CASCADE` |
-| Audit logs | Kept ≥ 365 days; purge of older rows only | Trigger (purge command: later stage) |
+| Audit logs | **Retention policy: kept for at least 365 days.** Rows younger than 365 days cannot be deleted; rows older than 365 days may be removed only by an explicit operator purge (command planned for a later stage). Nothing is deleted automatically. | Trigger `audit_logs_retention_guard` (D-014) |
 | Rate-limit rows | Disposable; expired rows purged (stage 04) | — |
 | Business settings | Single row, never deleted | CHECK + trigger |
 | Unreferenced merchant/user rows (e.g. rejected registrations) | Physically deletable when nothing references them | FKs |
@@ -100,3 +128,15 @@ else is seeded: no users, passwords, sessions, products, orders, balances or aud
 ## 7. Legacy (2.0.1) migration
 Not applicable — BUILD_NEW (D-001). No existing database was supplied, so no real data was migrated.
 If one is supplied later, see MIGRATION.md §4 before touching it.
+
+## 8. Authentication columns (stage 03; no migration required)
+Stage 03 inspected the schema: every field the security primitives need already exists in 0001, so
+no migration was added and 0001 was not modified.
+
+| Column | Stored value |
+|---|---|
+| `auth_users.password_hash` | `$scrypt$v=1$ln=17,r=8,p=1$<16-byte salt b64url>$<32-byte key b64url>` (91 chars; CHECK 20–512) |
+| `auth_users.totp_ciphertext` | `v1.<b64url(nonce‖ciphertext‖tag)>` AES-256-GCM, key HKDF(APP_SECRET,"totp"), AAD `alkhayr:totp:v1:<user id>` (67 chars for a 20-byte secret; CHECK 20–1024); required for admins |
+| `auth_users.last_otp_step` | Last accepted TOTP time step. `setup-admin` stores the step proven during enrollment, so that code cannot be replayed at first login. Stage 04 advances it with `UPDATE … WHERE last_otp_step IS NULL OR last_otp_step < ?` |
+| `auth_users.password_changed_at` | Set at creation; used by stage 04 to invalidate sessions after password changes |
+| `audit_logs` (`admin.bootstrap`) | actor = new admin, target `user`/id, metadata `{"method":"cli","mfa":"totp"}` only |

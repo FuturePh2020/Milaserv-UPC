@@ -103,6 +103,12 @@ describe('real page and static assets', () => {
   });
 });
 
+describe('process output', () => {
+  test('the bundled server starts without Node warnings (module type is declared next to the bundle)', () => {
+    assert.ok(!/Warning:/.test(server.stderr()), server.stderr());
+  });
+});
+
 describe('health endpoint', () => {
   test('GET /healthz returns exactly {status:"ok"} and no-store', async () => {
     const res = await rawRequest(server.port, { path: '/healthz' });

@@ -5,11 +5,14 @@ import { DatabaseError } from './errors.ts';
 import { acquireInstanceLock, type InstanceLock } from './instance-lock.ts';
 import { inspectSchema, loadMigrations, quickCheck } from './migrations.ts';
 import { createReadinessProbe, type ReadinessProbe } from './readiness.ts';
+import { assertAdministratorMfaReadable } from '../auth/mfa-key-check.ts';
 
 export interface RuntimeDatabase {
   readonly db: DatabaseSync;
   readonly schemaVersion: number;
   readonly readiness: ReadinessProbe;
+  /** Number of administrators (0 = setup-admin has not been run yet). */
+  readonly administrators: number;
   close(): void;
 }
 
@@ -18,6 +21,7 @@ export const OPERATOR_COMMANDS = {
   init: 'npm run db:init   (release: node dist/server/cli.js db:init)',
   migrate: 'npm run db:migrate -- --confirm-backup   (release: node dist/server/cli.js db:migrate --confirm-backup)',
   status: 'npm run db:status   (release: node dist/server/cli.js db:status)',
+  setupAdmin: 'npm run setup-admin   (release: node dist/server/cli.js setup-admin)',
 } as const;
 
 /**
@@ -53,6 +57,8 @@ export function openRuntimeDatabase(config: AppConfig, migrationsDir: string): R
     if (problems.length > 0) {
       throw new DatabaseError('INTEGRITY_CHECK_FAILED', `SQLite quick_check reported ${problems.length} problem(s). Do not use this database; restore from a verified backup.`);
     }
+    // Administrator MFA secrets must decrypt with the configured APP_SECRET (fail closed, never reset).
+    const { administrators } = assertAdministratorMfaReadable(db, config.appSecret);
     // From here on the connection can no longer change schema or PRAGMA settings.
     db.close();
     db = openDatabase(config.databasePath, { mustExist: true, runtime: true });
@@ -63,6 +69,7 @@ export function openRuntimeDatabase(config: AppConfig, migrationsDir: string): R
       db: opened,
       schemaVersion: state.version,
       readiness,
+      administrators,
       close() {
         if (closed) return;
         closed = true;

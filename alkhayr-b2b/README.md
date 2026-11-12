@@ -2,20 +2,21 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 02 complete — foundation plus SQLite schema, migrations and operator CLI. There is
-no login, catalog or ordering yet. See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+**Status:** Stage 03 complete — foundation, SQLite schema/migrations, security primitives and local
+administrator enrollment. There is no web login, catalog or ordering yet (login: stage 04). See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
 
 ## Quick start (Node.js 24.22.1 required)
 ```sh
-cp .env.example .env      # local development; never commit .env
+cp .env.example .env      # local development; never commit .env; set APP_SECRET + BACKUP_KEY
 npm ci
 npm run build
-npm run db:init           # once: creates data/alkhayr.db (the server never creates or migrates it)
-npm start                 # or: npm run dev  -> http://localhost:3000
+npm run db:init           # 1. once: creates data/alkhayr.db (the server never creates or migrates it)
+npm run setup-admin       # 2. once, interactive terminal, server stopped: first administrator + TOTP
+npm start                 # 3. or: npm run dev  -> http://localhost:3000
 npm run check             # typecheck + build + tests
 ```
 Health: `GET /healthz` (process alive) · `GET /readyz` (database ready).
-Database operations and upgrades: [`docs/MIGRATION.md`](docs/MIGRATION.md).
+Operator procedures (database, administrator enrollment, upgrades): [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
 Production requires `NODE_ENV=production`, an `https://` `APP_ORIGIN`, and independently generated
 `APP_SECRET` / `BACKUP_KEY` (see `.env.example`). Run one instance per data directory, on a local
@@ -30,7 +31,7 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/BLUEPRINT_AR.md` | Original blueprint and staged prompts (verbatim) |
 | `docs/SPEC.md` | Product scope, roles, business rules |
 | `docs/DATABASE.md` | Implemented schema, constraints, retention and migration policy |
-| `docs/MIGRATION.md` | Operator procedures: init, upgrade, startup refusals, recovery requirements |
+| `docs/MIGRATION.md` | Operator guide: init → admin enrollment → start, upgrades, startup refusals, recovery |
 | `docs/API_CONTRACT.md` | `/api/v1` endpoints, errors, transitions |
 | `docs/SECURITY.md` | Security policy and verification status |
 | `docs/THREAT_MODEL.md` | Threats and controls |

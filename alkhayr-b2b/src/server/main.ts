@@ -106,7 +106,10 @@ function main(): void {
   server.listen(config.port, config.host, () => {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : config.port;
-    log.info('listening', { ...describeConfig(config), port, webAssets: staticFiles.available, schemaVersion: database.schemaVersion });
+    log.info('listening', { ...describeConfig(config), port, webAssets: staticFiles.available, schemaVersion: database.schemaVersion, administrators: database.administrators });
+    if (database.administrators === 0) {
+      log.warn('no_administrator', { hint: 'stop the server and run the local setup-admin command to enroll the first administrator' });
+    }
   });
 }
 

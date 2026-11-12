@@ -113,6 +113,9 @@ export async function build({ dev = false, outDir = path.join(projectRoot, 'dist
   await rm(path.join(outDir, 'web'), { recursive: true, force: true });
   await mkdir(path.join(outDir, 'web'), { recursive: true });
   await esbuild.build(serverOptions({ dev, outDir }));
+  // The bundles are ES modules: declare it next to them so Node never has to guess
+  // (and never warns) regardless of any package.json around the release.
+  await writeFile(path.join(outDir, 'server', 'package.json'), JSON.stringify({ type: 'module', private: true }) + '\n');
   const web = await esbuild.build(webOptions({ dev, outDir }));
   const files = await finalizeWeb(web.metafile, { dev, outDir });
   return { outDir, files };

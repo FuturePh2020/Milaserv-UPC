@@ -7,6 +7,8 @@ import { DatabaseError } from '../database/errors.ts';
 import { acquireInstanceLock } from '../database/instance-lock.ts';
 import { applyMigrations, inspectSchema, loadMigrations, quickCheck, type Migration } from '../database/migrations.ts';
 import { OPERATOR_COMMANDS } from '../database/runtime.ts';
+import { createTerminalPrompter, NotInteractiveError, type Prompter } from './prompt.ts';
+import { setupAdmin } from './setup-admin.ts';
 
 /**
  * Trusted-operator command line. Runs on the server host only; nothing here is
@@ -25,7 +27,13 @@ Commands:
   db:migrate --confirm-backup  Apply pending migrations to an existing database.
                                The server must be stopped. --confirm-backup affirms that a
                                verified, restorable backup of the current database exists.
+  setup-admin                  Enroll the FIRST administrator interactively (password + TOTP).
+                               Requires an initialized database, APP_SECRET, a stopped server and
+                               an interactive terminal. Takes no arguments; secrets are never
+                               accepted on the command line.
   help                         Show this help.
+
+Initialization sequence: db:init -> setup-admin -> start the server.
 
 Configuration comes from the environment (and .env via the npm scripts): DATA_DIR etc.
 Exit codes: 0 success, 1 failure, 2 usage error.`;
@@ -40,6 +48,8 @@ export interface CliContext {
   migrationsDir: string;
   io: Io;
   now?: () => number;
+  /** Interactive input; defaults to the controlling terminal (refused when not a TTY). */
+  createPrompter?: () => Prompter;
 }
 
 function describePending(pending: readonly Migration[]): string {
@@ -144,10 +154,27 @@ function dbMigrate(ctx: CliContext, args: readonly string[]): number {
   }
 }
 
-export function runCli(argv: readonly string[], ctx: CliContext): number {
+export async function runCli(argv: readonly string[], ctx: CliContext): Promise<number> {
   const [command, ...args] = argv;
   try {
     switch (command) {
+      case 'setup-admin': {
+        if (args.length > 0) {
+          ctx.io.err('setup-admin takes no arguments. Usernames and passwords are entered interactively; passwords are never accepted as arguments.');
+          return 2;
+        }
+        let prompter: Prompter;
+        try {
+          prompter = (ctx.createPrompter ?? (() => createTerminalPrompter()))();
+        } catch (err) {
+          if (err instanceof NotInteractiveError) {
+            ctx.io.err(`Error [NOT_INTERACTIVE]: ${err.message}`);
+            return 1;
+          }
+          throw err;
+        }
+        return await setupAdmin({ config: ctx.config, migrationsDir: ctx.migrationsDir, prompter, err: ctx.io.err, ...(ctx.now ? { now: ctx.now } : {}) });
+      }
       case 'db:status':
         return dbStatus(ctx);
       case 'db:init':
@@ -187,7 +214,15 @@ function main(): void {
     }
     throw err;
   }
-  process.exitCode = runCli(process.argv.slice(2), { config, migrationsDir: path.join(appRoot, 'migrations'), io });
+  runCli(process.argv.slice(2), { config, migrationsDir: path.join(appRoot, 'migrations'), io }).then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (err: unknown) => {
+      io.err(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+      process.exitCode = 1;
+    },
+  );
 }
 
 // Only run when executed as the CLI bundle (not when imported by tests).
