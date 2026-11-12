@@ -1,0 +1,26 @@
+# ALKHAYR — Decision Log
+
+Format: ID · status · decision · reason. "Proposed" = default the next stages follow unless the
+product owner overrides it. "Open" items live in PROJECT_STATE.md → Open questions.
+
+| ID | Status | Decision | Reason / evidence |
+|---|---|---|---|
+| D-001 | Accepted | Execution mode **BUILD_NEW**. | No 2.0.1 source supplied. Repo `main` holds only `README.md` and `Dashboard.jsx`, an unrelated HR/team-tasks/leave dashboard with hardcoded mock data (no backend, no catalog/orders). Other remote branches (Bazaar Pop EasyOrders theme, leads CRM, Milaserv360, sidebar scaffold) contain no ALKHAYR code (`git grep -i "alkhayr\|الخير"` → no matches). |
+| D-002 | Accepted | Project lives in `alkhayr-b2b/` inside this repository; all paths in docs are relative to it. Existing `Dashboard.jsx`/`README.md` at repo root are left untouched. | Keeps the unrelated existing file separate; matches blueprint's target tree root name. |
+| D-003 | Proposed | Runtime **Node.js 24.22.1** (available at `/opt/node24/bin/node` here; default `node` on PATH is 22.23.4). Toolchain must invoke Node 24 explicitly. | Blueprint baseline; Node 24 is an LTS line. Verified binary present and working. |
+| D-004 | Proposed | SQLite driver: built-in **`node:sqlite`** (`DatabaseSync`) behind `database/connection.ts`; fallback `better-sqlite3@12` if stage 02 tests reveal a gap. | No native build/supply-chain surface; Node 24 `node:sqlite` loads without experimental warning here, bundles SQLite 3.53.4, exposes `backup()` (needed for stage 15). `better-sqlite3@12` also installed and ran successfully in the probe (prebuilt binary downloaded) — viable fallback. |
+| D-005 | Accepted | REST under `/api/v1`; no legacy `action` endpoint or compatibility adapter. | BUILD_NEW; no old clients exist. |
+| D-006 | Proposed | Hash-based SPA routing (`#/catalog`, `#/admin/orders/…`). | Blueprint stage 01 preference; avoids server fallback to index.html for unknown paths. |
+| D-007 | Accepted | Production cookie `__Host-alkhayr_session` (Secure). Development on `http://localhost` uses `alkhayr_session` without Secure; production mode refuses to start unless `APP_ORIGIN` is `https://`. | `__Host-` requires Secure, which browsers ignore over plain http. |
+| D-008 | Accepted | `428 RECENT_AUTH_REQUIRED` signals administrative re-authentication (password + TOTP via `POST /api/v1/auth/reauth`). Missing `expectedVersion` is a 400 validation error. | Blueprint stage 11 lists 428 among handled statuses; gives the UI one unambiguous code for the reauth path. |
+| D-009 | Proposed — **owner review** | Tax base = goods subtotal only; `tax = round_half_up(subtotal × tax_bps / 10000)` with BigInt; shipping is fixed and untaxed. Default `tax_bps = 0`. | Blueprint requires a documented rounding rule and forbids hardcoding a statutory rate. Whether shipping is taxable is a business/tax-advisor decision (Q-3). |
+| D-010 | Proposed | Traders cannot cancel orders in the core release; cancellation is an admin transition. | Blueprint lists admin cancel only ("تأكيد/شحن/إلغاء إداري"). Trader asks admin to cancel. |
+| D-011 | Accepted | Supplied logo (`assets/brand/alkhayr-logo-original.png`, 1890×832 RGBA transparent, SHA-256 `289a177d…f794`) is the authentic brand mark: red «Khayr» + blue «AL» / «CO.». Palette: cream surfaces, warm red primary, logo blue as restrained secondary accent. Optimized derivatives produced in stage 10; original kept unchanged. | Supplied by owner in stage-00 message. Blueprint said "cream and red"; blue comes from the real logo and is used sparingly. |
+| D-012 | Accepted | Order `id` = UUID v4; `display_number` = `AK-YYMMDD-` + 6 random Crockford-base32 chars (unique, retry on collision). Display number is never an authorization token. | Blueprint stage 08: collision-resistant, not predictable sequence. |
+| D-013 | Accepted | Timestamps INTEGER epoch ms UTC; displayed in `Africa/Cairo`. | Unambiguous sorting; Egyptian users. |
+| D-014 | Proposed | Audit retention 365 days; rate-limit rows ≤ 30 days; purge via CLI/timer. | Blueprint asks for documented retention. |
+| D-015 | Accepted | `setup-admin` creates the admin user **and** an approved merchant profile for it; admin test/operational orders go through that profile and are marked `is_demo` only if demo products are used. | Blueprint table §5 and stage 03. |
+| D-016 | Proposed | Trader catalog shows availability as a status (`متوفر` / `كمية محدودة` ≤ threshold / `غير متوفر`) plus the max orderable cartons only when needed for a conflict message; exact on_hand/reserved visible to admins only. Finalized in stage 06. | "only permitted availability data to traders". |
+| D-017 | Accepted | Money in integer piasters; DB columns `*_cents` keep the blueprint name though the unit is piasters (1/100 EGP). | Blueprint naming; avoids rename churn. |
+| D-018 | Accepted | Containers: Docker CLI 29.9.2 + Compose v5.6.1 present; daemon startable manually; Docker Hub pulls returned **429 Too Many Requests** here. Image build/run treated as **UNVERIFIED** until a pull succeeds or tests run on the target host. | Stage-00 probe evidence. |
+| D-019 | Accepted | Usernames: NFKC → lowercase, `^[a-z0-9][a-z0-9._-]{2,31}$`. Phone: Egyptian mobile `01[0125]\d{8}` or E.164 `+\d{8,15}` normalized. | Consistent validation across registration/profile (stage 05). |
