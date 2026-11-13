@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { apiGet, apiMutate, sessionCsrf, type ApiFailure, type SessionCsrfToken } from '../api/client.ts';
+import { apiGet, apiMutate, notePageEpoch, sessionCsrf, type ApiFailure, type SessionCsrfToken } from '../api/client.ts';
 import { isLogoutResponse, isMeResponse, type MeResponse } from '../api/contracts.ts';
 import { clearAllDrafts } from '../cart/storage.ts';
 
@@ -71,6 +71,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
         if (controller.signal.aborted) return;
         if (r.ok) {
           wasAuthenticated.current = true;
+          notePageEpoch(r.data.system?.recoveryEpoch);
           setState({ status: 'authenticated', me: r.data, csrf: sessionCsrf(r.data.csrfToken) });
         } else if (r.kind === 'unauthenticated') {
           setState(wasAuthenticated.current ? { status: 'expired' } : { status: 'signed_out' });
@@ -124,6 +125,7 @@ export function IdentityProvider({ children }: { children: ReactNode }) {
     const r = await apiGet('/api/v1/auth/me', isMeResponse);
     if (r.ok) {
       wasAuthenticated.current = true;
+      notePageEpoch(r.data.system?.recoveryEpoch);
       setState({ status: 'authenticated', me: r.data, csrf: sessionCsrf(r.data.csrfToken) });
       return true;
     }

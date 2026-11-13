@@ -136,8 +136,9 @@ export interface CreateOrderPayload {
 }
 
 /** Never retried automatically; the caller keeps the key and payload for an explicit same-request retry. */
-export async function createOrder(csrf: SessionCsrfToken, payload: CreateOrderPayload): Promise<ApiResult<{ order: Order; replayed: boolean }>> {
-  const r = await apiMutate({ method: 'POST', path: '/api/v1/orders', csrf, body: payload, validate: isOrderResponse });
+export async function createOrder(csrf: SessionCsrfToken, payload: CreateOrderPayload, epoch?: number): Promise<ApiResult<{ order: Order; replayed: boolean }>> {
+  // `epoch`: the recovery epoch the submission was prepared under (kept with the stored submission).
+  const r = await apiMutate({ method: 'POST', path: '/api/v1/orders', csrf, body: payload, validate: isOrderResponse, ...(epoch !== undefined ? { epoch } : {}) });
   return r.ok ? { ...r, data: { order: r.data.order, replayed: r.data.replayed === true } } : r;
 }
 

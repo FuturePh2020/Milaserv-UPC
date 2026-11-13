@@ -1,4 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
+import { assertNewWrite } from '../http/write-gate.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { requireAdmin, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
@@ -581,6 +582,8 @@ export async function commitImport(ctx: RequestContext): Promise<void> {
         if (previous.request_digest !== digest) throw new AppError('IDEMPOTENCY_KEY_REUSED');
         return { replayed: true, op: previous };
       }
+      // 2b. A NEW batch: writes open and prepared under the current recovery epoch (stage 16).
+      assertNewWrite(ctx);
 
       // 3. The preview binding (signature, administrator, mode, exact content, expiry).
       if (!parsed.ok) throw new AppError('IMPORT_REJECTED', { current: { fileErrors: [{ field: null, message: parsed.message }], rows: [] } });
@@ -593,6 +596,9 @@ export async function commitImport(ctx: RequestContext): Promise<void> {
         throw new AppError('IMPORT_PREVIEW_STALE', { current: { fileErrors: [], rows: evaluation.rows } });
       }
       if (body.mode === 'create_products') assertCatalogCapacity(db, evaluation.intents.length);
+      // Stock modes: every touched product's ledger must be consistent (stage-16 write guard).
+      const stockProducts = evaluation.intents.flatMap((i) => (i.kind === 'stock' ? [i.product.id] : []));
+      if (stockProducts.length) assertNewWrite(ctx, { productIds: stockProducts });
 
       if (evaluation.intents.length !== parsed.table.records.length) throw new Error('import evaluation/intent mismatch');
       // 5. Apply with the same cores as the single-record endpoints. Any throw rolls back everything.

@@ -162,21 +162,64 @@ describe('rate-limit persistence', () => {
     const now = 9_000_000;
     try {
       const first = new RateLimiter(t.db, deriveServerKeys(appSecret).rateLimit, () => now);
-      for (let i = 0; i < 5; i++) assert.equal(first.consume('login_account', 'persisted.user').allowed, true);
-      assert.equal(first.consume('login_account', 'persisted.user').allowed, false);
+      for (let i = 0; i < 5; i++) assert.equal(first.consume('login_source_account', 'v4:192.0.2.1\u0000persisted.user').allowed, true);
+      assert.equal(first.consume('login_source_account', 'v4:192.0.2.1\u0000persisted.user').allowed, false);
       t.db.close();
       const reopened = openDatabase(t.file, { mustExist: true, runtime: true });
       try {
         const second = new RateLimiter(reopened, deriveServerKeys(appSecret).rateLimit, () => now + 1000);
-        const r = second.consume('login_account', 'persisted.user');
+        const r = second.consume('login_source_account', 'v4:192.0.2.1\u0000persisted.user');
         assert.equal(r.allowed, false, 'still limited after restart');
         assert.equal(r.retryAfterSeconds, 15 * 60 - 1);
         // Keys are keyed HMACs: with a different APP_SECRET the same identifier maps to a different key.
         const otherSecret = new RateLimiter(reopened, deriveServerKeys(randomBytes(32)).rateLimit, () => now + 1000);
-        assert.notEqual(otherSecret.keyFor('login_account', 'persisted.user'), second.keyFor('login_account', 'persisted.user'));
+        assert.notEqual(otherSecret.keyFor('login_source_account', 'v4:192.0.2.1\u0000persisted.user'), second.keyFor('login_source_account', 'v4:192.0.2.1\u0000persisted.user'));
       } finally {
         reopened.close();
       }
+    } finally {
+      t.cleanup();
+    }
+  });
+});
+
+describe('stage 16: credential admission and bounded login counters', () => {
+  test('admission is per source, capped, idempotent on release, and keeps no entry when idle', async () => {
+    const { CredentialAdmission } = await import('../../src/server/auth/admission.ts');
+    const a = new CredentialAdmission(2);
+    const r1 = a.tryAcquire('v4:192.0.2.1')!;
+    const r2 = a.tryAcquire('v4:192.0.2.1')!;
+    assert.equal(a.tryAcquire('v4:192.0.2.1'), null, 'third concurrent job from the same source refused');
+    const other = a.tryAcquire('v4:192.0.2.2');
+    assert.ok(other, 'another source is unaffected');
+    r1();
+    r1(); // double release must not free a slot twice
+    assert.ok(a.tryAcquire('v4:192.0.2.1'), 'one slot freed');
+    assert.equal(a.tryAcquire('v4:192.0.2.1'), null);
+    // Many sources: memory holds only sources with work in flight.
+    const releases = Array.from({ length: 5000 }, (_, i) => a.tryAcquire(`v4:10.0.${i >> 8}.${i & 255}`)!);
+    assert.equal(a.trackedSources, 5002);
+    for (const r of releases) r();
+    r2();
+    other!();
+    assert.equal(a.trackedSources, 1);
+    assert.throws(() => new CredentialAdmission(0), RangeError);
+  });
+
+  test('a username spray from one source creates rows bounded by its per-IP allowance', () => {
+    const t = createTestDatabase();
+    try {
+      const now = 1_000_000;
+      const rl = new RateLimiter(t.db, randomBytes(32), () => now);
+      let admitted = 0;
+      for (let i = 0; i < 500; i++) {
+        if (!rl.consume('login_ip', 'v4:203.0.113.5').allowed) continue;
+        rl.consume('login_source_account', `v4:203.0.113.5\u0000user.${i}`);
+        rl.consume('login_account', `user.${i}`);
+        admitted++;
+      }
+      assert.equal(admitted, 20);
+      assert.equal(Number((t.db.prepare('SELECT count(*) AS n FROM rate_limits').get() as { n: number }).n), 1 + 20 + 20);
     } finally {
       t.cleanup();
     }

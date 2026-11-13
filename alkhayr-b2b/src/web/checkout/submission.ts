@@ -1,6 +1,6 @@
 import type { ApiFailure } from '../api/client.ts';
 import type { CreateOrderPayload, OrderTerms } from '../api/endpoints.ts';
-import { newRequestKey } from '../api/client.ts';
+import { newRequestKey, pageRecoveryEpoch } from '../api/client.ts';
 import { payloadLines, type Cart } from '../cart/model.ts';
 import type { PendingSubmission } from '../cart/storage.ts';
 
@@ -13,13 +13,13 @@ import type { PendingSubmission } from '../cart/storage.ts';
  * - Nothing is retried automatically.
  */
 
-export function newSubmission(cart: Cart, note: string, terms: OrderTerms, now: number = Date.now()): PendingSubmission {
+export function newSubmission(cart: Cart, note: string, terms: OrderTerms, now: number = Date.now(), epoch: number = pageRecoveryEpoch() ?? 0): PendingSubmission {
   const requestKey = newRequestKey();
   const trimmed = note.trim();
   // The reviewed shipping/tax terms travel with the payload: a retry re-sends them unchanged.
   const expectedTerms: OrderTerms = { shippingCents: terms.shippingCents, shippingTaxable: terms.shippingTaxable, taxBps: terms.taxBps };
   const payload: CreateOrderPayload = { requestKey, expectedTerms, items: payloadLines(cart), ...(trimmed ? { note: trimmed } : {}) };
-  return { requestKey, payload, createdAt: now };
+  return { requestKey, payload, createdAt: now, epoch };
 }
 
 /**
@@ -35,6 +35,9 @@ export function newSubmission(cart: Cart, note: string, terms: OrderTerms, now: 
 export type SubmissionOutcome = 'unknown' | 'not_processed' | 'rejected' | 'session';
 
 export function classifyFailure(f: ApiFailure): SubmissionOutcome {
+  // Stage 16: definite answers that nothing was processed now.
+  if (f.code === 'WRITES_SUSPENDED') return 'not_processed'; // maintenance/recovery: keep, retry later
+  if (f.code === 'RECOVERY_EPOCH_STALE') return 'rejected'; // prepared before a restore: review again, new key
   switch (f.kind) {
     case 'network':
     case 'server':

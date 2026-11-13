@@ -403,3 +403,18 @@ No operation keys, digests, content hashes, preview tokens or file content are r
 No HTTP endpoint was added or changed. Backups, restores and account recovery are operator CLI commands on the
 server host only (see `BACKUP_RECOVERY_AR.md`). Login now also fails (generic `INVALID_CREDENTIALS`) when an operator
 changed the account's credentials while the request was in flight.
+
+## Stage 16 changes
+- **Header `X-Recovery-Epoch`** (decimal, optional) on authenticated mutations: the recovery epoch the
+  operation was prepared under. Absent = 0. A malformed value → 400 `BAD_REQUEST`.
+- **New errors:**
+  - 503 `WRITES_SUSPENDED` (recovery mode or integrity hold; `Retry-After: 300`; nothing written);
+  - 409 `RECOVERY_EPOCH_STALE` (prepared before a restore and not in the restored data; nothing written; review
+    again with a new key);
+  - 409 `CONSISTENCY_HOLD` (this order/product failed a consistency check; nothing written).
+- `GET /auth/me` and `POST /auth/login` return `system: { writes: 'open'|'closed', reason: 'recovery'|'maintenance'|null, recoveryEpoch }`.
+- `GET /readyz` returns `{ status: 'ready', writes: 'open'|'closed' }` (no reason, no details).
+- **Login throttling:** 20 attempts per source per 15 min; 5 per (source, username); 30 per username across all
+  sources (not reset by success); and at most 2 concurrent credential jobs per source (429, `Retry-After: 1`).
+  Responses stay generic (`INVALID_CREDENTIALS` / `RATE_LIMITED`).
+- `POST /auth/password` now authenticates and checks CSRF before reading the body (401/403 before 400).

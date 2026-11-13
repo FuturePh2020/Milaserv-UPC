@@ -77,6 +77,34 @@ interface RequestSpec<T> {
   body?: unknown;
   csrf?: SessionCsrfToken | PreLoginCsrfToken;
   signal?: AbortSignal;
+  /** Recovery epoch the operation was PREPARED under (stage 16); defaults to this page's epoch. */
+  epoch?: number;
+}
+
+/**
+ * Recovery epoch of this page (stage 16, docs/FRONTEND_API.md). Fixed by the first identity response
+ * (GET /auth/me or POST /auth/login) and never changed afterwards: operations prepared on this page
+ * belong to that epoch. If a later identity response reports another epoch, the server was restored
+ * from a backup while the page was open: `restoreDetected()` turns true and the page must be reloaded
+ * (memory-only operations are then gone; nothing is re-sent under the new epoch automatically).
+ */
+let pageEpoch: number | null = null;
+let restoredMeanwhile = false;
+export function notePageEpoch(epoch: unknown): void {
+  if (typeof epoch !== 'number' || !Number.isSafeInteger(epoch) || epoch < 0) return;
+  if (pageEpoch === null) pageEpoch = epoch;
+  else if (pageEpoch !== epoch) restoredMeanwhile = true;
+}
+export function pageRecoveryEpoch(): number | null {
+  return pageEpoch;
+}
+export function restoreDetected(): boolean {
+  return restoredMeanwhile;
+}
+/** TEST-ONLY reset (unit tests run several "pages" in one process). */
+export function resetPageEpochForTests(): void {
+  pageEpoch = null;
+  restoredMeanwhile = false;
 }
 
 async function request<T>(spec: RequestSpec<T>): Promise<ApiResult<T>> {
@@ -85,6 +113,8 @@ async function request<T>(spec: RequestSpec<T>): Promise<ApiResult<T>> {
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (spec.body !== undefined) headers['Content-Type'] = 'application/json';
   if (spec.csrf) headers['X-CSRF-Token'] = spec.csrf;
+  const epoch = spec.epoch ?? pageEpoch;
+  if (spec.method !== 'GET' && epoch !== null) headers['X-Recovery-Epoch'] = String(epoch);
   let response: Response;
   try {
     response = await fetch(spec.path, {
@@ -136,7 +166,7 @@ export function apiGet<T>(path: string, validate: (value: unknown) => value is T
 }
 
 /** Authenticated mutation: requires the SESSION CSRF token. Never retried automatically. */
-export function apiMutate<T>(spec: { method: 'POST' | 'PATCH'; path: string; body?: unknown; csrf: SessionCsrfToken; validate: (value: unknown) => value is T; signal?: AbortSignal }): Promise<ApiResult<T>> {
+export function apiMutate<T>(spec: { method: 'POST' | 'PATCH'; path: string; body?: unknown; csrf: SessionCsrfToken; validate: (value: unknown) => value is T; signal?: AbortSignal; epoch?: number }): Promise<ApiResult<T>> {
   return request(spec);
 }
 

@@ -404,3 +404,62 @@ already shipped order stay possible.
 - **Measured growth:** 2 000 single-line orders occupied 3.17 MB in all order, ledger, allocation and index pages
   (`dbstat`), ≈ 1.6 KB per order. Import growth was not measured.
 - `backup:status` reports the database/WAL size, row counts and free space so that growth can be monitored (stage 17).
+
+## 18. Migration 0008 — recovery gate and ledger linkage; consistency verifier (stage 16)
+**`system_state`** (STRICT, exactly one row, undeletable, version +1 per update):
+
+| Column | Meaning |
+|---|---|
+| `write_mode` | `open` or `recovery`. In recovery, new business writes are refused (503 `WRITES_SUSPENDED`). Sign-in, reads and identical replays of operations that exist in the data still work. |
+| `recovery_epoch` | 0 until the first restore. Each restore sets a new value (restore time in ms, always greater than the previous value). It changes only when entering recovery mode (trigger). |
+| `restored_backup_id`, `restored_backup_at`, `recovery_started_at`, `reopened_at` | Operator context; shown by `recovery:status`. |
+
+- Seed row: if the newest audit row is `backup.restored`, the migration starts in recovery mode with epoch 1.
+  This covers restoring a pre-0008 backup and then running `db:migrate`, which would otherwise reopen writes
+  silently. Otherwise the seed is `open` with epoch 0.
+- **Write rule (service-enforced, `http/write-gate.ts`).** A NEW business write is accepted only if all hold:
+  - writes are open;
+  - the request's `X-Recovery-Epoch` (absent = 0) equals the current epoch exactly;
+  - the touched order and products pass the scoped consistency checks.
+- Keyed families check this AFTER their idempotency lookup: orders, transitions, adjustments and import
+  commits. An identical retry of an operation that exists in the data therefore still replays.
+  Unkeyed families check it first: products, settings, merchant status, profile and registration
+  (registration skips the epoch check).
+- **Trigger `inventory_ledger_continues_product`** (BEFORE INSERT on `inventory_ledger`):
+  - It refuses a new row while an earlier row of the same product is newer than `products.last_ledger_id`, i.e.
+    unlinked. An orphan row therefore blocks further movements of that product only.
+  - It requires `on_hand_after`/`reserved_after` = the product's current balance + delta.
+  - In the supported write sequence (ledger row → linked product update, same transaction) both always hold.
+- **Still NOT enforceable by SQLite:**
+  - that an order event is followed by its state change in the same transaction;
+  - that a reserve row is followed by its allocation (the reverse-pairing gap).
+  - Raw SQL can still create both (proved by tests). They are DETECTED by the verifier and FAIL CLOSED:
+    the order's transitions and the product's movements are refused with 409 `CONSISTENCY_HOLD`, and a
+    startup integrity hold refuses all new writes.
+
+**Consistency verifier** (`database/consistency.ts`): read-only, one aggregate query per check, at most N sample ids.
+
+| Code | Invariant |
+|---|---|
+| ORDER_UNFINALIZED (warning) / ORDER_UNFINALIZED_CHANGED | header without a creation event (invisible) / such a header that is not pending at version 1 |
+| ORDER_CREATION_EVENT_COUNT | exactly one creation event, and it is first |
+| ORDER_ITEMS_TOTALS | finalized: 1–100 items, subtotal = Σ line totals |
+| ORDER_EVENT_CHAIN | transition events contiguous: old_state = previous new_state, `order_version_after` = 2, 3, … |
+| ORDER_STATE_MISMATCH | `orders.state` = latest event's new_state, `orders.version` = number of events |
+| ALLOCATION_LIFECYCLE | confirmed at least once ⇒ one allocation per line, status matching the state (reserved / consumed / released); never confirmed ⇒ none |
+| ALLOCATION_QUANTITY | allocation quantity = the line's immutable cartons |
+| ALLOCATION_LEDGER_PAIRING | reserve/release/ship rows belong to the same order, product and quantity |
+| LEDGER_ORDER_MOVEMENT_ORPHAN | every reserve/release/ship row is referenced by exactly one allocation of the same order and product (no orphan intent, no cross-order consumption) |
+| LEDGER_UNLINKED, LEDGER_BALANCE_CHAIN, LEDGER_VERSION_AHEAD | ledger rows linked; running balances follow the deltas; product balance = last linked row; versions not ahead |
+| RESERVED_ALLOCATIONS | products.reserved = Σ reserved allocations |
+| IMPORT_ITEMS | item count = record count; stock modes link one own ledger row per item (same product, actor, adjustment type); product modes none |
+| ADMIN_WITHOUT_MFA | defence in depth (also a CHECK) |
+
+- **Used by:**
+  - `db:check`;
+  - `backup:create`/`verify`/`restore` (errors → `INVARIANT_FAILED`);
+  - server startup (errors → integrity hold; codes and counts only in the log, never ids);
+  - per-order/per-product write guards.
+- `/readyz` discloses only `writes: open|closed`.
+- **Measured:** 2 000 orders (with transitions on half) in ≈ 50 ms; 20 000 orders, 5 000 fulfilled, in ≈ 0.76 s
+  (4 vCPU container, synthetic data). Not a capacity claim.

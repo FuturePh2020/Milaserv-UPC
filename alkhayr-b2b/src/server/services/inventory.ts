@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertNewWrite } from '../http/write-gate.ts';
 import { z } from 'zod';
 import { requireAdmin, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
 import { hmacHex } from '../auth/keys.ts';
@@ -288,6 +289,8 @@ export async function createAdjustment(ctx: RequestContext): Promise<void> {
       if (previous.operation_digest !== digest || previous.product_id !== productId) throw new AppError('IDEMPOTENCY_KEY_REUSED');
       return { replayed: true as const, ledgerId: previous.id };
     }
+    // 2b. A NEW movement: writes open, current recovery epoch, product ledger consistent (stage 16).
+    assertNewWrite(ctx, { productIds: [productId] });
 
     // 3. Authoritative state, the client's version, the ledger row and the linked product update.
     const product = loadProduct(ctx, productId);

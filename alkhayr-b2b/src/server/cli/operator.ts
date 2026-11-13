@@ -5,8 +5,11 @@ import type { AppConfig } from '../config.ts';
 import { deriveKey, encryptSecret, totpAad } from '../auth/encryption.ts';
 import { checkPasswordPolicy, PASSWORD_POLICY, PasswordHasher } from '../auth/passwords.ts';
 import { base32Encode, generateTotpSecret, otpauthUri, verifyTotp } from '../auth/totp.ts';
-import { appSecretId, backupStatus, BackupError, createBackup, decryptBackup, keyId, listBackups, makeStaging, markVerified, parseBackupKey, pruneBackups, readHeader, readKeyFile, restoreBackup, verifyDatabaseFile, writeNewKeyFile } from '../backup/backup.ts';
+import { appSecretId, backupStatus, BackupError, createBackup, decryptBackup, keyId, listBackups, openStaging, markVerified, parseBackupKey, pruneBackups, readHeader, readKeyFile, restoreBackup, verifyDatabaseFile, writeNewKeyFile } from '../backup/backup.ts';
 import { openDatabase } from '../database/connection.ts';
+import { verifyConsistency } from '../database/consistency.ts';
+import { readSystemState } from '../http/write-gate.ts';
+import { RecoveryModeError, reopenWrites } from '../services/recovery-mode.ts';
 import { DatabaseError } from '../database/errors.ts';
 import { acquireInstanceLock } from '../database/instance-lock.ts';
 import { inspectSchema, loadMigrations, type Migration } from '../database/migrations.ts';
@@ -430,7 +433,8 @@ export async function backupVerify(ctx: OperatorContext, args: readonly string[]
     const file = path.resolve(a.positionals[0]!);
     const key = await backupKey(ctx, a);
     // Private staging inside the data directory's parent area: same protection as the live database.
-    const staging = makeStaging(ctx.config.dataDir);
+    const stagingJob = openStaging(ctx.config.dataDir);
+    const staging = stagingJob.dir;
     try {
       const target = path.join(staging, 'verify.db');
       const header = await decryptBackup(file, key, target);
@@ -441,7 +445,7 @@ export async function backupVerify(ctx: OperatorContext, args: readonly string[]
       if (summary.pendingMigrations.length) ctx.out(`Note: restoring it requires ${OPERATOR_COMMANDS.migrate} afterwards (${summary.pendingMigrations.join(', ')}).`);
       return 0;
     } finally {
-      rmSync(staging, { recursive: true, force: true });
+      stagingJob.dispose();
       key.fill(0);
     }
   } catch (err) {
@@ -477,6 +481,11 @@ export async function backupRestore(ctx: OperatorContext, args: readonly string[
       ctx.out(`${r.sessionsRemoved} restored session(s) removed: every user must sign in again.`);
       ctx.out('IMPORTANT: the restored data is an OLDER point in time. Orders, stock movements, imports and accounts created after the backup are missing.');
       ctx.out('Reconcile with the business (orders, deliveries, stock counts) BEFORE reopening the portal to traders.');
+      ctx.out(
+        r.recoveryEpoch !== null
+          ? 'The portal starts in RECOVERY MODE: sign-in and reading work, new business writes are refused, and operations prepared before this restore can never run as new ones. After reconciliation run: recovery:reopen'
+          : 'This backup predates recovery mode (migration 0008): db:migrate will put the portal into RECOVERY MODE; then reconcile and run recovery:reopen.',
+      );
       if (r.summary.pendingMigrations.length) ctx.out(`Before starting the server run: ${OPERATOR_COMMANDS.migrate}`);
       if (r.summary.mfa === 'unreadable_accepted') ctx.out('Administrator MFA cannot be decrypted with this APP_SECRET: the server will refuse to start until every administrator is re-enrolled with account:reset-mfa.');
       return 0;
@@ -510,6 +519,117 @@ export async function backupStatusCommand(ctx: OperatorContext, args: readonly s
     ctx.out(JSON.stringify({ ...s, managedBackups: listBackups(ctx.config.backupDir).map((b) => b.name) }, null, 2));
     return s.warnings.length ? 3 : 0;
   } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+// ------------------------------------------------------------------ consistency and recovery mode (stage 16)
+
+function openReadOnlyCurrent(ctx: OperatorContext): DatabaseSync | null {
+  if (!existsSync(ctx.config.databasePath)) {
+    ctx.err(`Error [DATABASE_MISSING]: No database found. Initialize it first with: ${OPERATOR_COMMANDS.init}`);
+    return null;
+  }
+  return openDatabase(ctx.config.databasePath, { mustExist: true }); // only SELECTs are issued (same as db:status)
+}
+
+/** `db:check` — read-only consistency report (safe while the server runs). Exit 0 ok, 1 errors, 3 warnings only. */
+export async function dbCheck(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    const a = parseArgs(args, { options: ['--samples'] });
+    const samples = a.options.has('--samples') ? Number(a.options.get('--samples')) : 10;
+    if (!Number.isSafeInteger(samples) || samples < 0 || samples > 100) throw new UsageError('--samples must be 0..100');
+    const db = openReadOnlyCurrent(ctx);
+    if (!db) return 1;
+    try {
+      const report = verifyConsistency(db, { maxSamples: samples });
+      ctx.out(JSON.stringify(report, null, 2));
+      if (!report.ok) {
+        ctx.err('Consistency errors found. Nothing was changed or repaired. New business writes are refused while these remain (integrity hold at startup; per-order/per-product guards at write time).');
+        ctx.err('Investigate the sample ids with read-only queries, restore a verified backup if needed, and never edit history in place.');
+        return 1;
+      }
+      return report.warnings ? 3 : 0;
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+/** `recovery:status` — shows whether writes are open and which restore put the portal into recovery mode. */
+export async function recoveryStatus(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    parseArgs(args, {});
+    const db = openReadOnlyCurrent(ctx);
+    if (!db) return 1;
+    try {
+      const st = readSystemState(db);
+      ctx.out(JSON.stringify({ ...st, restoredBackupAt: st.restoredBackupAt ? new Date(st.restoredBackupAt).toISOString() : null }, null, 2));
+      return st.writeMode === 'recovery' ? 3 : 0;
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+/**
+ * `recovery:reopen` — explicit, audited end of post-restore recovery mode. Interactive (reason + typed
+ * confirmation). Refuses while consistency errors exist. May run while the server is up: the server reads
+ * the mode for every new write. Reopening reconstructs nothing; reconciliation is the business's work.
+ */
+export async function recoveryReopen(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    parseArgs(args, {});
+    if (!existsSync(ctx.config.databasePath)) {
+      ctx.err(`Error [DATABASE_MISSING]: No database found.`);
+      return 1;
+    }
+    const db = openDatabase(ctx.config.databasePath, { mustExist: true });
+    try {
+      const state = inspectSchema(db, loadMigrations(ctx.migrationsDir));
+      if (state.kind !== 'current') {
+        ctx.err(`Error [MIGRATIONS_PENDING]: Apply pending migrations first: ${OPERATOR_COMMANDS.migrate}`);
+        return 1;
+      }
+      const st = readSystemState(db);
+      if (st.writeMode !== 'recovery') {
+        ctx.out('The portal is not in recovery mode; writes are already open. Nothing was changed.');
+        return 0;
+      }
+      const report = verifyConsistency(db, { maxSamples: 0 });
+      if (!report.ok) {
+        ctx.err(`Error [CONSISTENCY_FAILED]: ${report.issues.filter((i) => i.severity === 'error').map((i) => `${i.code} ×${i.count}`).join(', ')}. Run db:check. Writes stay closed.`);
+        return 1;
+      }
+      const p = ctx.prompter();
+      try {
+        p.say('ALKHAYR — reopen business writes after a restore (local operator only).');
+        p.say(`Restored backup: ${st.restoredBackupId ?? 'unknown (pre-0008 backup)'} · created ${st.restoredBackupAt ? new Date(st.restoredBackupAt).toISOString() : 'unknown'} · recovery since ${st.recoveryStartedAt ? new Date(st.recoveryStartedAt).toISOString() : 'unknown'}`);
+        p.say('Everything after the backup time is missing from this data. Reopening does not reconstruct it.');
+        p.say('Confirm that orders, deliveries, stock counts and accounts were reconciled with the business, and that');
+        p.say('missing facts will be re-entered as NEW operations. Operations prepared before the restore stay refused.');
+        const reason = await askReason(p);
+        const typed = await p.ask('Type REOPEN to open business writes now: ');
+        if (typed.trim() !== 'REOPEN') throw new CancelledError();
+        const after = reopenWrites(db, { expectedVersion: st.version, reason, now: now(), requestId: randomUUID() });
+        p.say(`\nBusiness writes are OPEN (recovery epoch ${after.recoveryEpoch} unchanged; audited as recovery.reopened).`);
+        return 0;
+      } finally {
+        p.close();
+      }
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    if (err instanceof RecoveryModeError) {
+      ctx.err(`Error [${err.code}]: ${err.message}`);
+      return 1;
+    }
     return handleKnown(ctx, err);
   }
 }

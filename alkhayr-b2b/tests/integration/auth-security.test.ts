@@ -113,27 +113,86 @@ describe('CSRF and request boundaries', () => {
 });
 
 describe('abuse limits before expensive work', () => {
-  test('per-account login limit: attempts beyond the limit are refused with Retry-After and cause NO hashing', () =>
+  test('per-source guessing limit: refused with Retry-After and NO hashing; the owner still signs in from another source', () =>
     withApp(
       async (app) => {
         const hasher = app.hasher as GatedHasher;
         const t = await createTrader(app);
-        for (let i = 0; i < 5; i++) expectCode(await new Client(app, ip()).login(t.username, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+        const attacker = '203.0.113.66';
+        for (let i = 0; i < 5; i++) expectCode(await new Client(app, attacker).login(t.username, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
         const before = hasher.verifyCalls + hasher.dummyCalls;
-        const limited = await new Client(app, ip()).login(t.username, t.password);
+        // Even the right password is refused from the exhausted source (no oracle, no extra guesses).
+        const limited = await new Client(app, attacker).login(t.username, t.password);
         expectCode(limited, 429, 'RATE_LIMITED');
         assert.equal(limited.headers['retry-after'], String(15 * 60));
         assert.equal(hasher.verifyCalls + hasher.dummyCalls, before, 'no scrypt work for rate-limited attempts');
-        // Unknown usernames are limited the same way (no existence oracle).
-        for (let i = 0; i < 5; i++) await new Client(app, ip()).login('ghost.user', 'Wrong-Password-000');
-        expectCode(await new Client(app, ip()).login('ghost.user', 'Wrong-Password-000'), 429, 'RATE_LIMITED');
+        // Stage 16: the attack from source A does NOT lock the account for the owner at source B.
+        assert.equal((await new Client(app, '198.51.100.10').login(t.username, t.password)).status, 200);
+        // Unknown usernames are limited exactly the same way (no existence oracle).
+        for (let i = 0; i < 5; i++) expectCode(await new Client(app, attacker).login('ghost.user', 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+        expectCode(await new Client(app, attacker).login('ghost.user', 'Wrong-Password-000'), 429, 'RATE_LIMITED');
         app.clock.advance(15 * MIN);
-        assert.equal((await new Client(app, ip()).login(t.username, t.password)).status, 200);
+        assert.equal((await new Client(app, attacker).login(t.username, t.password)).status, 200, 'window expiry, no permanent lockout');
       },
       { hasher: new GatedHasher() },
     ));
 
-  test('per-IP login and registration limits; successful login resets the account counter', () =>
+  test('account-wide backstop needs many independent sources (distributed residual), same for unknown users', () =>
+    withApp(async (app) => {
+      const t = await createTrader(app);
+      for (const user of [t.username, 'ghost.two']) {
+        // 6 sources × 5 attempts = 30 = the account-wide limit; a 7th source is refused.
+        for (let src = 0; src < 6; src++) for (let i = 0; i < 5; i++) expectCode(await new Client(app, `198.18.${src}.${user === t.username ? 1 : 2}`).login(user, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+        expectCode(await new Client(app, '192.0.2.250').login(user, user === t.username ? t.password : 'x'), 429, 'RATE_LIMITED');
+      }
+      // A successful login does not clear the backstop (it is not reset by the attacker's or owner's success).
+      app.clock.advance(15 * MIN);
+      assert.equal((await new Client(app, '192.0.2.250').login(t.username, t.password)).status, 200);
+    }));
+
+  test('IPv6 sources are grouped per /64: rotating addresses inside one /64 does not escape the per-source limit', () =>
+    withApp(async (app) => {
+      const t = await createTrader(app);
+      for (let i = 0; i < 5; i++) await new Client(app, `2001:db8:1:2::${(i + 1).toString(16)}`).login(t.username, 'Wrong-Password-000');
+      expectCode(await new Client(app, '2001:db8:1:2::ffff').login(t.username, t.password), 429, 'RATE_LIMITED');
+      assert.equal((await new Client(app, '2001:db8:1:3::1').login(t.username, t.password)).status, 200, 'another /64 is another source');
+    }));
+
+  test('credential work admission: one source cannot occupy more than 2 hash slots; other sources still get in', () =>
+    withApp(
+      async (app) => {
+        const hasher = app.hasher as GatedHasher;
+        const t = await createTrader(app);
+        const arrived = hasher.pause();
+        const src = '203.0.113.90';
+        const clients = await Promise.all([0, 1, 2].map(async () => { const c = new Client(app, src); await c.preLogin(); return c; }));
+        const p1 = clients[0]!.request('POST', '/api/v1/auth/login', { body: { username: t.username, password: 'Wrong-Password-000' } });
+        const p2 = clients[1]!.request('POST', '/api/v1/auth/login', { body: { username: t.username, password: 'Wrong-Password-000' } });
+        await arrived;
+        await new Promise((r) => setTimeout(r, 50));
+        // Without admission the third request would wait behind the paused hasher: fail fast instead of hanging.
+        const thirdP = clients[2]!.request('POST', '/api/v1/auth/login', { body: { username: t.username, password: 'Wrong-Password-000' } });
+        const third = await Promise.race([thirdP, new Promise<null>((r) => setTimeout(() => r(null), 3000))]);
+        if (third === null) {
+          hasher.release();
+          await thirdP;
+          assert.fail('third concurrent credential job from one source was admitted (no per-source admission)');
+        }
+        expectCode(third, 429, 'RATE_LIMITED');
+        assert.equal(third.headers['retry-after'], '1');
+        const other = new Client(app, '198.51.100.77');
+        const pOther = other.login(t.username, t.password);
+        await new Promise((r) => setTimeout(r, 50));
+        hasher.release();
+        assert.equal((await pOther).status, 200, 'another source was admitted while A held its two slots');
+        assert.deepEqual([(await p1).status, (await p2).status], [401, 401]);
+        // Slots are released: the source can try again.
+        expectCode(await new Client(app, src).login('a.4', 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS'); // dummy work, not gated
+      },
+      { hasher: new GatedHasher() },
+    ));
+
+  test('per-IP login and registration limits; successful login resets the source/account counter', () =>
     withApp(async (app) => {
       const c = new Client(app, '198.18.0.1');
       for (let i = 0; i < 20; i++) await c.login(`user.${i}`, 'Wrong-Password-000');
@@ -148,9 +207,11 @@ describe('abuse limits before expensive work', () => {
       }
       expectCode(await r.request('POST', '/api/v1/auth/register', { body: { username: 'reg.x', password: 'Registration-Pass-1', businessName: 'محل', contactName: 'أحمد', phone: '01012345678', governorate: 'القاهرة', address: '12 شارع النيل' } }), 429, 'RATE_LIMITED');
       const t = await createTrader(app);
-      for (let i = 0; i < 4; i++) await new Client(app, ip()).login(t.username, 'Wrong-Password-000');
-      assert.equal((await new Client(app, ip()).login(t.username, t.password)).status, 200);
-      for (let i = 0; i < 4; i++) expectCode(await new Client(app, ip()).login(t.username, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+      const same = '198.18.5.5';
+      for (let i = 0; i < 4; i++) await new Client(app, same).login(t.username, 'Wrong-Password-000');
+      assert.equal((await new Client(app, same).login(t.username, t.password)).status, 200);
+      // The successful login reset this source's pair counter.
+      for (let i = 0; i < 4; i++) expectCode(await new Client(app, same).login(t.username, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
     }));
 
   test('general API limit per IP', () =>
@@ -212,6 +273,18 @@ describe('proxy trust', () => {
       // ...so rotating spoofed addresses does not escape the per-IP limit.
       for (let i = 0; i < 20; i++) await new Client(app, `192.0.2.${i}`).login(`x.${i}`, 'Wrong-Password-000');
       expectCode(await new Client(app, '192.0.2.200').login('x.200', 'Wrong-Password-000'), 429, 'RATE_LIMITED');
+    }, { trustProxy: '' });
+    // Spoofed X-Forwarded-For against one victim from one peer: still one source, so the victim is not
+    // locked out for a legitimate client elsewhere (the account-wide backstop is never reached).
+    await withApp(async (app) => {
+      const t = await createTrader(app);
+      for (let i = 0; i < 12; i++) {
+        const c = new Client(app, '127.0.0.1');
+        await c.preLogin();
+        await c.request('POST', '/api/v1/auth/login', { body: { username: t.username, password: 'Wrong-Password-000' }, headers: { 'X-Forwarded-For': `203.0.113.${i}` } });
+      }
+      assert.equal(count(app, "SELECT count(*) FROM audit_logs WHERE action = 'auth.login_failed'"), 5, 'only 5 attempts were admitted from the spoofing peer');
+      // (In-process clients connect from 127.0.0.1; a different trusted peer would be a separate deployment test, stage 17.)
     }, { trustProxy: '' });
   });
 });

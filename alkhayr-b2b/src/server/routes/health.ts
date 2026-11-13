@@ -9,12 +9,22 @@ import type { ReadinessProbe } from '../database/readiness.ts';
  *                the schema version this release requires.
  * Neither response reveals versions, paths, SQL, configuration or data.
  */
-export function registerHealthRoutes(router: Router, readiness: ReadinessProbe): void {
+export function registerHealthRoutes(router: Router, readiness: ReadinessProbe, writes?: () => 'open' | 'closed'): void {
   router.get('/healthz', ({ res }) => {
     sendJson(res, 200, { status: 'ok' });
   });
   router.get('/readyz', ({ res }) => {
     if (!readiness()) throw new AppError('NOT_READY', { headers: { 'Retry-After': '5' } });
-    sendJson(res, 200, { status: 'ready' });
+    // Stage 16: a restored installation in recovery mode (or under an integrity hold) is up for reads but
+    // closed for new business writes. Only that one word is disclosed — never the reason or any data.
+    sendJson(res, 200, { status: 'ready', writes: writes ? safeWrites(writes) : 'open' });
   });
+}
+
+function safeWrites(writes: () => 'open' | 'closed'): 'open' | 'closed' {
+  try {
+    return writes();
+  } catch {
+    return 'closed';
+  }
 }

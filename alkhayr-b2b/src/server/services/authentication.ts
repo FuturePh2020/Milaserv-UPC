@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { assertNewWrite, writeStatus } from '../http/write-gate.ts';
 import { z } from 'zod';
 import { appendSetCookie, clearSessionCookie, requireSession, requireSessionCsrf, type AuthenticatedRequest } from '../auth/authorization.ts';
 import { cookieNames, parseCookies, serializeCookie } from '../auth/cookies.ts';
@@ -9,6 +10,7 @@ import { checkPasswordPolicy, PASSWORD_POLICY, UnsupportedPasswordHashError, typ
 import type { RateLimitBucket } from '../auth/rate-limit.ts';
 import { deleteSession, deleteUserSessions, hashSessionToken, insertSession, lookupSession, SESSION_POLICY, SESSION_TOKEN_PATTERN, type Role } from '../auth/sessions.ts';
 import { verifyTotp } from '../auth/totp.ts';
+import { admissionFor } from '../auth/admission.ts';
 import { writeTransaction } from '../database/transaction.ts';
 import { rateLimitIdentity } from '../http/client-ip.ts';
 import { AppError } from '../http/errors.ts';
@@ -133,10 +135,17 @@ export async function register(ctx: RequestContext): Promise<void> {
   const body = await parseBody(ctx, registerSchema);
   requirePreLoginCsrf(ctx);
   enforce(ctx, 'register_ip', rateLimitIdentity(ctx.clientIp));
+  assertNewWrite(ctx, { skipEpoch: true }); // no new accounts while writes are suspended
   assertPasswordPolicy(body.password, 'trader', 'password');
 
   // Always hash (also for duplicates) so timing does not reveal existing usernames.
-  const passwordHash = await ctx.services.hasher.hash(body.password);
+  const releaseAdmission = admitCredentialWork(ctx, rateLimitIdentity(ctx.clientIp));
+  let passwordHash: string;
+  try {
+    passwordHash = await ctx.services.hasher.hash(body.password);
+  } finally {
+    releaseAdmission();
+  }
   const { db, now } = ctx.services;
   writeTransaction(db, () => {
     const t = now();
@@ -231,10 +240,31 @@ export async function login(ctx: RequestContext): Promise<void> {
   const body = await parseBody(ctx, loginSchema);
   requirePreLoginCsrf(ctx);
   const username = normalizeUsername(body.username);
-  // Abuse limits BEFORE any expensive work enters the hashing queue.
-  enforce(ctx, 'login_ip', rateLimitIdentity(ctx.clientIp));
+  // Abuse limits BEFORE any expensive work enters the hashing queue (docs/SECURITY.md §7):
+  // per source, per (source, username), then the account-wide distributed-guessing backstop.
+  const source = rateLimitIdentity(ctx.clientIp);
+  enforce(ctx, 'login_ip', source);
+  enforce(ctx, 'login_source_account', `${source}\u0000${username}`);
   enforce(ctx, 'login_account', username);
+  const release = admitCredentialWork(ctx, source);
+  try {
+    await loginAdmitted(ctx, body, username, source);
+  } finally {
+    release();
+  }
+}
 
+/** At most a few credential jobs in flight per source, so one client cannot fill the shared hash queue. */
+function admitCredentialWork(ctx: RequestContext, source: string): () => void {
+  const release = admissionFor(ctx.services).tryAcquire(source);
+  if (!release) {
+    ctx.log.info('rate_limited', { requestId: ctx.requestId, bucket: 'credential_concurrency' });
+    throw new AppError('RATE_LIMITED', { headers: { 'Retry-After': '1' } });
+  }
+  return release;
+}
+
+async function loginAdmitted(ctx: RequestContext, body: z.infer<typeof loginSchema>, username: string, source: string): Promise<void> {
   const { db, hasher, now, keys } = ctx.services;
   const user = USERNAME_PATTERN.test(username) ? (db.prepare(USER_BY_USERNAME).get(username) as UserRow | undefined) : undefined;
   if (!user) {
@@ -296,7 +326,8 @@ export async function login(ctx: RequestContext): Promise<void> {
       requestId: ctx.requestId,
       now: t,
     });
-    ctx.services.rateLimiter.reset('login_account', username);
+    // Only this source's pair counter is cleared; the account-wide backstop keeps counting.
+    ctx.services.rateLimiter.reset('login_source_account', `${source}\u0000${username}`);
     return { ok: true as const, session, merchantStatus: current.merchant_status };
   });
   if (!outcome.ok) loginFailed(ctx, outcome.reason, user.id);
@@ -308,6 +339,7 @@ export async function login(ctx: RequestContext): Promise<void> {
     merchant: { status: outcome.merchantStatus },
     session: { expiresAt: outcome.session.expiresAt, idleTimeoutMinutes: SESSION_POLICY.idleMs[user.role] / 60_000 },
     csrfToken: sessionCsrfToken(keys.csrf, outcome.session.token),
+    system: writeStatus(ctx.services),
   });
 }
 
@@ -366,6 +398,7 @@ export function me(ctx: RequestContext): void {
       recentAuthUntil: id.role === 'admin' ? id.authAt + SESSION_POLICY.recentAuthMs : null,
     },
     csrfToken: sessionCsrfToken(keys.csrf, auth.token),
+    system: writeStatus(ctx.services),
   });
 }
 
@@ -386,9 +419,11 @@ function passwordChangeFailed(ctx: RequestContext, userId: string, reason: strin
 }
 
 export async function changePassword(ctx: RequestContext): Promise<void> {
-  const body = await parseBody(ctx, passwordSchema);
+  // Stage 16 (finding F-06): authenticate and check CSRF BEFORE reading the body, like every other
+  // mutation, so anonymous or cross-site requests cannot drive body parsing or validation messages.
   const auth = requireSession(ctx);
   requireSessionCsrf(ctx, auth);
+  const body = await parseBody(ctx, passwordSchema);
   const id = auth.identity;
   enforce(ctx, 'password_account', id.userId);
   assertPasswordPolicy(body.newPassword, id.role, 'newPassword');

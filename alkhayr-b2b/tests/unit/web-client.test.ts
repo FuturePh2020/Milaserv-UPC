@@ -200,3 +200,36 @@ describe('secure request keys without weak fallback', () => {
     assert.match(newRequestKey(), /^[0-9a-f]{8}-[0-9a-f]{4}-4/);
   });
 });
+
+describe('stage 16: recovery epoch on mutations', () => {
+  test('the page epoch is fixed by the first identity response, sent on mutations only, and a changed epoch marks a restore', async () => {
+    const { notePageEpoch, pageRecoveryEpoch, restoreDetected, resetPageEpochForTests } = await import('../../src/web/api/client.ts');
+    resetPageEpochForTests();
+    respond(200, { ok: true });
+    await apiMutate({ method: 'POST', path: '/api/v1/orders', csrf: sessionCsrf('c'), body: {}, validate: always });
+    assert.equal((calls[0]!.init.headers as Record<string, string>)['X-Recovery-Epoch'], undefined, 'unknown epoch: header omitted (server treats it as 0)');
+    notePageEpoch(0);
+    notePageEpoch('7'); // ignored: not a number
+    assert.equal(pageRecoveryEpoch(), 0);
+    await apiMutate({ method: 'PATCH', path: '/api/v1/merchant/profile', csrf: sessionCsrf('c'), body: {}, validate: always });
+    assert.equal((calls[1]!.init.headers as Record<string, string>)['X-Recovery-Epoch'], '0');
+    await apiGet('/api/v1/orders', always);
+    assert.equal((calls[2]!.init.headers as Record<string, string>)['X-Recovery-Epoch'], undefined, 'never on reads');
+    // An operation prepared under an older epoch re-sends ITS epoch.
+    await apiMutate({ method: 'POST', path: '/api/v1/orders', csrf: sessionCsrf('c'), body: {}, validate: always, epoch: 42 });
+    assert.equal((calls[3]!.init.headers as Record<string, string>)['X-Recovery-Epoch'], '42');
+    assert.equal(restoreDetected(), false);
+    notePageEpoch(1_800_000_000_000);
+    assert.equal(restoreDetected(), true, 'restored while the page was open');
+    assert.equal(pageRecoveryEpoch(), 0, 'the page keeps its original epoch: nothing prepared here becomes new');
+    resetPageEpochForTests();
+  });
+
+  test('status validation: system block is optional but must be well-formed when present', () => {
+    const base = { user: { id: 'u', username: 'x', role: 'trader' }, merchant: { id: 'm', status: 'approved', businessName: 'b', contactName: 'c', email: null, phone: 'p', governorate: 'g', address: 'a', version: 1 }, session: { absoluteExpiresAt: 1, idleExpiresAt: 1, recentAuthUntil: null }, csrfToken: 't' };
+    assert.equal(isMeResponse(base), true);
+    assert.equal(isMeResponse({ ...base, system: { writes: 'closed', reason: 'recovery', recoveryEpoch: 5 } }), true);
+    assert.equal(isMeResponse({ ...base, system: { writes: 'maybe', reason: null, recoveryEpoch: 5 } }), false);
+    assert.equal(isMeResponse({ ...base, system: { writes: 'open', reason: null, recoveryEpoch: -1 } }), false);
+  });
+});

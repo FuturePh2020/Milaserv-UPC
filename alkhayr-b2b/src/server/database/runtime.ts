@@ -6,6 +6,7 @@ import { acquireInstanceLock, type InstanceLock } from './instance-lock.ts';
 import { inspectSchema, loadMigrations, quickCheck } from './migrations.ts';
 import { createReadinessProbe, type ReadinessProbe } from './readiness.ts';
 import { assertAdministratorMfaReadable } from '../auth/mfa-key-check.ts';
+import { verifyConsistency, type ConsistencyReport } from './consistency.ts';
 
 export interface RuntimeDatabase {
   readonly db: DatabaseSync;
@@ -13,6 +14,8 @@ export interface RuntimeDatabase {
   readonly readiness: ReadinessProbe;
   /** Number of administrators (0 = setup-admin has not been run yet). */
   readonly administrators: number;
+  /** Startup consistency report (stage 16); errors put the server under an integrity hold. */
+  readonly consistency: ConsistencyReport;
   close(): void;
 }
 
@@ -59,6 +62,9 @@ export function openRuntimeDatabase(config: AppConfig, migrationsDir: string): R
     }
     // Administrator MFA secrets must decrypt with the configured APP_SECRET (fail closed, never reset).
     const { administrators } = assertAdministratorMfaReadable(db, config.appSecret);
+    // Stage 16: full consistency verification (read-only). Errors do not stop the process (operators
+    // must be able to read and reconcile), but every new business write is refused (integrity hold).
+    const consistency = verifyConsistency(db, { maxSamples: 0 });
     // From here on the connection can no longer change schema or PRAGMA settings.
     db.close();
     db = openDatabase(config.databasePath, { mustExist: true, runtime: true });
@@ -70,6 +76,7 @@ export function openRuntimeDatabase(config: AppConfig, migrationsDir: string): R
       schemaVersion: state.version,
       readiness,
       administrators,
+      consistency,
       close() {
         if (closed) return;
         closed = true;

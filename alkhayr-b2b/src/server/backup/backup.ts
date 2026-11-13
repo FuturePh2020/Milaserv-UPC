@@ -1,5 +1,6 @@
+import { verifyConsistency } from '../database/consistency.ts';
 import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, closeSync, createReadStream, createWriteStream, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statfsSync, statSync, writeFileSync, writeSync } from 'node:fs';
+import { chmodSync, closeSync, createReadStream, createWriteStream, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, renameSync, rmdirSync, rmSync, statfsSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import { backup as sqliteBackup, DatabaseSync } from 'node:sqlite';
 import { Transform } from 'node:stream';
@@ -9,6 +10,7 @@ import { assertAdministratorMfaReadable, SecurityConfigError } from '../auth/mfa
 import { parseSecret } from '../config.ts';
 import { APPLICATION_ID, configureConnection } from '../database/connection.ts';
 import { DatabaseError } from '../database/errors.ts';
+import { acquireInstanceLock } from '../database/instance-lock.ts';
 import { inspectSchema, type Migration } from '../database/migrations.ts';
 
 /**
@@ -180,29 +182,145 @@ function fsyncDir(dir: string): void {
 }
 
 /** A private staging directory inside `parent` (same filesystem, so a final rename is atomic). */
-export function makeStaging(parent: string): string {
+/** Files a staging directory may contain (plaintext database copies and the job's liveness lock). */
+const STAGING_FILE = /^(?:snapshot|verify|alkhayr)\.db(?:-wal|-shm|-journal)?$|^alkhayr\.instance\.lock(?:-journal)?$/;
+const LEGACY_STAGING_GRACE_MS = 3_600_000;
+const PARTIAL_MAX_AGE_MS = 24 * 3_600_000;
+
+export interface StagingJob {
+  dir: string;
+  /** Removes the staged files and the directory, then releases the liveness lock. Idempotent. */
+  dispose(): void;
+}
+
+/**
+ * Private (0700) staging directory for plaintext database copies, inside DATA_DIR (same protection as
+ * the live database). While the job runs it holds an exclusive OS lock on a file inside the directory
+ * (released by the OS if the process dies), so cleanup can tell an ACTIVE job from an ABANDONED one
+ * without guessing by age (stage 16).
+ */
+export function openStaging(parent: string): StagingJob {
   ensurePrivateDir(parent);
   const dir = path.join(parent, `.staging-${randomBytes(8).toString('hex')}`);
   mkdirSync(dir, { mode: 0o700 });
-  return dir;
+  let lock: { release(): void };
+  try {
+    lock = acquireInstanceLock(dir, 'backup staging');
+  } catch (err) {
+    rmSync(dir, { recursive: true, force: true });
+    throw err;
+  }
+  let disposed = false;
+  return {
+    dir,
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      try {
+        removeStagingFiles(dir, { keepLock: true });
+      } finally {
+        lock.release();
+        removeStagingFiles(dir, { keepLock: false });
+      }
+    },
+  };
 }
 
-/** Removes stale managed staging directories / partial files (never symlinks, never other names). */
-export function cleanStale(dir: string, maxAgeMs: number, now: number): string[] {
-  if (!existsSync(dir)) return [];
-  const removed: string[] = [];
+/**
+ * Deletes a staging directory ONLY if it is a real directory owned by this user whose entries are all
+ * regular files with the expected names: each file is unlinked individually (never a recursive delete,
+ * never following a symlink), then the directory itself. Anything unexpected → nothing is deleted.
+ */
+function removeStagingFiles(dir: string, o: { keepLock: boolean }): 'removed' | 'unexpected' | 'missing' {
+  let st;
+  try {
+    st = lstatSync(dir);
+  } catch {
+    return 'missing';
+  }
+  if (st.isSymbolicLink() || !st.isDirectory() || (typeof process.getuid === 'function' && st.uid !== process.getuid())) return 'unexpected';
+  const names = readdirSync(dir);
+  for (const n of names) {
+    const e = lstatSync(path.join(dir, n));
+    if (!STAGING_FILE.test(n) || e.isSymbolicLink() || !e.isFile()) return 'unexpected';
+  }
+  for (const n of names) {
+    if (o.keepLock && n.startsWith('alkhayr.instance.lock')) continue;
+    unlinkSync(path.join(dir, n));
+  }
+  if (!o.keepLock) rmdirSync(dir);
+  return 'removed';
+}
+
+export interface StagingScan {
+  /** Abandoned plaintext staging (no live job) — sensitive until removed. */
+  abandoned: string[];
+  /** Staging held by a running backup/verify/restore job. */
+  active: string[];
+  /** Managed names whose contents or ownership were unexpected: never deleted automatically. */
+  refused: string[];
+  /** Interrupted encrypted partial files (ciphertext only). */
+  partials: string[];
+}
+
+function stagingIsActive(p: string): boolean {
+  if (!existsSync(path.join(p, 'alkhayr.instance.lock'))) return false;
+  try {
+    acquireInstanceLock(p, 'staging probe').release();
+    return false;
+  } catch (err) {
+    if (err instanceof DatabaseError && err.code === 'INSTANCE_LOCKED') return true;
+    throw err;
+  }
+}
+
+/** Read-only classification of managed leftovers in `dir` (used by backup:status and cleanup). */
+export function scanStaging(dir: string, now: number): StagingScan {
+  const r: StagingScan = { abandoned: [], active: [], refused: [], partials: [] };
+  if (!existsSync(dir)) return r;
   for (const name of readdirSync(dir)) {
-    if (!STAGING_NAME.test(name) && !PARTIAL_NAME.test(name)) continue;
     const p = path.join(dir, name);
+    if (PARTIAL_NAME.test(name)) {
+      const st = lstatSync(p);
+      if (!st.isSymbolicLink() && st.isFile()) r.partials.push(name);
+      continue;
+    }
+    if (!STAGING_NAME.test(name)) continue;
     const st = lstatSync(p);
-    if (st.isSymbolicLink()) continue;
-    if (now - st.mtimeMs < maxAgeMs) continue;
-    if (STAGING_NAME.test(name) && st.isDirectory()) rmSync(p, { recursive: true, force: true });
-    else if (PARTIAL_NAME.test(name) && st.isFile()) rmSync(p, { force: true });
-    else continue;
+    if (st.isSymbolicLink() || !st.isDirectory() || (typeof process.getuid === 'function' && st.uid !== process.getuid())) {
+      r.refused.push(name);
+      continue;
+    }
+    if (stagingIsActive(p)) r.active.push(name);
+    else if (!existsSync(path.join(p, 'alkhayr.instance.lock')) && now - st.mtimeMs < LEGACY_STAGING_GRACE_MS) r.active.push(name); // being created, or a pre-stage-16 job
+    else r.abandoned.push(name);
+  }
+  return r;
+}
+
+/**
+ * Removes ABANDONED managed leftovers in `dir`: unlocked staging directories (plaintext) right away, and
+ * encrypted `.partial` files older than 24 hours. Active jobs, symlinks, foreign owners and unexpected
+ * contents are left alone. Returns what was removed and what was refused.
+ */
+export function cleanStale(dir: string, now: number): { removed: string[]; refused: string[] } {
+  const scan = scanStaging(dir, now);
+  const removed: string[] = [];
+  const refused = [...scan.refused];
+  for (const name of scan.abandoned) {
+    const p = path.join(dir, name);
+    // Re-check under the lock: a job cannot start inside an existing staging directory, but be strict.
+    if (stagingIsActive(p)) continue;
+    if (removeStagingFiles(p, { keepLock: false }) === 'removed') removed.push(name);
+    else refused.push(name);
+  }
+  for (const name of scan.partials) {
+    const p = path.join(dir, name);
+    if (now - lstatSync(p).mtimeMs < PARTIAL_MAX_AGE_MS) continue;
+    unlinkSync(p);
     removed.push(name);
   }
-  return removed;
+  return { removed, refused };
 }
 
 async function sha256File(file: string): Promise<string> {
@@ -244,6 +362,8 @@ export interface VerifySummary {
   counts: Record<string, number>;
   checks: string[];
   mfa: 'readable' | 'no_administrators' | 'not_checked' | 'unreadable_accepted';
+  /** Non-blocking consistency findings (e.g. unfinalized order headers). */
+  warnings: string[];
 }
 
 const count = (db: DatabaseSync, table: string) => Number((db.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n);
@@ -262,6 +382,7 @@ export function verifyDatabaseFile(file: string, o: VerifyOptions): VerifySummar
     throw new BackupError('DB_UNREADABLE', 'The backup does not contain a readable SQLite database.');
   }
   const checks: string[] = [];
+  let consistencyWarnings: string[] = [];
   try {
     let appId: number;
     try {
@@ -286,27 +407,14 @@ export function verifyDatabaseFile(file: string, o: VerifyOptions): VerifySummar
     }
     if (state.kind === 'uninitialized') throw new BackupError('SCHEMA_INCOMPATIBLE', 'The backed-up database has no schema.');
     checks.push('migration_history');
-    const problems: string[] = [];
-    const q = (sql: string) => Number((db.prepare(sql).get() as { n: number }).n);
-    const badLink = q(`SELECT count(*) AS n FROM products p LEFT JOIN inventory_ledger l ON l.id = p.last_ledger_id
-                        WHERE (p.last_ledger_id IS NULL AND (p.on_hand <> 0 OR p.reserved <> 0))
-                           OR (p.last_ledger_id IS NOT NULL AND (l.id IS NULL OR l.product_id <> p.id OR l.on_hand_after <> p.on_hand OR l.reserved_after <> p.reserved))`);
-    if (badLink) problems.push(`${badLink} product(s) whose balance does not match its last ledger row`);
-    const badSum = q(`SELECT count(*) AS n FROM products p
-                       WHERE p.on_hand <> coalesce((SELECT sum(on_hand_delta) FROM inventory_ledger l WHERE l.product_id = p.id), 0)
-                          OR p.reserved <> coalesce((SELECT sum(reserved_delta) FROM inventory_ledger l WHERE l.product_id = p.id), 0)`);
-    if (badSum) problems.push(`${badSum} product(s) whose balance differs from the sum of its ledger`);
-    const badAlloc = q(`SELECT count(*) AS n FROM products p
-                         WHERE p.reserved <> coalesce((SELECT sum(quantity) FROM order_allocations a WHERE a.product_id = p.id AND a.status = 'reserved'), 0)`);
-    if (badAlloc) problems.push(`${badAlloc} product(s) whose reserved stock differs from their open allocations`);
-    if (state.version >= 6) {
-      const badImport = q(`SELECT count(*) AS n FROM import_operations o WHERE o.record_count <> (SELECT count(*) FROM import_operation_items i WHERE i.import_id = o.id)`);
-      if (badImport) problems.push(`${badImport} import operation(s) whose items do not match their record count`);
+    // Full stage-16 consistency verification (orders, events, allocations, ledger, imports, admin MFA).
+    const consistency = verifyConsistency(db, { maxSamples: 5 });
+    if (!consistency.ok) {
+      const summary = consistency.issues.filter((i) => i.severity === 'error').map((i) => `${i.code} ×${i.count}`).join(', ');
+      throw new BackupError('INVARIANT_FAILED', `Consistency checks failed: ${summary}. Run db:check on a restored copy for details.`);
     }
-    const adminNoMfa = q("SELECT count(*) AS n FROM auth_users WHERE role = 'admin' AND totp_ciphertext IS NULL");
-    if (adminNoMfa) problems.push(`${adminNoMfa} administrator(s) without MFA`);
-    if (problems.length) throw new BackupError('INVARIANT_FAILED', `Application invariants failed: ${problems.join('; ')}.`);
-    checks.push('stock_ledger_allocation_import_invariants');
+    consistencyWarnings = consistency.issues.map((i) => `${i.code} ×${i.count}`);
+    checks.push('consistency_verifier');
     let mfa: VerifySummary['mfa'] = 'not_checked';
     if (o.appSecret || !o.acceptNewAppSecret) {
       try {
@@ -321,7 +429,7 @@ export function verifyDatabaseFile(file: string, o: VerifyOptions): VerifySummar
     const tables = ['auth_users', 'merchants', 'products', 'orders', 'order_items', 'order_events', 'order_allocations', 'inventory_ledger', 'audit_logs', 'sessions'];
     if (state.version >= 6) tables.push('import_operations', 'import_operation_items');
     const counts = Object.fromEntries(tables.map((t) => [t, count(db, t)]));
-    return { schemaVersion: state.version, pendingMigrations: state.kind === 'pending' ? state.pending.map((m) => m.filename) : [], counts, checks, mfa };
+    return { schemaVersion: state.version, pendingMigrations: state.kind === 'pending' ? state.pending.map((m) => m.filename) : [], counts, checks, mfa, warnings: consistencyWarnings };
   } catch (err) {
     // A damaged b-tree can make any query fail; report a generic, safe code instead of a raw SQLite error.
     if (!(err instanceof BackupError) && (err as { code?: string }).code === 'ERR_SQLITE_ERROR') throw new BackupError('DB_CORRUPT', 'The backed-up database is damaged (SQLite reported an error while verifying it).');
@@ -442,9 +550,10 @@ export async function createBackup(o: {
   now: () => number;
 }): Promise<CreatedBackup> {
   ensurePrivateDir(o.backupDir);
-  cleanStale(o.backupDir, 3_600_000, o.now());
-  cleanStale(o.dataDir, 3_600_000, o.now());
-  const staging = makeStaging(o.dataDir);
+  cleanStale(o.backupDir, o.now());
+  cleanStale(o.dataDir, o.now());
+  const stagingJob = openStaging(o.dataDir);
+  const staging = stagingJob.dir;
   const t = o.now();
   const backupId = randomUUID();
   const name = `alkhayr-${stamp(t)}-${backupId.slice(0, 8)}.akbk`;
@@ -510,10 +619,22 @@ export async function createBackup(o: {
   } catch (err) {
     rmSync(partial, { force: true });
     if (renamed) rmSync(final, { force: true });
-    throw err;
+    throw filesystemError(err, 'Nothing was kept; existing backups are unchanged.');
   } finally {
-    rmSync(staging, { recursive: true, force: true });
+    stagingJob.dispose();
   }
+}
+
+/**
+ * Stage 16 (finding F-09): full disks, quotas, read-only or permission-denied filesystems surface as
+ * generic, actionable BackupErrors instead of raw exceptions (no paths or internals beyond the code).
+ */
+export function filesystemError(err: unknown, outcome: string): unknown {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code === 'ENOSPC' || code === 'EDQUOT') return new BackupError('DISK_FULL', `Not enough free disk space (or quota) to complete the operation. ${outcome} Free space and run it again.`);
+  if (code === 'EROFS' || code === 'EACCES' || code === 'EPERM') return new BackupError('WRITE_FAILED', `The filesystem refused the write (read-only or permission denied). ${outcome}`);
+  if (code === 'EIO') return new BackupError('WRITE_FAILED', `The disk reported an I/O error. ${outcome} Check the disk before retrying.`);
+  return err;
 }
 
 // ------------------------------------------------------------------ verification markers and rotation
@@ -600,6 +721,8 @@ export interface RestoreResult {
   summary: VerifySummary;
   previousMovedTo: string | null;
   sessionsRemoved: number;
+  /** New recovery epoch, or null when the backup predates migration 0008 (seeded by db:migrate). */
+  recoveryEpoch: number | null;
 }
 
 /**
@@ -630,8 +753,9 @@ export async function restoreBackup(o: {
   }
   if (h.header.schemaVersion > o.migrations.length) throw new BackupError('SCHEMA_TOO_NEW', 'The backup was made by a newer release; restore it with that release. Nothing was changed.');
   ensurePrivateDir(o.dataDir);
-  cleanStale(o.dataDir, 3_600_000, o.now());
-  const staging = makeStaging(o.dataDir);
+  cleanStale(o.dataDir, o.now());
+  const stagingJob = openStaging(o.dataDir);
+  const staging = stagingJob.dir;
   try {
     const staged = path.join(staging, path.basename(o.databasePath));
     await decryptBackup(o.file, o.backupKey, staged);
@@ -639,14 +763,27 @@ export async function restoreBackup(o: {
     // Neutralize restored access on the STAGED copy (maintenance connection, not the runtime one).
     const db = new DatabaseSync(staged, { enableForeignKeyConstraints: true });
     let sessionsRemoved = 0;
+    let recoveryEpoch: number | null = null;
     try {
       configureConnection(db);
       db.exec('BEGIN IMMEDIATE');
       try {
         sessionsRemoved = Number(db.prepare('DELETE FROM sessions').run().changes);
+        // Stage 16: the restored installation starts in RECOVERY MODE under a NEW recovery epoch, so that
+        // operations prepared before the restore cannot silently execute as new writes (DATABASE §18).
+        // Backups older than migration 0008 have no system_state: migrating right after this restore
+        // seeds recovery mode from the `backup.restored` audit row written last below.
+        const hasState = Boolean(db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'system_state'").get());
+        if (hasState) {
+          const st = db.prepare('SELECT recovery_epoch, version FROM system_state WHERE id = 1').get() as { recovery_epoch: number; version: number };
+          recoveryEpoch = Math.max(o.now(), Number(st.recovery_epoch) + 1);
+          db.prepare(
+            "UPDATE system_state SET write_mode = 'recovery', recovery_epoch = ?, restored_backup_id = ?, restored_backup_at = ?, recovery_started_at = ?, reopened_at = NULL, version = version + 1 WHERE id = 1",
+          ).run(recoveryEpoch, h.header.backupId, h.header.createdAt, o.now());
+        }
         db.prepare(
           "INSERT INTO audit_logs (actor_user_id, action, target_type, target_id, metadata, ip_hmac, request_id, created_at) VALUES (NULL, 'backup.restored', 'backup', ?, ?, NULL, ?, ?)",
-        ).run(h.header.backupId.slice(0, 36), JSON.stringify({ method: 'cli', backup_created_at: h.header.createdAt, schema_version: h.header.schemaVersion, sessions_removed: sessionsRemoved, mfa: summary.mfa }), randomUUID(), Math.max(o.now(), h.header.createdAt + 1));
+        ).run(h.header.backupId.slice(0, 36), JSON.stringify({ method: 'cli', backup_created_at: h.header.createdAt, schema_version: h.header.schemaVersion, sessions_removed: sessionsRemoved, mfa: summary.mfa, recovery_epoch: recoveryEpoch ?? 'after_migration' }), randomUUID(), Math.max(o.now(), h.header.createdAt + 1));
         db.exec('COMMIT');
       } catch (err) {
         db.exec('ROLLBACK');
@@ -685,9 +822,11 @@ export async function restoreBackup(o: {
       throw err;
     }
     fsyncDir(o.dataDir);
-    return { header: h.header, summary, previousMovedTo, sessionsRemoved };
+    return { header: h.header, summary, previousMovedTo, sessionsRemoved, recoveryEpoch };
+  } catch (err) {
+    throw filesystemError(err, 'The target database was not replaced.');
   } finally {
-    rmSync(staging, { recursive: true, force: true });
+    stagingJob.dispose();
   }
 }
 
@@ -719,7 +858,13 @@ export async function backupStatus(o: { backupDir: string; dataDir: string; data
       db.close();
     }
   }
-  const stale = [o.backupDir, o.dataDir].flatMap((d) => (existsSync(d) ? readdirSync(d).filter((n) => STAGING_NAME.test(n) || PARTIAL_NAME.test(n)) : []));
+  const scans = [scanStaging(o.dataDir, o.now), scanStaging(o.backupDir, o.now)];
+  const staging = {
+    abandonedPlaintext: scans.flatMap((x) => x.abandoned),
+    active: scans.flatMap((x) => x.active),
+    refused: scans.flatMap((x) => x.refused),
+    encryptedPartials: scans.flatMap((x) => x.partials),
+  };
   let freeBytes: number | null = null;
   try {
     const fs = statfsSync(existsSync(o.backupDir) ? o.backupDir : o.dataDir);
@@ -731,7 +876,10 @@ export async function backupStatus(o: { backupDir: string; dataDir: string; data
   const warnings: string[] = [];
   if (!newestVerified) warnings.push('no verified backup exists');
   else if (o.now - newestVerified.mtimeMs > 26 * 3_600_000) warnings.push('newest verified backup is older than 26 hours');
-  if (stale.length) warnings.push(`${stale.length} interrupted backup/restore leftover(s) (removed automatically after one hour by the next backup)`);
+  if (staging.abandonedPlaintext.length)
+    warnings.push(`${staging.abandonedPlaintext.length} ABANDONED PLAINTEXT staging director(ies) in DATA_DIR from an interrupted backup/verify/restore (removed by the next backup, verify, restore or server start)`);
+  if (staging.refused.length) warnings.push(`${staging.refused.length} managed-looking leftover(s) with unexpected contents or ownership: inspect and remove manually`);
+  if (staging.encryptedPartials.length) warnings.push(`${staging.encryptedPartials.length} interrupted encrypted partial file(s) (removed after 24 h)`);
   return {
     backupDir: o.backupDir,
     backups: backups.length,
@@ -741,7 +889,7 @@ export async function backupStatus(o: { backupDir: string; dataDir: string; data
     database: { bytes: fileSize(o.databasePath), walBytes: fileSize(`${o.databasePath}-wal`) },
     rows: tables,
     freeBytes,
-    leftovers: stale,
+    staging,
     warnings,
   };
 }

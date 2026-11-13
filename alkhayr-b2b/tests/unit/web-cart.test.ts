@@ -206,3 +206,24 @@ describe('draft storage (the only browser storage)', () => {
     clearAllDrafts();
   });
 });
+
+describe('stage 16: recovery epoch of a stored submission', () => {
+  test('new submissions carry the epoch they were prepared under; old stored ones count as epoch 0; malformed epochs are discarded', () => {
+    const sub = newSubmission(addProduct(EMPTY_CART, product(), 2).cart, '', TERMS, 1000, 1_800_000_000_000);
+    assert.equal(sub.epoch, 1_800_000_000_000);
+    const s = scope();
+    saveDraft(s, { cart: EMPTY_CART, pending: sub });
+    assert.equal(loadDraft(s).pending?.epoch, 1_800_000_000_000, 'persisted with the submission');
+    const { epoch: _e, ...older } = sub;
+    store.setItem(draftKey(s), JSON.stringify({ v: 1, savedAt: Date.now(), lines: [], pending: older }));
+    assert.equal(loadDraft(s).pending?.epoch, 0, 'stored by an older release: epoch 0');
+    store.setItem(draftKey(s), JSON.stringify({ v: 1, savedAt: Date.now(), lines: [], pending: { ...sub, epoch: -3 } }));
+    assert.equal(loadDraft(s).pending, null, 'malformed epoch: the submission is not trusted');
+  });
+
+  test('WRITES_SUSPENDED keeps the submission for a later retry; RECOVERY_EPOCH_STALE requires a new review', () => {
+    assert.equal(classifyFailure(failure('unavailable', { status: 503, code: 'WRITES_SUSPENDED' })), 'not_processed');
+    assert.equal(classifyFailure(failure('conflict', { status: 409, code: 'RECOVERY_EPOCH_STALE' })), 'rejected');
+    assert.equal(classifyFailure(failure('unavailable', { status: 503, code: 'UNAVAILABLE' })), 'unknown', 'other 503s stay unknown');
+  });
+});

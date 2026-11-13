@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { assertNewWrite } from '../http/write-gate.ts';
 import { requireAdmin, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
 import { deleteUserSessions } from '../auth/sessions.ts';
 import { hmacHex } from '../auth/keys.ts';
@@ -142,6 +143,7 @@ export async function patchOwnProfile(ctx: RequestContext): Promise<void> {
   const updated = writeTransaction(db, () => {
     // The session may have been revoked (suspension, logout, password change) while the body was read.
     const identity = revalidateAtCommit(ctx, auth);
+    assertNewWrite(ctx);
     const current = db.prepare(`${SELECT_MERCHANT} WHERE m.id = ?`).get(identity.merchantId) as unknown as MerchantRow;
     if (current.version !== body.expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { profile: ownProfile(current) } });
 
@@ -307,6 +309,7 @@ export async function changeMerchantStatus(ctx: RequestContext): Promise<void> {
   const result = writeTransaction(db, () => {
     // Re-check the administrator at the committing boundary (session, role, recent authentication).
     const actor = revalidateAtCommit(ctx, auth, { admin: 'recent' });
+    assertNewWrite(ctx);
     const target = db.prepare(`${SELECT_MERCHANT} WHERE m.id = ?`).get(id) as unknown as MerchantRow | undefined;
     if (!target) throw new AppError('NOT_FOUND');
     if (target.role === 'admin') throw new AppError('ADMIN_ACCOUNT_PROTECTED');

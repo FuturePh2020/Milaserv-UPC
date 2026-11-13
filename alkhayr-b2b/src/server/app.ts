@@ -10,6 +10,7 @@ import { applySecurityHeaders } from './http/security-headers.ts';
 import type { StaticFiles } from './http/static-files.ts';
 import type { ReadinessProbe } from './database/readiness.ts';
 import { registerHealthRoutes } from './routes/health.ts';
+import { writeStatus } from './http/write-gate.ts';
 import { registerAuthRoutes } from './routes/auth.ts';
 import { registerMerchantRoutes } from './routes/merchant.ts';
 import { registerAdminMerchantRoutes } from './routes/admin-merchants.ts';
@@ -48,7 +49,7 @@ export function createApp(config: AppConfig, log: Logger, deps: AppDependencies)
   const { staticFiles, services } = deps;
   const trusted = trustedProxySet(config.trustProxy);
   const router = new Router();
-  registerHealthRoutes(router, deps.readiness);
+  registerHealthRoutes(router, deps.readiness, () => writeStatus(services).writes);
   registerAuthRoutes(router);
   registerMerchantRoutes(router);
   registerAdminMerchantRoutes(router);

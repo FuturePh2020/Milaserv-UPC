@@ -174,6 +174,18 @@ Full procedures, recovery cases A–F, secret custody and RPO/RTO: [`BACKUP_RECO
 Browsers that still hold an unclear order submission from before stage 14 now show a notice that the order may already
 exist, linking to «طلباتي»; nothing is resent automatically.
 
+### Stage 16 note: migration 0008, recovery gate and consistency checks
+This release adds `0008_system_state.sql`. Existing installations:
+1. Stop the server.
+2. `backup:create`, then `db:migrate --confirm-backup`.
+3. Start the server.
+
+New installations get it through `db:init`. New commands: `db:check` (read-only; safe while running),
+`recovery:status`, `recovery:reopen`. After any restore the portal starts in RECOVERY MODE: reconcile, then run
+`recovery:reopen` ([`BACKUP_RECOVERY_AR.md`](BACKUP_RECOVERY_AR.md)). If the startup log shows `consistency_failed`,
+new business writes stay refused until `db:check` is clean and the server is restarted. Nothing is repaired
+automatically.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|

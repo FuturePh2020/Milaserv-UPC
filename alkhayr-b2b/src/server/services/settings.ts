@@ -1,4 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
+import { assertNewWrite } from '../http/write-gate.ts';
 import { z } from 'zod';
 import { requireAdmin, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
 import { hmacHex } from '../auth/keys.ts';
@@ -130,6 +131,7 @@ export async function updateSettings(ctx: RequestContext): Promise<void> {
   const { db, now } = ctx.services;
   const result = writeTransaction(db, () => {
     const actor = revalidateAtCommit(ctx, auth, { admin: 'recent' });
+    assertNewWrite(ctx);
     const current = loadSettings(db);
     if (current.version !== body.expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { settings: settingsView(current) } });
     const before: Record<Field, unknown> = {

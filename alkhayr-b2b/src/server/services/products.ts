@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { assertNewWrite } from '../http/write-gate.ts';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { requireAdmin, requireApproved, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
@@ -419,6 +420,7 @@ export async function createProduct(ctx: RequestContext): Promise<void> {
   const { db, now } = ctx.services;
   const product = writeTransaction(db, () => {
     const actor = revalidateAtCommit(ctx, auth, { admin: 'recent' });
+    assertNewWrite(ctx);
     // Counted inside the serialized (BEGIN IMMEDIATE) transaction: concurrent creates cannot exceed the cap.
     assertCatalogCapacity(db, 1);
     const id = insertProductRecord(
@@ -442,6 +444,7 @@ export async function updateProduct(ctx: RequestContext): Promise<void> {
 
   const product = writeTransaction(db, () => {
     const actor = revalidateAtCommit(ctx, auth, { admin: 'recent' });
+    assertNewWrite(ctx);
     const current = loadProduct(ctx, id);
     if (current.version !== body.expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(current) } });
 

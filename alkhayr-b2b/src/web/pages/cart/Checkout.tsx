@@ -143,7 +143,7 @@ export function CheckoutPage({ csrf }: { csrf: SessionCsrfToken }) {
   const transmit = async (pending: PendingSubmission) => {
     setSend({ status: 'sending' });
     setInfo(null);
-    const r = await createOrder(csrf, pending.payload);
+    const r = await createOrder(csrf, pending.payload, pending.epoch);
     if (r.ok) {
       cart.complete(cartMatchesPayload(cart.cart, pending.payload));
       navigate(`/orders/${r.data.order.id}`, { received: r.data.replayed ? 'replayed' : 'new' });
@@ -188,7 +188,23 @@ export function CheckoutPage({ csrf }: { csrf: SessionCsrfToken }) {
   };
 
   if (cart.cart.lines.length === 0 && !cart.pending) {
-    return <EmptyState title="لا يوجد ما يُراجع" message="السلة فارغة." actions={<ButtonLink href={href('/catalog')} variant="primary">تصفح الكتالوج</ButtonLink>} />;
+    // Stage 16 (F-12): a refusal that discarded the pending submission must stay visible even when the
+    // cart is empty, otherwise the trader would not learn that NO order was created.
+    return (
+      <section className="stack" aria-labelledby="checkout-empty">
+        {send.status === 'rejected' ? (
+          <div aria-live="polite">
+            <Notice tone="warning" title="لم يُنشأ الطلب">
+              <p>{send.failure.message}</p>
+            </Notice>
+          </div>
+        ) : null}
+        <EmptyState title="لا يوجد ما يُراجع" message="السلة فارغة." actions={<ButtonLink href={href('/catalog')} variant="primary">تصفح الكتالوج</ButtonLink>} />
+        <span id="checkout-empty" hidden>
+          لا يوجد ما يُراجع
+        </span>
+      </section>
+    );
   }
 
   return (

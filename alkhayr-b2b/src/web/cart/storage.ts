@@ -29,6 +29,12 @@ export interface PendingSubmission {
   requestKey: string;
   payload: CreateOrderPayload;
   createdAt: number;
+  /**
+   * Recovery epoch the submission was prepared under (stage 16). A retry re-sends THIS epoch, so after
+   * a server restore an order that is not in the restored data is refused instead of created anew.
+   * Submissions stored by older releases have none and count as epoch 0 (never restored).
+   */
+  epoch: number;
 }
 
 /**
@@ -98,7 +104,9 @@ export function parsePending(v: unknown): PendingSubmission | null {
   if (!isObj(t) || !int(t.shippingCents, 0, 10_000_000) || typeof t.shippingTaxable !== 'boolean' || !int(t.taxBps, 0, 10_000)) return null;
   const expectedTerms = { shippingCents: t.shippingCents, shippingTaxable: t.shippingTaxable, taxBps: t.taxBps };
   const payload: CreateOrderPayload = { requestKey: v.requestKey, expectedTerms, items: items as CreateOrderPayload['items'], ...(typeof p.note === 'string' ? { note: p.note } : {}) };
-  return { requestKey: v.requestKey, createdAt: v.createdAt, payload };
+  const epoch = v.epoch === undefined ? 0 : int(v.epoch, 0, Number.MAX_SAFE_INTEGER) ? (v.epoch as number) : null;
+  if (epoch === null) return null;
+  return { requestKey: v.requestKey, createdAt: v.createdAt, payload, epoch };
 }
 
 /** Reads and validates the draft of exactly this account; expired or malformed data is discarded. */

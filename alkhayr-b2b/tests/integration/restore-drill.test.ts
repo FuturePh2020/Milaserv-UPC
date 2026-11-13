@@ -29,7 +29,7 @@ class RawClient {
     this.server = server;
   }
   async request(method: string, p: string, body?: unknown) {
-    const headers: Record<string, string> = { Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin' };
+    const headers: Record<string, string> = { Origin: ORIGIN, 'Sec-Fetch-Site': 'same-origin', ...this.extraHeaders };
     if (this.jar.size) headers.Cookie = [...this.jar].map(([k, v]) => `${k}=${v}`).join('; ');
     if (this.csrf) headers['X-CSRF-Token'] = this.csrf;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -49,6 +49,16 @@ class RawClient {
     }
     return { ...r, json };
   }
+  async requestWithHeaders(method: string, p: string, body: unknown, extra: Record<string, string>) {
+    const saved = this.extraHeaders;
+    this.extraHeaders = extra;
+    try {
+      return await this.request(method, p, body);
+    } finally {
+      this.extraHeaders = saved;
+    }
+  }
+  extraHeaders: Record<string, string> = {};
   async login(username: string, password: string, totp?: string) {
     this.jar.clear();
     this.csrf = null;
@@ -119,9 +129,21 @@ test('recovery drill: online backup of a running server, restore into a new DATA
     const created = await runCli(app, ['backup:create', '--key-file', keyFile], env());
     assert.equal(created.code, 0, created.stderr + created.stdout);
     const backupFile = path.join(backupDir, readdirSync(backupDir).find((n) => n.endsWith('.akbk'))!);
-    // Changes after the backup are NOT in it (recovery point = backup time).
-    const late = await trader.request('POST', '/api/v1/orders', { ...orderBody, requestKey: randomUUID() });
+    // Changes after the backup are NOT in it (recovery point = backup time): an order, a stock
+    // adjustment and an import committed now exist only in "old browser state" after the restore.
+    const lateBody = { ...orderBody, requestKey: randomUUID() };
+    const late = await trader.request('POST', '/api/v1/orders', lateBody);
     assert.equal(late.status, 201, late.body);
+    const pv = () => Number((new DatabaseSync(app.databasePath, { readOnly: true }).prepare('SELECT version FROM products WHERE id = ?').get(product.id) as { version: number }).version);
+    const lateAdjBody = { type: 'receipt', quantity: 4, expectedVersion: pv(), operationKey: randomUUID(), reason: 'استلام بعد النسخة' };
+    const lateAdj = await admin.request('POST', `/api/v1/admin/inventory/${product.id}/adjustments`, lateAdjBody);
+    assert.equal(lateAdj.status, 201, lateAdj.body);
+    const csv = Buffer.from(`productId,expectedVersion,quantity,reason\n${product.id},${pv()},2,استلام\n`).toString('base64');
+    const preview = await admin.request('POST', '/api/v1/admin/imports/preview', { mode: 'receive_stock', file: csv });
+    assert.equal(preview.status, 200, preview.body);
+    const lateImportBody = { mode: 'receive_stock', file: csv, previewToken: preview.json.previewToken, operationKey: randomUUID() };
+    const lateImport = await admin.request('POST', '/api/v1/admin/imports/commit', lateImportBody);
+    assert.equal(lateImport.status, 201, lateImport.body);
     assert.equal(await server.stop(), 0);
 
     // ---- restore into a NEW data directory with the WRONG APP_SECRET: refused, nothing created
@@ -161,6 +183,54 @@ test('recovery drill: online backup of a running server, restore into a new DATA
       assert.equal(replay.status, 200, replay.body);
       assert.equal(replay.json.replayed, true);
       assert.equal(replay.json.order.id, orderId);
+
+      // ---- stage 16: the restored installation is in RECOVERY MODE
+      assert.deepEqual((await trader2.request('GET', '/readyz')).json, { status: 'ready', writes: 'closed' });
+      const me = await trader2.request('GET', '/api/v1/auth/me');
+      assert.equal(me.json.system.writes, 'closed');
+      assert.equal(me.json.system.reason, 'recovery');
+      const epoch = me.json.system.recoveryEpoch as number;
+      assert.ok(epoch > 0);
+      const orderCount = () => Number((new DatabaseSync(path.join(restoredDir, 'alkhayr.db'), { readOnly: true }).prepare('SELECT count(*) AS n FROM orders').get() as { n: number }).n);
+      const ordersBefore = orderCount();
+      // Old browser state replays the post-backup order: refused, nothing created.
+      const r1 = await trader2.request('POST', '/api/v1/orders', lateBody);
+      assert.equal(r1.status, 503, r1.body);
+      assert.equal(r1.json.error.code, 'WRITES_SUSPENDED');
+      assert.equal(orderCount(), ordersBefore);
+
+      // ---- reopen through the DOCUMENTED npm entry point in a real terminal (reason + typed confirmation)
+      const reopen = pty(projectRoot, ['npm', 'run', '--silent', 'cli', '--', 'recovery:reopen'], env({ DATA_DIR: restoredDir, HOME: app.root }), [
+        { expect: 'Reason for this action', send: 'reconciled orders and stock with the warehouse' },
+        { expect: 'Type REOPEN to open business writes now: ', send: 'REOPEN' },
+        { expect: 'Business writes are OPEN', send: null },
+      ]);
+      assert.equal(reopen.exit, 0, `${reopen.error}\n${reopen.transcript}`);
+      assert.deepEqual((await trader2.request('GET', '/readyz')).json, { status: 'ready', writes: 'open' });
+
+      // Pre-restore intents that are NOT in the restored data stay refused after reopening (no silent new write)...
+      const ledgerBefore = Number((new DatabaseSync(path.join(restoredDir, 'alkhayr.db'), { readOnly: true }).prepare('SELECT count(*) AS n FROM inventory_ledger').get() as { n: number }).n);
+      for (const [res, what] of [
+        [await trader2.request('POST', '/api/v1/orders', lateBody), 'order'],
+        [await admin2.request('POST', `/api/v1/admin/inventory/${product.id}/adjustments`, lateAdjBody), 'adjustment'],
+        [await admin2.request('POST', '/api/v1/admin/imports/commit', lateImportBody), 'import'],
+      ] as const) {
+        assert.equal(res.status, 409, `${what}: ${res.body}`);
+        assert.equal(res.json.error.code, 'RECOVERY_EPOCH_STALE', what);
+      }
+      assert.equal(orderCount(), ordersBefore);
+      assert.equal(Number((new DatabaseSync(path.join(restoredDir, 'alkhayr.db'), { readOnly: true }).prepare('SELECT count(*) AS n FROM inventory_ledger').get() as { n: number }).n), ledgerBefore);
+      // ...an operation that IS in the restored data still replays...
+      const again = await trader2.request('POST', '/api/v1/orders', orderBody);
+      assert.equal(again.status, 200);
+      assert.equal(again.json.order.id, orderId);
+      // ...and a fresh, intentional order under the current epoch (new key, renewed review) is accepted.
+      const fresh = await trader2.requestWithHeaders('POST', '/api/v1/orders', { ...orderBody, requestKey: randomUUID() }, { 'X-Recovery-Epoch': String(epoch) });
+      assert.equal(fresh.status, 201, fresh.body);
+      assert.equal(orderCount(), ordersBefore + 1);
+      // The consistency verifier is clean on the restored data (real CLI process).
+      const check = await runCli(app, ['db:check'], env({ DATA_DIR: restoredDir }));
+      assert.equal(check.code, 0, check.stdout + check.stderr);
       const logs = server.stdout() + server.stderr() + restored.stdout + restored.stderr + created.stdout + created.stderr;
       for (const s of [ADMIN_PASSWORD, TRADER_PASSWORD, FIXTURE_APP_SECRET, totpSecret.toString('hex')]) assert.ok(!logs.includes(s), 'secret in process output');
     } finally {
@@ -180,8 +250,12 @@ test('recovery drill: online backup of a running server, restore into a new DATA
 });
 
 /** Runs a bundled CLI command inside a real pseudo-terminal (tests/helpers/pty_driver.py). */
-function pty(app: TempApp, args: string[], env: NodeJS.ProcessEnv, steps: Array<{ expect: string; send: string | null }>) {
-  const cfg = { argv: [process.execPath, path.join(app.distDir, 'server', 'cli.js'), ...args], env: { ...env, TERM: 'dumb' }, cwd: app.root, timeout: 60, steps };
+function pty(appOrCwd: TempApp | string, args: string[], env: NodeJS.ProcessEnv, steps: Array<{ expect: string; send: string | null }>) {
+  // A TempApp runs its bundled cli.js; a directory + argv runs that exact command (e.g. `npm run cli`).
+  const npmPath = path.join(path.dirname(process.execPath), 'npm');
+  const argv = typeof appOrCwd === 'string' ? (args[0] === 'npm' ? [npmPath, ...args.slice(1)] : args) : [process.execPath, path.join(appOrCwd.distDir, 'server', 'cli.js'), ...args];
+  const cwd = typeof appOrCwd === 'string' ? appOrCwd : appOrCwd.root;
+  const cfg = { argv, env: { ...env, TERM: 'dumb' }, cwd, timeout: 60, steps };
   return JSON.parse(execFileSync('python3', ['-I', path.join(projectRoot, 'tests', 'helpers', 'pty_driver.py'), JSON.stringify(cfg)], { encoding: 'utf8', timeout: 90_000 })) as { exit: number | null; error: string | null; transcript: string };
 }
 

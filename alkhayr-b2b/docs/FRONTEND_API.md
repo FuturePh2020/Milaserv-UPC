@@ -170,3 +170,18 @@ status and product/ledger links; a replay says "already recorded — not repeate
 - **Order summaries:** `#/orders/<id>/print` (own) and `#/admin/orders/<id>/print` render without the shell; the
   «طباعة» button calls `window.print()` only after the authorized summary loaded; `styles/print.css` (A4, repeated
   table heading, no navigation/toasts in print).
+
+## Stage 16: recovery epoch, write status and notices
+- **Page epoch.** The client takes it from the first `GET /auth/me` or `POST /auth/login` (`system.recoveryEpoch`)
+  and never changes it for that page. Every authenticated mutation sends `X-Recovery-Epoch: <page epoch>`; GETs
+  never do.
+- **Restore detected.** If a later identity response reports a different epoch, the server was restored while
+  the page was open. `SystemNotice` then asks for a reload, and operations prepared on the page are never
+  re-sent under the new epoch.
+- **Stored submissions.** A pending order submission in localStorage records the epoch it was prepared under
+  (older stored submissions count as 0), and a retry re-sends THAT epoch. After a restore the server answers:
+  - 409 `RECOVERY_EPOCH_STALE` → classified as a definite refusal: the submission is discarded and a new
+    review with a new key is required; the refusal stays visible even when the cart is empty;
+  - 503 `WRITES_SUSPENDED` → "not processed": the submission is kept for a later retry.
+- **Notices.** `SystemNotice` (all shells) explains recovery or maintenance without claiming that earlier orders
+  failed. `LegacySubmissionNotice` (stage 15) is browser-verified in stage 16.

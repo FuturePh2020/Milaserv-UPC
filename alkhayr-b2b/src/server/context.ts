@@ -16,4 +16,9 @@ export interface AppServices {
   readonly hasher: PasswordHashing;
   readonly keys: ServerKeys;
   readonly rateLimiter: RateLimiter;
+  /**
+   * Consistency error codes found at startup (stage 16). Non-empty = integrity hold: the server serves
+   * reads, but refuses every new business write until the operator resolves the issue and restarts.
+   */
+  readonly integrityHold?: readonly string[];
 }

@@ -391,6 +391,37 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   - an operator with shell access can do anything (by design);
   - the plaintext SHA-256 adds nothing beyond GCM against outsiders (defence in depth against writer bugs).
 
+## 7l. Stage 16 hardening (adversarial review: docs/SECURITY_REVIEW_16.md)
+- **Login throttling without username lockout:**
+  - durable keyed counters per source (20 / 15 min), per (source, username) (5 / 15 min) and per username
+    across sources (30 / 15 min, a distributed-guessing backstop that one source cannot reach);
+  - at most 2 concurrent credential jobs per source (in memory, bounded by requests in flight) in front of
+    the shared scrypt queue (2 running + 32 waiting);
+  - unknown users still do a full dummy verification; responses stay generic; no CAPTCHA.
+  - **Residual:** an attacker controlling ≥ 6 independent sources (IPv4 addresses or IPv6 /64s) can still
+    make one username refuse sign-in for ≤ 15 min, and many sources can saturate the scrypt queue (503).
+    Clients behind one shared NAT share the per-source limits. Denial of service is reduced, not
+    impossible.
+- **Recovery gate:** after a restore, new business writes are refused until `recovery:reopen` (operator CLI,
+  reason, audited). Operations prepared under another recovery epoch never execute as new writes; identical
+  replays of operations present in the data still return their committed result.
+- **Integrity hold and write guards:** consistency errors at startup close all new writes; per-order and
+  per-product checks refuse writes on inconsistent records (409 `CONSISTENCY_HOLD`); nothing is repaired or
+  hidden.
+- **Plaintext staging:**
+  - each backup, verify or restore job holds an OS-released lock inside its 0700 staging directory;
+  - cleanup (next backup, verify, restore and server start) removes only unlocked, owned, managed directories
+    whose entries are all expected regular files, one file at a time;
+  - active jobs, symlinks and unexpected contents are left alone and reported by `backup:status`;
+  - encrypted `.partial` files are removed after 24 h;
+  - no secure erasure is claimed: on SSDs and journaled filesystems deleted plaintext may persist physically,
+    so use full-disk encryption.
+- **Filesystem errors:** a full disk, quota, read-only or permission error maps to `DISK_FULL`/`WRITE_FAILED`.
+  Partial output is removed and existing backups are untouched (disk-full measured on a 400 KB tmpfs).
+- **Password change** authenticates and checks CSRF before reading the body.
+- **Product images:** `Referrer-Policy: no-referrer` plus `referrerPolicy="no-referrer"` on `<img>`. External
+  image hosts still see each viewer's IP address, user agent and request time (no image proxy, by decision).
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -437,6 +468,10 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Encrypted, authenticated, verified backups; key file permission checks; no secrets in argv/logs | ✅ | ✅ 15 (15 + 12 + 2 integration tests, 24 mutants) |
 | Restore: refuses running/existing targets, validates before replacing, keeps previous DB, removes sessions | ✅ | ✅ 15 (in-process + real-process drill) |
 | Operator recovery invalidates in-flight logins (`credential_version`) | ✅ | ✅ 15 (paused-login races) |
+| No username lockout from one source; per-source admission to hashing | ✅ | ✅ 16 (victim from another source signs in; /64 grouping; spoofed XFF; concurrency) |
+| Post-restore recovery mode + recovery epoch for all mutation families | ✅ | ✅ 16 (in-process families + real-process drill + Chromium journey) |
+| Consistency verifier, integrity hold, scoped write guards | ✅ | ✅ 16 (valid histories accepted; raw-SQL gaps detected; 0008 trigger) |
+| Route × role permission matrix (42 routes × 6 roles) | ✅ | ✅ 16 |
 | DB, WAL, SHM, lock files not fetchable over HTTP | ✅ | ✅ 02 (canary inside the real DB) |
 | scrypt hashing, allow-listed params, bounded concurrency, dummy verification | ✅ | ✅ 03 (unit; mutation-checked) |
 | Password policy without trimming/truncation | ✅ | ✅ 03 |

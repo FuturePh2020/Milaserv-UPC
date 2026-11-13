@@ -37,6 +37,8 @@ export const ERROR_CATALOG = {
   ORDER_RESERVATION_MISMATCH: { status: 409, messageAr: 'حجوزات الطلب لا تطابق حالته؛ لم يُنفَّذ أي تغيير. راجع سجل الطلب.' },
   IMPORT_PREVIEW_INVALID: { status: 409, messageAr: 'المعاينة لا تطابق هذا الملف أو هذا النوع من الاستيراد أو هذا الحساب. أعد المعاينة قبل التأكيد.' },
   IMPORT_PREVIEW_EXPIRED: { status: 409, messageAr: 'انتهت صلاحية المعاينة قبل التأكيد ولم يُستورد شيء. أعد المعاينة ثم أكّد من جديد.' },
+  RECOVERY_EPOCH_STALE: { status: 409, messageAr: 'استُعيدت بيانات البوابة من نسخة احتياطية بعد بدء هذه العملية، ولا يمكن التأكد من نتيجتها. لم يُنفَّذ شيء الآن. حدّث الصفحة وراجع السجل، ثم ابدأ عملية جديدة إن لزم.' },
+  CONSISTENCY_HOLD: { status: 409, messageAr: 'سجلات هذا الطلب أو المنتج غير متسقة؛ أوقف العمليات عليه وأبلغ مسؤول التشغيل. لم يُنفَّذ أي تغيير.' },
   IMPORT_PREVIEW_STALE: { status: 409, messageAr: 'تغيّرت المنتجات منذ المعاينة؛ لم يُستورد أي سجل. راجع المعاينة الجديدة.' },
   PAYLOAD_TOO_LARGE: { status: 413, messageAr: 'حجم البيانات المرسلة أكبر من المسموح.' },
   URI_TOO_LONG: { status: 414, messageAr: 'عنوان الطلب أطول من المسموح.' },
@@ -59,6 +61,7 @@ export const ERROR_CATALOG = {
   INTERNAL: { status: 500, messageAr: 'حدث خطأ غير متوقع في الخادم. حاول مرة أخرى لاحقًا.' },
   UNAVAILABLE: { status: 503, messageAr: 'الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.' },
   IMPORT_BUSY: { status: 503, messageAr: 'عمليات استيراد أو تصدير أخرى قيد المعالجة الآن. حاول بعد لحظات.' },
+  WRITES_SUSPENDED: { status: 503, messageAr: 'البوابة في وضع الصيانة بعد استعادة البيانات أو أثناء مراجعة فنية؛ لا تُقبل عمليات جديدة مؤقتًا. لم يُنفَّذ طلبك، ويمكنك تصفح البيانات.' },
   NOT_READY: { status: 503, messageAr: 'الخدمة غير جاهزة لاستقبال الطلبات حاليًا.' },
 } as const satisfies Record<string, { status: number; messageAr: string }>;
 

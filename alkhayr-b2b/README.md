@@ -2,7 +2,7 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 15 complete — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Stage 16 complete — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
 review/approval/suspension), product administration, the approved catalog, inventory
@@ -15,7 +15,9 @@ and safe CSV imports (create/update products, receive stock, set physical totals
 confirmation and durable idempotency (operator guide: [`docs/IMPORT_GUIDE_AR.md`](docs/IMPORT_GUIDE_AR.md)),
 and business settings, operational reports, spreadsheet-safe exports, pre-filled import templates and printable
 order summaries, and encrypted backups with verified restore and operator account recovery
-(guide: [`docs/BACKUP_RECOVERY_AR.md`](docs/BACKUP_RECOVERY_AR.md)). See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+(guide: [`docs/BACKUP_RECOVERY_AR.md`](docs/BACKUP_RECOVERY_AR.md)), and a stage-16 adversarial security review
+with a consistency verifier, a post-restore recovery gate and a release-blocker register
+([`docs/SECURITY_REVIEW_16.md`](docs/SECURITY_REVIEW_16.md)). See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
 
 ## Quick start (Node.js 24.22.1 required)
 ```sh
@@ -51,6 +53,7 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/DESIGN_SYSTEM.md` | Tokens, contrast, typography, components, shells, gallery |
 | `docs/FRONTEND_API.md` | Browser API client and identity rules |
 | `docs/SECURITY.md` | Security policy and verification status |
+| `docs/SECURITY_REVIEW_16.md` | Stage-16 adversarial review: findings, fixes, residual risks, NOT RUN checks, release blockers |
 | `docs/THREAT_MODEL.md` | Threats and controls |
 | `docs/DECISIONS.md` | Decision log |
 | `docs/PROJECT_STATE.md` | Implementation state, verification evidence, next stage |

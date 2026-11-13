@@ -30,7 +30,7 @@ function migrationsCopy(): string {
 
 const EXPECTED_TABLES = [
   'audit_logs', 'auth_users', 'business_settings', 'import_operation_items', 'import_operations', 'inventory_ledger', 'merchants', 'order_allocations', 'order_events', 'order_items',
-  'orders', 'product_categories', 'products', 'rate_limits', 'schema_migrations', 'sessions',
+  'orders', 'product_categories', 'products', 'rate_limits', 'schema_migrations', 'sessions', 'system_state',
 ];
 
 describe('loading migrations', () => {

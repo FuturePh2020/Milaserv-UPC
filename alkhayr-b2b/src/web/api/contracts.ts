@@ -41,6 +41,8 @@ export interface MeResponse {
   };
   session: { absoluteExpiresAt: number; idleExpiresAt: number; recentAuthUntil: number | null };
   csrfToken: string;
+  /** Stage 16: business-write status (absent from older servers). */
+  system?: SystemStatus;
 }
 
 export interface LogoutResponse {
@@ -167,6 +169,7 @@ export function isCsrfResponse(v: unknown): v is CsrfResponse {
 
 export function isMeResponse(v: unknown): v is MeResponse {
   if (!isObject(v) || !isObject(v.user) || !isObject(v.merchant) || !isObject(v.session) || !isString(v.csrfToken)) return false;
+  if (v.system !== undefined && !isSystemStatus(v.system)) return false;
   const { user, merchant, session } = v;
   return (
     isString(user.id) &&
@@ -238,6 +241,18 @@ export interface LoginResponse {
   merchant: { status: MerchantStatus };
   session: { expiresAt: number; idleTimeoutMinutes: number };
   csrfToken: string;
+  system?: SystemStatus;
+}
+
+/** Whether new business writes are accepted, and the recovery epoch operations must carry (stage 16). */
+export interface SystemStatus {
+  writes: 'open' | 'closed';
+  reason: 'recovery' | 'maintenance' | null;
+  recoveryEpoch: number;
+}
+
+export function isSystemStatus(v: unknown): v is SystemStatus {
+  return isObject(v) && (v.writes === 'open' || v.writes === 'closed') && (v.reason === null || v.reason === 'recovery' || v.reason === 'maintenance') && isInt(v.recoveryEpoch) && (v.recoveryEpoch as number) >= 0;
 }
 
 /** POST /auth/password — every session of the account is revoked. */

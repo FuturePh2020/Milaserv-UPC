@@ -20,10 +20,20 @@ export interface RateLimitRule {
 }
 
 export const DEFAULT_RATE_LIMITS = {
-  /** Login attempts per client IP (IPv6: per /64). */
+  /** Login attempts per client IP (IPv6: per /64), any usernames. */
   login_ip: { limit: 20, windowMs: 15 * 60_000 },
-  /** Login attempts per username (existing or not). */
-  login_account: { limit: 5, windowMs: 15 * 60_000 },
+  /**
+   * Login attempts per (client IP identity, username) — the main guessing bound. Exhausting it from one
+   * source does NOT block the same username from another source (stage 16: username lockout fix).
+   */
+  login_source_account: { limit: 5, windowMs: 15 * 60_000 },
+  /**
+   * Login attempts per username across ALL sources (existing or not): backstop against distributed
+   * guessing. One source can contribute at most 5 (login_source_account), so an account-wide refusal
+   * needs at least 6 independent sources (residual distributed-DoS risk, docs/SECURITY.md §7).
+   * Not reset by a successful login.
+   */
+  login_account: { limit: 30, windowMs: 15 * 60_000 },
   /** Registrations per client IP. */
   register_ip: { limit: 5, windowMs: 60 * 60_000 },
   /** Password-change attempts per account. */

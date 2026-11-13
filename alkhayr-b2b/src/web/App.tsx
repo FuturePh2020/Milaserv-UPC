@@ -1,3 +1,4 @@
+import { SystemNotice } from './pages/SystemNotice.tsx';
 import { useState, type ReactNode } from 'react';
 import type { SessionCsrfToken } from './api/client.ts';
 import type { MeResponse } from './api/contracts.ts';
@@ -104,6 +105,7 @@ function SignedInShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeRespon
           cartCount={cart.cart.lines.length}
           banner={
             <>
+              <SystemNotice me={me} />
               {recentExpired ? <p className="l-banner l-banner--warning">مضت أكثر من 15 دقيقة على آخر تحقق؛ ستحتاج لتسجيل الدخول من جديد قبل أي إجراء إداري.</p> : null}
               <UnresolvedBanner path={r.path} />
             </>
@@ -118,7 +120,13 @@ function SignedInShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeRespon
   const r = route.path === '/' ? { ...route, path: '/catalog' } : route;
   const screen = r.path.startsWith('/admin') ? <ForbiddenView home={home} /> : (purchasingScreen(r, me, csrf, home) ?? <NotFoundView home={home} />);
   return (
-    <MerchantLayout kind="merchant" account={account} path={r.path} onLogout={onLogout} logoutBusy={logoutBusy} cartCount={cart.cart.lines.length} banner={<LegacySubmissionNotice />}>
+    <MerchantLayout kind="merchant" account={account} path={r.path} onLogout={onLogout} logoutBusy={logoutBusy} cartCount={cart.cart.lines.length} banner={
+        <>
+          <SystemNotice me={me} />
+          <LegacySubmissionNotice />
+        </>
+      }
+    >
       {screen}
     </MerchantLayout>
   );
@@ -134,7 +142,7 @@ function PendingShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeRespons
   else if (path.startsWith('/admin')) screen = <ForbiddenView home="#/account" />;
   else screen = <PendingApprovalView businessName={me.merchant.businessName} />;
   return (
-    <MerchantLayout kind="pending" account={account} path={path} onLogout={onLogout} logoutBusy={logoutBusy}>
+    <MerchantLayout kind="pending" account={account} path={path} onLogout={onLogout} logoutBusy={logoutBusy} banner={<SystemNotice me={me} />}>
       {screen}
     </MerchantLayout>
   );

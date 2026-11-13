@@ -3,12 +3,12 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-13 |
-| Current stage | **15 — Encrypted backup, verified restore and operator account recovery: COMPLETE** |
-| Next stage | **16** (awaiting owner prompt) |
+| Current stage | **16 — Adversarial security review, consistency enforcement and release gates: COMPLETE** |
+| Next stage | **17** (awaiting owner prompt; see release blockers B-1…B-5 in docs/SECURITY_REVIEW_16.md) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001–0006 + **0007** (`auth_users.credential_version`) |
+| Schema | Migrations 0001–0007 + **0008** (`system_state` recovery gate; ledger continuity trigger) |
 | Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, the complete merchant experience in the browser, **and the administration screens (merchant review, products, inventory and ledger, order fulfillment) with safe re-authentication and idempotent retries, and CSV imports (four modes, preview, all-or-nothing confirmation, durable idempotency), and business settings, operational reports, spreadsheet-safe exports, pre-filled import templates and printable order summaries**, **and encrypted backups, verified restore, rotation/status, and server-host account recovery commands**. |
 
 ## Stage log
@@ -30,10 +30,117 @@
 | 12 | ✅ Done (administration experience) | Commit `562b9f5` — 473/473 tests ×3 clean-copy runs, 125/125 administration lifecycle checks + 87/87 merchant journey, axe 21 states 0 violations, 16 mutants — below |
 | 13 | ✅ Done (CSV imports) | Commit `9f9149e` — 513/513 tests ×3 clean-copy runs, 44/44 import lifecycle + 125/125 + 87/87 regression journeys, axe 0 violations, 30 mutants (final 27 caught / 3 survived; see stage-14 reconciliation) |
 | 14 | ✅ Done (settings, reports, exports, printing) | Commit `051fd43` — 541/541 tests ×3 clean-copy runs, 67/67 browser run + 87/87, 125/125, 44/44 regressions, axe 0 violations, 24 mutants — below |
-| 15 | ✅ Done (backup, restore, account recovery) | 571/571 tests ×3 clean-copy runs, real-process restore drill + real-PTY run, 24 mutants — below |
-| 16–18 | ⏳ Not started | — |
+| 15 | ✅ Done (backup, restore, account recovery) | Commit `9097aac` — 571/571 tests ×3 clean-copy runs, real-process restore drill + real-PTY run, 24 mutants — below |
+| 16 | ✅ Done (adversarial review, consistency, recovery gate) | 610/610 tests ×3 clean-copy runs, 19/19 + 87/87 + 125/125 + 44/44 + 67/67 browser checks, 21/21 mutants caught (after fixes to the tests) — below |
+| 17–18 | ⏳ Not started | — |
 
-## Stage 15 — known weaknesses first
+## Stage 16 — remaining weaknesses and release blockers first
+Full report, including the release-blocker register: [`docs/SECURITY_REVIEW_16.md`](SECURITY_REVIEW_16.md).
+- **B-1 stock inference (business decision needed).** Traders never receive quantities, but bisection over
+  quotes recovered the exact available stock in **17 requests**. The rate limit is 60 per 10 min, which slows
+  this down but does not prevent it. Order and reservation rules were deliberately not changed (D-162).
+- **B-2 off-server backups** are not automated or verified (operator / stage 17).
+- **B-3 production TLS, proxy and cookie checks are NOT RUN** (stage 17; checklist in the report §8).
+- **B-4 RPO 24 h / RTO 2 h are provisional targets.** They are neither business-approved nor measured on real
+  data. Measured drill on tiny synthetic data: restore + verify + server ready ≈ 0.3 s.
+- **B-5 distributed login DoS residual.** ≥ 6 independent sources can still block one username for ≤ 15 min,
+  and many sources can saturate the scrypt queue (503). Users behind one shared NAT share limits.
+- **Reverse-pairing gap remains.** An order event without its state change, or a reserve row without its
+  allocation, can still be written by raw SQL (SQLite triggers cannot enforce commit-level pairing; proved by
+  tests). It is DETECTED (verifier) and FAILS CLOSED (per-order/product 409 holds; startup integrity hold).
+  It is not prevented.
+- **Plaintext in use.** During backup, verify or restore a plaintext copy exists in the 0700 staging directory.
+  After a crash it stays until the next backup, verify, restore or server start removes it. No secure erasure
+  on SSD/journaled filesystems.
+- **Permission-denied / read-only filesystem behaviour NOT RUN.** The container runs as root; the error mapping
+  exists, but only disk-full was exercised (400 KB tmpfs).
+- **Early typing.** Input typed while the terminal echoes (between prompts) is shown by the OS. Measured:
+  typing right after the "Password rules" line was not echoed. No heuristic was added.
+- **Not done:** independent penetration test; external scanners; screen readers; non-Chromium browsers;
+  multi-source DoS at scale. `npm audit` is advisory-only and is not a security assessment.
+- **Readiness for stage 17: READY**, with no confirmed critical or high technical issue left unaddressed.
+  B-1 requires an explicit business decision; B-2 and B-3 are deployment work.
+
+## Stage 16 — findings fixed
+F-01 username lockout (High) · F-02 post-restore silent re-execution (High) · F-03 consistency gaps undetected
+(Medium) · F-04 age-based plaintext staging cleanup (Medium) · F-05 pre-0008 restore reopening writes (Medium) ·
+F-06 password change parsed body before auth (Low) · F-07 raw ENOSPC (Low) · F-12 invisible refusal on empty
+cart (Low, found in Chromium). Verified without change: lost-APP_SECRET path, ownership, CSRF, recent auth,
+parsing, stored text, image referrer, backup crypto (trust-model limitation documented).
+
+## Stage 16 — what was built
+- **Throttling** (`auth/rate-limit.ts`, `auth/admission.ts`, `services/authentication.ts`):
+  - per source 20/15 min; per (source, username) 5/15 min; per username 30/15 min (not reset by success);
+  - ≤ 2 concurrent credential jobs per source.
+- **Migration 0008:**
+  - `system_state` (write mode, recovery epoch, restore metadata; undeletable; versioned);
+  - seeded into recovery mode right after a restore;
+  - trigger `inventory_ledger_continues_product`.
+- **Consistency verifier** (`database/consistency.ts`, 16 checks). Used by:
+  - `db:check`;
+  - backup create/verify/restore;
+  - server startup (integrity hold; codes only in logs);
+  - write guards (`http/write-gate.ts`) for transitions, adjustments and imports.
+- **Recovery gate** (`http/write-gate.ts`, `services/recovery-mode.ts`):
+  - `assertNewWrite` in every business-write family (after idempotency for keyed ones);
+  - `recovery:status` and `recovery:reopen` (CLI; reason; typed confirmation; refuses while consistency
+    errors exist; audited);
+  - restore enters recovery mode with a new epoch;
+  - `/readyz` reports `writes`; `/auth/me` and login report `system`.
+- **Browser:**
+  - page epoch and `X-Recovery-Epoch`; stored submissions keep their epoch;
+  - `SystemNotice` (recovery / maintenance / restored-while-open);
+  - classification of the new codes; the refusal stays visible on an empty cart.
+- **Backups:**
+  - lock-based staging lifecycle (`openStaging`, `scanStaging`, `cleanStale`), with cleanup at server start;
+  - `backup:status` separates abandoned plaintext from active jobs;
+  - `DISK_FULL`/`WRITE_FAILED` mapping.
+- **Docs:**
+  - `SECURITY_REVIEW_16.md` (new); DATABASE §18; SECURITY §7l + table; THREAT_MODEL T106–T111;
+  - DECISIONS D-156–D-163; API_CONTRACT; FRONTEND_API; MIGRATION; README;
+  - recovery guide (recovery mode; provisional RPO/RTO).
+
+## Checks run in stage 16 (2026-11-13 UTC, this container: 4 vCPU, 16 GB, Node 24.22.1, root)
+| Check | Result |
+|---|---|
+| `npm run check` (typecheck server + web, production build, all tests) | ✅ 610/610 |
+| Clean copies ×3 (`npm ci` → typecheck → build + tests) | ✅ 610/610 in each of 3 runs |
+| New: `security-review.test.ts` | ✅ 5/5 — 42 routes × anonymous/pending/suspended/trader/admin/stale-admin + no-CSRF; cross-merchant 404s identical to missing; stock bisection measured (17 quotes); duplicate keys, `__proto__`, non-integer money/quantities refused; stored script-like text inert |
+| New: `recovery-gate.test.ts` | ✅ 7/7 — every write family refused in recovery mode, replays still work; reopen (cancel, audit, no-op); stale vs current epoch; integrity hold; scoped holds; 0008 seeding and triggers |
+| New: `unit/consistency.test.ts` | ✅ 8/8 — all valid lifecycles accepted; raw-SQL gaps detected; bypass corruptions detected; 2 000 orders ≈ 50 ms |
+| New: `operator-terminal.test.ts` (real PTY, `npm run cli`) | ✅ 6/6 — admin:create, reset-mfa, Ctrl-C cancel, early typing (measured), reset-password + revoke-sessions, keygen/create (hidden key)/verify/status/db:check/recovery:status |
+| Extended | auth-security (lockout from source A, owner from B, /64, spoofed XFF, concurrency); auth-units (admission, bounded rows); backup (staging lock cleanup, case E with two admins + cancel + wrong proof + startup refusal, foreign DB, relative schema); restore-drill (post-backup order/adjustment/import refused after restore; reopen via `npm run cli` in a PTY; fresh order accepted); web-client/web-cart (epoch header, stored epoch, classification) |
+| Browser (Chromium, production build, real server) | stage-16 journey ✅ 19/19 (legacy notice, recovery banner, retry in recovery kept, stale retry refused, fresh order with the current epoch, axe 0 violations ×3, no CSP violations) · regressions ✅ merchant 87/87, admin 125/125, import 44/44, business 67/67 |
+| Resource measurements | see SECURITY_REVIEW_16 §6 (scrypt ≈ 0.36–0.41 s; 20 000 orders: verifier 0.76 s, reports ≤ 175 ms, export refused at cap, backup 3.1 s / verify 1.5 s; disk-full → `DISK_FULL`, nothing left) |
+| Mutations | 21 mutants (`mut16.py`). First run: 20 caught, 1 survived. N17 (disk-full mapping) had only a manual tmpfs measurement; after adding a unit-level mapping test it is caught. N04 (no per-source admission) first HUNG the harness behind the paused hasher; the test now fails fast in 3 s. Final: **21/21 caught**. Layers: N01–N04 throttling tests; N05–N09 recovery-gate / backup tests; N10–N11 caught by the `CONSISTENCY_HOLD` assertion (the 0005 transition trigger would probably still refuse the lone-event order with another error code; not separately verified); N12 verifier tests; N13 the 0008 trigger test (the verifier still DETECTS the orphan: defence in depth); N14 the migration seeding test; N15–N17 staging/filesystem tests; N18–N20 web unit tests; N21 the permission matrix (only the error code and order of refusal change; nothing is written either way). |
+| `npm audit` | "found 0 vulnerabilities" (2026-11-13; registry advisories for declared dependencies only — not a security assessment; no dependency changes this stage) |
+
+## Files changed in stage 16 (all under `alkhayr-b2b/`)
+- **New:**
+  - `migrations/0008_system_state.sql`;
+  - `src/server/auth/admission.ts`, `src/server/database/consistency.ts`, `src/server/http/write-gate.ts`,
+    `src/server/services/recovery-mode.ts`;
+  - `src/web/pages/SystemNotice.tsx`;
+  - tests `unit/consistency.test.ts`,
+    `integration/{recovery-gate,security-review,operator-terminal}.test.ts`;
+  - `docs/SECURITY_REVIEW_16.md`.
+- **Modified:**
+  - server: auth/rate-limit, authentication, orders, fulfillment, inventory, imports, products, settings and
+    merchants services; backup; CLI (index, operator); config context; runtime; main; app; health route;
+    shared errors;
+  - web: client, contracts, endpoints, identity, storage, submission, Checkout, App;
+  - tests: helpers/app, plus the existing suites listed above;
+  - docs.
+
+## How to continue
+Next: send **PROMPT 17**. Existing installations need `db:migrate --confirm-backup` for 0008. Before production,
+close B-1 (business decision) and B-2/B-3 (deployment).
+
+---
+
+## Stage 15 record (retained)
+
+### Stage 15 — known weaknesses first
 - **RTO is not measured on real data.** The only measurement is a tiny synthetic drill:
   restore + verify + server ready took ≈ 0.3 s. RPO 24 h and RTO 2 h are OBJECTIVES, not results.
   Nothing was tested on large databases, slow disks or Windows.
@@ -73,7 +180,7 @@
 - `npm run cli --` itself was not executed in tests; tests ran `node dist/server/cli.js` (what the script calls) and
   the in-process `runCli`.
 
-## Stage 15 — what was built
+### Stage 15 — what was built
 - **Migration 0007:** `auth_users.credential_version`, plus triggers that make it monotonic and force a bump on any
   TOTP change. Login and password-change commits compare it (`stale_credentials`).
 - **`src/server/backup/backup.ts`:**
@@ -96,7 +203,7 @@
   - updated DATABASE §17, SECURITY §7k and table, THREAT_MODEL T95–T105, DECISIONS D-145–D-155, MIGRATION,
     API_CONTRACT note (no HTTP change), README and `.env.example`.
 
-## Checks run in stage 15 (2026-11-13 UTC, this container, Node 24.22.1)
+### Checks run in stage 15 (2026-11-13 UTC, this container, Node 24.22.1)
 | Check | Result |
 |---|---|
 | `npm run check` (typecheck server + web, build, all tests) | ✅ 571/571 |
@@ -128,17 +235,17 @@
   - ledger/allocation pairing per movement;
   - shipped quantities vs. ledger.
 
-## Limitations (known)
+### Limitations (known)
 See weaknesses above. Not in this stage by design: deployment, off-server upload, scheduled jobs, APP_SECRET rotation,
 automatic purge/archive, destructive repair, public password reset, email/SMS.
 
-## Open questions
+### Open questions
 None.
 
-## Remaining blockers
+### Remaining blockers
 None for stage 16.
 
-## Files changed in stage 15 (all under `alkhayr-b2b/`)
+### Files changed in stage 15 (all under `alkhayr-b2b/`)
 - **New:**
   - `migrations/0007_credential_version.sql`;
   - `src/server/backup/backup.ts`, `src/server/cli/operator.ts`, `src/server/services/account-recovery.ts`;
@@ -152,7 +259,7 @@ None for stage 16.
   - tests `unit/{config,web-cart}.test.ts`, `integration/server.test.ts`;
   - docs.
 
-## How to continue
+### How to continue
 Next: send **PROMPT 16**. Existing installations need `db:migrate --confirm-backup` for 0007 (MIGRATION.md, stage-15 note).
 
 ---

@@ -2,6 +2,8 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.ts';
+import { cleanStale } from './backup/backup.ts';
+import { writeStatus } from './http/write-gate.ts';
 import { ConfigError, describeConfig, loadConfig } from './config.ts';
 import { createStaticFiles } from './http/static-files.ts';
 import { openRuntimeDatabase } from './database/runtime.ts';
@@ -46,9 +48,25 @@ function main(): void {
   const staticFiles = createStaticFiles(webRoot, log, { reloadOnChange: config.nodeEnv === 'development' });
   // Requires an existing, fully migrated database; never creates or migrates one.
   const database = openRuntimeDatabase(config, path.join(appRoot, 'migrations'));
+  // Stage 16: remove plaintext staging left by an interrupted backup/verify/restore (only unlocked,
+  // managed, owned directories with expected contents; active jobs and anything unexpected are kept).
+  try {
+    const leftovers = cleanStale(config.dataDir, Date.now());
+    if (leftovers.removed.length) log.warn('abandoned_staging_removed', { count: leftovers.removed.length });
+    if (leftovers.refused.length) log.warn('staging_left_for_operator', { count: leftovers.refused.length, action: 'inspect with backup:status' });
+  } catch (err) {
+    log.warn('staging_cleanup_failed', { error: err instanceof Error ? err : String(err) });
+  }
   const now = () => Date.now();
   const rateLimiter = new RateLimiter(database.db, keys.rateLimit, now);
-  const services = { db: database.db, now, hasher: new PasswordHasher(), keys, rateLimiter };
+  const integrityHold = database.consistency.issues.filter((i) => i.severity === 'error').map((i) => i.code);
+  if (integrityHold.length) {
+    // Codes and counts only (no ids or data): the operator runs `db:check` for details.
+    log.error('consistency_failed', { codes: integrityHold.join(','), counts: database.consistency.issues.map((i) => `${i.code}:${i.count}`).join(','), action: 'new business writes refused; run db:check' });
+  } else if (database.consistency.warnings) {
+    log.warn('consistency_warnings', { counts: database.consistency.issues.map((i) => `${i.code}:${i.count}`).join(',') });
+  }
+  const services = { db: database.db, now, hasher: new PasswordHasher(), keys, rateLimiter, integrityHold };
   const app = createApp(config, log, { staticFiles, readiness: database.readiness, services });
 
   // Bounded periodic cleanup of expired rate-limit counters and sessions.
@@ -129,7 +147,9 @@ function main(): void {
   server.listen(config.port, config.host, () => {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : config.port;
-    log.info('listening', { ...describeConfig(config), port, webAssets: staticFiles.available, schemaVersion: database.schemaVersion, administrators: database.administrators });
+    const status = writeStatus(services);
+    log.info('listening', { ...describeConfig(config), port, webAssets: staticFiles.available, schemaVersion: database.schemaVersion, administrators: database.administrators, writes: status.writes, writesReason: status.reason, consistencyMs: database.consistency.durationMs });
+    if (status.reason === 'recovery') log.warn('recovery_mode', { action: 'reconcile, then run recovery:reopen' });
     if (database.administrators === 0) {
       log.warn('no_administrator', { hint: 'stop the server and run the local setup-admin command to enroll the first administrator' });
     }

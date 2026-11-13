@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { assertNewWrite } from '../http/write-gate.ts';
 import { z } from 'zod';
 import { requireApproved, requireSession, requireSessionCsrf, revalidateAtCommit, type AuthenticatedRequest } from '../auth/authorization.ts';
 import { hmacHex } from '../auth/keys.ts';
@@ -398,6 +399,8 @@ export async function createOrder(ctx: RequestContext): Promise<void> {
       if (previous.request_digest !== digest) throw new AppError('IDEMPOTENCY_KEY_REUSED');
       return { replayed: true as const, orderId: previous.id };
     }
+    // 3. A NEW order: writes open, prepared under the current recovery epoch (stage 16).
+    assertNewWrite(ctx);
 
     const { resolved, isDemo, settings, amounts } = evaluateOrderLines(ctx, request.items);
     // 4b. The shipping/tax terms the trader reviewed must still be the current ones (stage 14).

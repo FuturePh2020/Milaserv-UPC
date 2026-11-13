@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertNewWrite } from '../http/write-gate.ts';
 import { z } from 'zod';
 import { requireAdmin, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
 import { hmacHex } from '../auth/keys.ts';
@@ -327,6 +328,11 @@ export async function transitionOrder(ctx: RequestContext): Promise<void> {
       if (previous.operation_digest !== digest || previous.order_id !== orderId) throw new AppError('IDEMPOTENCY_KEY_REUSED');
       return { replayed: true as const, eventId: previous.id };
     }
+    // 2b. A NEW transition: writes open, current recovery epoch, and this order and its products consistent.
+    assertNewWrite(ctx, {
+      orderId,
+      productIds: (db.prepare('SELECT product_id FROM order_items WHERE order_id = ?').all(orderId) as Array<{ product_id: string }>).map((r) => r.product_id),
+    });
 
     // 3. Current order, the client's version, and the state machine.
     const order = loadOrder(ctx, orderId);

@@ -10,7 +10,7 @@ import { OPERATOR_COMMANDS } from '../database/runtime.ts';
 import { createTerminalPrompter, NotInteractiveError, type Prompter } from './prompt.ts';
 import type { PasswordHasher } from '../auth/passwords.ts';
 import { setupAdmin } from './setup-admin.ts';
-import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
+import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, dbCheck, recoveryReopen, recoveryStatus, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
 
 /**
  * Trusted-operator command line. Runs on the server host only; nothing here is
@@ -52,6 +52,10 @@ Commands:
   backup:prune --keep <n>      Delete older managed backups; always keeps the newest verified one.
   backup:status                Backup age, sizes, row counts and free space (exit 3 = warnings).
                                Without --key-file the backup key is asked for with hidden input.
+  db:check [--samples <n>]     Read-only consistency verification of orders, events, allocations, ledger and
+                               imports (safe while the server runs). Exit 0 ok, 1 errors, 3 warnings only.
+  recovery:status              Show whether business writes are open or in post-restore recovery mode (exit 3).
+  recovery:reopen              After reconciliation: reopen business writes (interactive; reason; audited).
   help                         Show this help.
 
 Initialization sequence: db:init -> setup-admin -> start the server.
@@ -234,6 +238,12 @@ export async function runCli(argv: readonly string[], ctx: CliContext): Promise<
         return await backupStatusCommand(operatorCtx(ctx), args);
       case 'db:status':
         return dbStatus(ctx);
+      case 'db:check':
+        return await dbCheck(operatorCtx(ctx), args);
+      case 'recovery:status':
+        return await recoveryStatus(operatorCtx(ctx), args);
+      case 'recovery:reopen':
+        return await recoveryReopen(operatorCtx(ctx), args);
       case 'db:init':
         return dbInit(ctx);
       case 'db:migrate':

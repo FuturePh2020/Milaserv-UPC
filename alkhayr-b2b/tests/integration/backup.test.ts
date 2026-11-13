@@ -11,8 +11,12 @@ import { APPLICATION_ID } from '../../src/server/database/connection.ts';
 import { acquireInstanceLock } from '../../src/server/database/instance-lock.ts';
 import { Client, createAdmin, createTrader, startTestApp, type TestApp } from '../helpers/app.ts';
 import { fixtureTransition, insertOrder, insertProduct, MIGRATIONS_DIR, tempDir } from '../helpers/database.ts';
+import { loadMigrations } from '../../src/server/database/migrations.ts';
+import { openRuntimeDatabase } from '../../src/server/database/runtime.ts';
 import { codeFromOutput, scriptedPrompter, type Answer } from '../helpers/prompter.ts';
 import { assertAdministratorMfaReadable, SecurityConfigError } from '../../src/server/auth/mfa-key-check.ts';
+
+const LATEST = loadMigrations(MIGRATIONS_DIR).length;
 
 // Stage 15: encrypted backups, verification, restore, rotation. Disposable databases and directories only.
 
@@ -162,7 +166,7 @@ describe('create, inspect, verify', () => {
       assert.match(inspect.out, /"configuredAppSecretMatches": true/);
       const v = await cli(config, ['backup:verify', file, '--key-file', kf]);
       assert.equal(v.code, 0, v.all);
-      assert.match(v.out, /stock_ledger_allocation_import_invariants/);
+      assert.match(v.out, /consistency_verifier/);
       assert.match(v.out, /"mfa": "readable"/);
       assert.deepEqual(readdirSync(config.dataDir).filter((n) => n.startsWith('.staging-')), [], 'no plaintext staging left behind');
     }));
@@ -241,7 +245,7 @@ describe('create, inspect, verify', () => {
         const header = {
           format: 'alkhayr-backup', formatVersion: 1, backupId, createdAt: Date.now(), cipher: 'aes-256-gcm', kdf: 'hkdf-sha256',
           salt: randomBytes(32).toString('base64url'), nonce: randomBytes(12).toString('base64url'), keyId: keyId(key), appSecretId: appSecretId(app.config.appSecret!),
-          applicationId: APPLICATION_ID, schemaVersion: 7, migrations: [], plaintextBytes: plaintext.length, plaintextSha256: createHash('sha256').update(plaintext).digest('hex'),
+          applicationId: APPLICATION_ID, schemaVersion: LATEST, migrations: [], plaintextBytes: plaintext.length, plaintextSha256: createHash('sha256').update(plaintext).digest('hex'),
           ...override,
         };
         const hb = Buffer.from(JSON.stringify(header));
@@ -275,7 +279,7 @@ describe('create, inspect, verify', () => {
       assert.match((await cli(config, ['backup:verify', craft('hash.akbk', okDb, { plaintextSha256: '0'.repeat(64) }), '--key-file', kf])).err, /AUTH_FAILED/);
       // Made by a newer release (higher schema version): restore refuses before decrypting anything.
       const target = configFor(app, work, path.join(work, 'newer-target'));
-      const newer = await cli(target, ['backup:restore', craft('newer.akbk', okDb, { schemaVersion: 8 }), '--key-file', kf]);
+      const newer = await cli(target, ['backup:restore', craft('newer.akbk', okDb, { schemaVersion: LATEST + 1 }), '--key-file', kf]);
       assert.match(newer.err, /SCHEMA_TOO_NEW/);
       assert.ok(!existsSync(target.databasePath));
     }));
@@ -342,9 +346,10 @@ describe('restore', () => {
       assert.equal(createHash('sha256').update(readFileSync(path.join(target.dataDir, aside[0]!, 'alkhayr.db'))).digest('hex'), before, 'previous database kept intact');
     }));
 
-  test('lost APP_SECRET (case E): restore only with explicit acceptance; MFA stays unreadable until each administrator is re-enrolled', () =>
+  test('lost APP_SECRET (case E): explicit acceptance only; startup refused until EVERY administrator is re-enrolled with proof; cancel leaves it fail-closed', () =>
     withApp(async (app, work) => {
       const { admin } = await seed(app);
+      const admin2 = await createAdmin(app);
       const config = configFor(app, work);
       const kf = await keyFile(config, work);
       assert.equal((await cli(config, ['backup:create', '--key-file', kf])).code, 0);
@@ -357,17 +362,74 @@ describe('restore', () => {
       assert.equal(r.code, 0, r.all);
       assert.match(r.out, /server will refuse to start until every administrator is re-enrolled/);
       const ro = () => new DatabaseSync(target.databasePath, { readOnly: true });
+      const startup = () => {
+        const rt = openRuntimeDatabase(target, MIGRATIONS_DIR);
+        rt.close();
+      };
       let db = ro();
-      // Nothing was silently disabled, replaced or promoted: the old ciphertext is kept, roles unchanged.
+      // Nothing was silently disabled, replaced or promoted: the old ciphertexts are kept, roles unchanged.
       assert.throws(() => assertAdministratorMfaReadable(db, newSecret), SecurityConfigError);
       const roles = db.prepare('SELECT role, count(*) AS n FROM auth_users GROUP BY role ORDER BY role').all();
+      const restoredAudit = db.prepare("SELECT actor_user_id, metadata FROM audit_logs WHERE action = 'backup.restored'").get() as { actor_user_id: string | null; metadata: string };
+      assert.equal(restoredAudit.actor_user_id, null);
+      assert.equal(JSON.parse(restoredAudit.metadata).mfa, 'unreadable_accepted');
+      assert.equal((db.prepare('SELECT write_mode FROM system_state').get() as { write_mode: string }).write_mode, 'recovery');
       db.close();
-      const reset = await cli(target, ['account:reset-mfa'], [admin.username, admin.username, 'APP_SECRET lost; re-enrolling after restore', codeFromOutput(Date.now)]);
-      assert.equal(reset.code, 0, reset.all);
+      // The real server startup path refuses (2 of 2 unreadable).
+      assert.throws(startup, /MFA_KEY_MISMATCH|2 of 2/);
+      // Cancelling midway (operator aborts at the confirmation) changes nothing: still fail-closed.
+      const cancelled = await cli(target, ['account:reset-mfa'], [admin.username, 'someone.else']);
+      assert.equal(cancelled.code, 1);
+      assert.throws(startup, /2 of 2/);
+      // One administrator re-enrolled (with a proven code): still refused for the other.
+      const reset1 = await cli(target, ['account:reset-mfa'], [admin.username, admin.username, 'APP_SECRET lost; identity verified in person', codeFromOutput(Date.now)]);
+      assert.equal(reset1.code, 0, reset1.all);
+      assert.throws(startup, /1 of 2/);
+      // A wrong proof never stores the new authenticator.
+      const wrongProof = await cli(target, ['account:reset-mfa'], [admin2.username, admin2.username, 'APP_SECRET lost', '000000', '000000', '000000']);
+      assert.equal(wrongProof.code, 1);
+      assert.throws(startup, /1 of 2/);
+      const reset2 = await cli(target, ['account:reset-mfa'], [admin2.username, admin2.username, 'APP_SECRET lost; identity verified in person', codeFromOutput(Date.now)]);
+      assert.equal(reset2.code, 0, reset2.all);
+      startup(); // now accepted
       db = ro();
-      assert.equal(assertAdministratorMfaReadable(db, newSecret).administrators, 1);
-      assert.deepEqual(db.prepare('SELECT role, count(*) AS n FROM auth_users GROUP BY role ORDER BY role').all(), roles);
+      assert.equal(assertAdministratorMfaReadable(db, newSecret).administrators, 2);
+      assert.deepEqual(db.prepare('SELECT role, count(*) AS n FROM auth_users GROUP BY role ORDER BY role').all(), roles, 'no promotion, no new admin');
+      assert.equal(Number((db.prepare("SELECT count(*) AS n FROM audit_logs WHERE action = 'account.mfa_replaced' AND actor_user_id IS NULL").get() as { n: number }).n), 2);
+      assert.equal((db.prepare('SELECT write_mode FROM system_state').get() as { write_mode: string }).write_mode, 'recovery', 'MFA recovery does not reopen business writes');
       db.close();
+    }));
+
+  test('a foreign database cannot be disguised as lost-APP_SECRET recovery', () =>
+    withApp(async (app, work) => {
+      const config = configFor(app, work);
+      const kf = await keyFile(config, work);
+      const key = Buffer.from(readFileSync(kf, 'utf8').trim(), 'base64url');
+      const foreign = path.join(work, 'foreign.db');
+      const d = new DatabaseSync(foreign);
+      d.exec('CREATE TABLE t (x INTEGER); INSERT INTO t VALUES (1); PRAGMA application_id = 12345;');
+      d.close();
+      const plaintext = readFileSync(foreign);
+      const backupId = randomUUID();
+      const header = {
+        format: 'alkhayr-backup', formatVersion: 1, backupId, createdAt: Date.now(), cipher: 'aes-256-gcm', kdf: 'hkdf-sha256',
+        salt: randomBytes(32).toString('base64url'), nonce: randomBytes(12).toString('base64url'), keyId: keyId(key), appSecretId: null,
+        applicationId: APPLICATION_ID, schemaVersion: LATEST, migrations: [], plaintextBytes: plaintext.length, plaintextSha256: createHash('sha256').update(plaintext).digest('hex'),
+      };
+      const hb = Buffer.from(JSON.stringify(header));
+      const prefix = Buffer.alloc(12);
+      MAGIC.copy(prefix);
+      prefix.writeUInt32BE(hb.length, 8);
+      const k = Buffer.from(hkdfSync('sha256', key, Buffer.from(header.salt, 'base64url'), `alkhayr:backup:v1:${backupId}`, 32));
+      const c = createCipheriv('aes-256-gcm', k, Buffer.from(header.nonce, 'base64url'));
+      c.setAAD(Buffer.concat([prefix, hb]));
+      const f = path.join(work, 'foreign.akbk');
+      writeFileSync(f, Buffer.concat([prefix, hb, c.update(plaintext), c.final(), c.getAuthTag()]), { mode: 0o600 });
+      const target = configFor(app, work, path.join(work, 'foreign-target'), randomBytes(32));
+      const res = await cli(target, ['backup:restore', f, '--key-file', kf, '--accept-new-app-secret']);
+      assert.equal(res.code, 1);
+      assert.match(res.err, /DB_FOREIGN/);
+      assert.ok(!existsSync(target.databasePath));
     }));
 
   test('a failed restore leaves the target untouched and no plaintext staging', () =>
@@ -416,8 +478,9 @@ describe('rotation and diagnostics', () => {
       const staleStaging = path.join(config.dataDir, '.staging-0123456789abcdef');
       mkdirSync(staleStaging);
       const old = new Date(Date.now() - 2 * 3_600_000);
-      utimesSync(stalePartial, old, old);
-      utimesSync(staleStaging, old, old);
+      const dayOld = new Date(Date.now() - 25 * 3_600_000);
+      utimesSync(stalePartial, dayOld, dayOld); // encrypted partials are kept for 24 h
+      utimesSync(staleStaging, old, old); // pre-stage-16 staging (no lock file): 1 h grace
       writeFileSync(path.join(config.backupDir, 'notes.txt'), 'keep me');
       const outside = path.join(work, 'outside.akbk');
       writeFileSync(outside, 'not ours');
@@ -454,6 +517,59 @@ describe('rotation and diagnostics', () => {
       assert.equal(json.newestVerified.name, names[1]);
       assert.equal(typeof json.rows.import_operations, 'number');
       assert.equal(typeof json.freeBytes, 'number');
+      assert.deepEqual(json.staging.abandonedPlaintext, []);
+    }));
+
+  test('staging cleanup: active jobs are never touched; abandoned plaintext goes at once; unexpected contents are refused; status reports them', () =>
+    withApp(async (app, work) => {
+      const { openStaging, cleanStale, scanStaging } = await import('../../src/server/backup/backup.ts');
+      const config = configFor(app, work);
+      const now = Date.now();
+      // An ACTIVE job (lock held), even with an old mtime, is left alone.
+      const active = openStaging(config.dataDir);
+      writeFileSync(path.join(active.dir, 'snapshot.db'), 'plaintext-active');
+      const old = new Date(now - 5 * 3_600_000);
+      utimesSync(active.dir, old, old);
+      // A job that completes normally removes its staging.
+      const done = openStaging(config.dataDir);
+      writeFileSync(path.join(done.dir, 'verify.db'), 'plaintext');
+      const doneDir = done.dir;
+      // An ABANDONED job: what a crashed process leaves (lock file present, no process holds the OS lock).
+      const abandoned = path.join(config.dataDir, '.staging-aaaaaaaaaaaaaaaa');
+      mkdirSync(abandoned, { mode: 0o700 });
+      writeFileSync(path.join(abandoned, 'alkhayr.instance.lock'), '');
+      writeFileSync(path.join(abandoned, 'verify.db'), 'plaintext-abandoned');
+      done.dispose();
+      assert.ok(!existsSync(doneDir), 'normal completion removes its staging');
+      // Unexpected contents: never deleted automatically.
+      const odd = path.join(config.dataDir, '.staging-bbbbbbbbbbbbbbbb');
+      mkdirSync(odd, { mode: 0o700 });
+      writeFileSync(path.join(odd, 'alkhayr.instance.lock'), '');
+      writeFileSync(path.join(odd, 'family-photos.jpg'), 'not ours');
+      const inner = path.join(config.dataDir, '.staging-cccccccccccccccc');
+      mkdirSync(inner, { mode: 0o700 });
+      writeFileSync(path.join(inner, 'alkhayr.instance.lock'), '');
+      const outsideDir = path.join(work, 'outside-target');
+      mkdirSync(outsideDir);
+      writeFileSync(path.join(outsideDir, 'keep.txt'), 'keep');
+      symlinkSync(outsideDir, path.join(inner, 'verify.db'));
+      const scan = scanStaging(config.dataDir, now);
+      assert.deepEqual(scan.active, [path.basename(active.dir)]);
+      assert.deepEqual(scan.abandoned.sort(), ['.staging-aaaaaaaaaaaaaaaa', '.staging-bbbbbbbbbbbbbbbb', '.staging-cccccccccccccccc']);
+      const st = await cli(config, ['backup:status']);
+      const json = JSON.parse(st.out);
+      assert.equal(json.staging.abandonedPlaintext.length, 3);
+      assert.match(st.out, /ABANDONED PLAINTEXT/);
+      const r = cleanStale(config.dataDir, now);
+      assert.deepEqual(r.removed, ['.staging-aaaaaaaaaaaaaaaa']);
+      assert.deepEqual(r.refused.sort(), ['.staging-bbbbbbbbbbbbbbbb', '.staging-cccccccccccccccc']);
+      assert.ok(!existsSync(abandoned));
+      assert.equal(readFileSync(path.join(odd, 'family-photos.jpg'), 'utf8'), 'not ours', 'unexpected file untouched');
+      assert.equal(readFileSync(path.join(outsideDir, 'keep.txt'), 'utf8'), 'keep', 'symlink target untouched');
+      assert.ok(lstatSync(path.join(inner, 'verify.db')).isSymbolicLink(), 'symlink itself untouched');
+      assert.equal(readFileSync(path.join(active.dir, 'snapshot.db'), 'utf8'), 'plaintext-active', 'active job untouched');
+      active.dispose();
+      assert.ok(!existsSync(active.dir));
     }));
 
   test('status warns (exit 3) when no verified backup exists', () =>
@@ -499,4 +615,19 @@ describe('online snapshot consistency under concurrent writes', () => {
         assert.equal(rr.code, 0, rr.all); // restore re-runs integrity, FK and stock/ledger invariants on the snapshot
       }
     }));
+});
+
+describe('filesystem failures (stage 16, F-07)', () => {
+  test('full disk, quota, read-only, permission and I/O errors map to safe codes; others pass through', async () => {
+    const { filesystemError, BackupError } = await import('../../src/server/backup/backup.ts');
+    const errno = (code: string) => Object.assign(new Error(`${code}: /very/secret/path`), { code });
+    for (const [code, want] of [['ENOSPC', 'DISK_FULL'], ['EDQUOT', 'DISK_FULL'], ['EROFS', 'WRITE_FAILED'], ['EACCES', 'WRITE_FAILED'], ['EPERM', 'WRITE_FAILED'], ['EIO', 'WRITE_FAILED']] as const) {
+      const mapped = filesystemError(errno(code), 'Nothing was kept.');
+      assert.ok(mapped instanceof BackupError, code);
+      assert.equal((mapped as InstanceType<typeof BackupError>).code, want);
+      assert.doesNotMatch((mapped as Error).message, /secret\/path/, 'no path in the message');
+    }
+    const other = errno('ENOENT');
+    assert.equal(filesystemError(other, 'x'), other);
+  });
 });

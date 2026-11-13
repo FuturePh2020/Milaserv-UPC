@@ -42,7 +42,7 @@ function trader() {
 describe('initial configuration (owner decisions)', () => {
   test('every table is STRICT', () => {
     const rows = db.prepare("SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string; strict: number }>;
-    assert.equal(rows.length, 16); // 13 from 0001 + order_allocations (0005) + import_operations, import_operation_items (0006)
+    assert.equal(rows.length, 17); // 13 from 0001 + order_allocations (0005) + import_operations, import_operation_items (0006) + system_state (0008)
     for (const r of rows) assert.equal(r.strict, 1, `${r.name} must be STRICT`);
   });
 
@@ -254,12 +254,15 @@ describe('products', () => {
   test('every product update must advance version (stock changes included)', () => {
     const id = insertProduct(db);
     // A stock change with a matching ledger row but WITHOUT a version bump is refused by the version trigger.
+    // (Separate product: the refused update leaves its ledger row unlinked, which blocks that product — 0008.)
+    const other = insertProduct(db);
     const v = Number(scalar('SELECT version FROM products WHERE id = ?', id));
-    const onHand = Number(scalar('SELECT on_hand FROM products WHERE id = ?', id));
+    const ov = Number(scalar('SELECT version FROM products WHERE id = ?', other));
+    const onHand = Number(scalar('SELECT on_hand FROM products WHERE id = ?', other));
     const ledger = db
       .prepare("INSERT INTO inventory_ledger (product_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, product_version_after, created_at) VALUES (?, 'correction', 5, 0, ?, 0, 'سبب', ?, 1)")
-      .run(id, onHand + 5, v);
-    fails(() => db.prepare('UPDATE products SET on_hand = on_hand + 5, last_ledger_id = ? WHERE id = ?').run(ledger.lastInsertRowid, id), SQLITE.CONSTRAINT_TRIGGER, /version/);
+      .run(other, onHand + 5, ov);
+    fails(() => db.prepare('UPDATE products SET on_hand = on_hand + 5, last_ledger_id = ? WHERE id = ?').run(ledger.lastInsertRowid, other), SQLITE.CONSTRAINT_TRIGGER, /version/);
     fails(() => db.prepare('UPDATE products SET price_cents = 999, version = version + 2 WHERE id = ?').run(id), SQLITE.CONSTRAINT_TRIGGER);
     fixtureAdjustStock(db, id, 5);
     assert.equal(Number(scalar('SELECT version FROM products WHERE id = ?', id)), v + 1);
@@ -539,40 +542,53 @@ describe('inventory ledger and audit log', () => {
       .run({ reason: null, order_id: null, operation_key: null, operation_digest: null, created_at: now(), ...o });
 
   test('movement rules per kind are enforced', () => {
-    const p = insertProduct(db);
-    ledger({ product_id: p, kind: 'receipt', on_hand_delta: 10, reserved_delta: 0, on_hand_after: 110, reserved_after: 0, reason: 'استلام شحنة' });
-    fails(() => ledger({ product_id: p, kind: 'receipt', on_hand_delta: 10, reserved_delta: 0, on_hand_after: 110, reserved_after: 0 }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_manual_rules/);
-    fails(() => ledger({ product_id: p, kind: 'receipt', on_hand_delta: -1, reserved_delta: 0, on_hand_after: 99, reserved_after: 0, reason: 'سبب' }), SQLITE.CONSTRAINT_CHECK);
-    fails(() => ledger({ product_id: p, kind: 'reserve', on_hand_delta: 0, reserved_delta: 2, on_hand_after: 100, reserved_after: 2 }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_order_rules/);
-    fails(() => ledger({ product_id: p, kind: 'correction', on_hand_delta: 0, reserved_delta: 0, on_hand_after: 100, reserved_after: 0, reason: 'لا شيء' }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_nonzero/);
-    fails(() => ledger({ product_id: p, kind: 'correction', on_hand_delta: -5, reserved_delta: 0, on_hand_after: 5, reserved_after: 6, reason: 'تسوية' }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_balance_after/);
-    fails(() => ledger({ product_id: p, kind: 'correction', on_hand_delta: 1.5, reserved_delta: 0, on_hand_after: 101, reserved_after: 0, reason: 'تسوية' }), SQLITE.CONSTRAINT_DATATYPE);
-    fails(() => ledger({ product_id: p, kind: 'theft', on_hand_delta: -1, reserved_delta: 0, on_hand_after: 99, reserved_after: 0, reason: 'سبب' }), SQLITE.CONSTRAINT_CHECK);
+    // Each probe uses a fresh product (on_hand 100) and balances that continue from it, so the CHECK
+    // constraint under test is what refuses the row (the 0008 continuity trigger runs first).
+    const fresh = () => insertProduct(db);
+    ledger({ product_id: fresh(), kind: 'receipt', on_hand_delta: 10, reserved_delta: 0, on_hand_after: 110, reserved_after: 0, reason: 'استلام شحنة' });
+    fails(() => ledger({ product_id: fresh(), kind: 'receipt', on_hand_delta: 10, reserved_delta: 0, on_hand_after: 110, reserved_after: 0 }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_manual_rules/);
+    fails(() => ledger({ product_id: fresh(), kind: 'receipt', on_hand_delta: -1, reserved_delta: 0, on_hand_after: 99, reserved_after: 0, reason: 'سبب' }), SQLITE.CONSTRAINT_CHECK);
+    fails(() => ledger({ product_id: fresh(), kind: 'reserve', on_hand_delta: 0, reserved_delta: 2, on_hand_after: 100, reserved_after: 2 }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_order_rules/);
+    fails(() => ledger({ product_id: fresh(), kind: 'correction', on_hand_delta: 0, reserved_delta: 0, on_hand_after: 100, reserved_after: 0, reason: 'لا شيء' }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_nonzero/);
+    const reservedProduct = insertProduct(db, { onHand: 10, reserved: 5 });
+    fails(() => ledger({ product_id: reservedProduct, kind: 'correction', on_hand_delta: -6, reserved_delta: 0, on_hand_after: 4, reserved_after: 5, reason: 'تسوية' }), SQLITE.CONSTRAINT_CHECK, /inventory_ledger_balance_after/);
+    fails(() => ledger({ product_id: fresh(), kind: 'correction', on_hand_delta: 1.5, reserved_delta: 0, on_hand_after: 101.5, reserved_after: 0, reason: 'تسوية' }), SQLITE.CONSTRAINT_DATATYPE);
+    fails(() => ledger({ product_id: fresh(), kind: 'theft', on_hand_delta: -1, reserved_delta: 0, on_hand_after: 99, reserved_after: 0, reason: 'سبب' }), SQLITE.CONSTRAINT_CHECK);
+  });
+
+  test('0008: ledger rows must continue the product balance; an unlinked row blocks further movements of that product', () => {
+    const p = insertProduct(db); // on_hand 100, linked
+    fails(() => ledger({ product_id: p, kind: 'receipt', on_hand_delta: 10, reserved_delta: 0, on_hand_after: 999, reserved_after: 0, reason: 'استلام' }), SQLITE.CONSTRAINT_TRIGGER, /continue from the product/);
+    // An orphan row (raw SQL, never linked by a product update) blocks the product's next movement...
+    ledger({ product_id: p, kind: 'receipt', on_hand_delta: 10, reserved_delta: 0, on_hand_after: 110, reserved_after: 0, reason: 'استلام' });
+    fails(() => fixtureAdjustStock(db, p, 1), SQLITE.CONSTRAINT_TRIGGER, /not linked to the product/);
+    // ...but not other products.
+    const q = insertProduct(db);
+    fixtureAdjustStock(db, q, 1);
   });
 
   test('ledger is append-only', () => {
-    const p = insertProduct(db);
+    const p = insertProduct(db, { onHand: 0 });
     ledger({ product_id: p, kind: 'opening', on_hand_delta: 100, reserved_delta: 0, on_hand_after: 100, reserved_after: 0, reason: 'رصيد افتتاحي' });
     fails(() => db.prepare('UPDATE inventory_ledger SET reason = ? WHERE product_id = ?').run('تعديل', p), SQLITE.CONSTRAINT_TRIGGER, /append-only/);
     fails(() => db.prepare('DELETE FROM inventory_ledger WHERE product_id = ?').run(p), SQLITE.CONSTRAINT_TRIGGER);
   });
 
   test('operation keys are unique per actor', () => {
-    const p = insertProduct(db);
     const key = randomUUID();
     const digest = 'b'.repeat(64);
-    ledger({ product_id: p, kind: 'receipt', on_hand_delta: 1, reserved_delta: 0, on_hand_after: 101, reserved_after: 0, reason: 'استلام', operation_key: key, operation_digest: digest });
+    ledger({ product_id: insertProduct(db), kind: 'receipt', on_hand_delta: 1, reserved_delta: 0, on_hand_after: 101, reserved_after: 0, reason: 'استلام', operation_key: key, operation_digest: digest });
     // actor NULL rows are not unique-constrained (NULLs are distinct); use a real actor:
     const admin = insertUser(db, { role: 'admin' });
     const withActor = () =>
       db
         .prepare(
-          "INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, operation_key, operation_digest, created_at) VALUES (?, ?, 'receipt', 1, 0, 102, 0, 'استلام', ?, ?, ?)",
+          "INSERT INTO inventory_ledger (product_id, actor_user_id, kind, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, operation_key, operation_digest, created_at) VALUES (?, ?, 'receipt', 1, 0, 101, 0, 'استلام', ?, ?, ?)",
         )
-        .run(p, admin, key, digest, now());
+        .run(insertProduct(db), admin, key, digest, now());
     withActor();
     fails(withActor, SQLITE.CONSTRAINT_UNIQUE);
-    fails(() => ledger({ product_id: p, kind: 'receipt', on_hand_delta: 1, reserved_delta: 0, on_hand_after: 101, reserved_after: 0, reason: 'استلام', operation_key: randomUUID() }), SQLITE.CONSTRAINT_CHECK, /operation_pair/);
+    fails(() => ledger({ product_id: insertProduct(db), kind: 'receipt', on_hand_delta: 1, reserved_delta: 0, on_hand_after: 101, reserved_after: 0, reason: 'استلام', operation_key: randomUUID() }), SQLITE.CONSTRAINT_CHECK, /operation_pair/);
   });
 
   test('audit log: JSON-object metadata, append-only, deletable only after the retention period', () => {

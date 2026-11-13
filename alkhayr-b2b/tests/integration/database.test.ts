@@ -60,7 +60,7 @@ describe('clean release initialization (no Git, no node_modules)', () => {
         try {
           const ready = await rawRequest(s.port, { path: '/readyz' });
           assert.equal(ready.status, 200);
-          assert.deepEqual(JSON.parse(ready.body), { status: 'ready' });
+          assert.deepEqual(JSON.parse(ready.body), { status: 'ready', writes: 'open' });
           assert.equal(ready.headers['cache-control'], 'no-store');
         } finally {
           assert.equal(await s.stop(), 0);

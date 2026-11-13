@@ -46,6 +46,8 @@ export interface TestAppOptions {
   rules?: Partial<RateLimitRules>;
   maxRateRows?: number;
   busyTimeoutMs?: number;
+  /** Simulates consistency errors found at startup (integrity hold). */
+  integrityHold?: string[];
 }
 
 export interface TestApp {
@@ -94,7 +96,7 @@ export async function startTestApp(options: TestAppOptions = {}): Promise<TestAp
   const app = createApp(config, log, {
     staticFiles: createStaticFiles(path.join(dir, 'no-web'), log, { reloadOnChange: false }),
     readiness: () => true,
-    services: { db, now: clock.now, hasher, keys, rateLimiter },
+    services: { db, now: clock.now, hasher, keys, rateLimiter, ...(options.integrityHold ? { integrityHold: options.integrityHold } : {}) },
   });
   const server: Server = createServer((req, res) => void app.handle(req, res));
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
