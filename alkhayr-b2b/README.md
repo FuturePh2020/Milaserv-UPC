@@ -2,7 +2,7 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 17 complete (deployment packaging + local production-like verification; NOT deployed, NOT launched) — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Release candidate **1.0.0-rc.1** — stage 18 final acceptance: **ACCEPTANCE PASSED FOR LOCAL DEPLOYMENT PACKAGE; PUBLIC LAUNCH BLOCKED** (no hosted checks; owner decisions DR-1…DR-6 pending; see [`docs/FINAL_ACCEPTANCE_18.md`](docs/FINAL_ACCEPTANCE_18.md)) — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
 review/approval/suspension), product administration, the approved catalog, inventory
@@ -34,7 +34,7 @@ Component gallery (development builds only): `npm run dev`, then `http://localho
 Operator procedures (database, administrator enrollment, upgrades): [`docs/MIGRATION.md`](docs/MIGRATION.md).
 Production deployment (Docker Compose + Caddy HTTPS + scheduled verified backups):
 [`docs/DEPLOYMENT_AR.md`](docs/DEPLOYMENT_AR.md); owner decisions still required before launch:
-[`docs/RELEASE_DECISIONS_17.md`](docs/RELEASE_DECISIONS_17.md).
+[`docs/OWNER_DECISIONS_18.md`](docs/OWNER_DECISIONS_18.md); daily use (Arabic): [`docs/OWNER_QUICKSTART_AR.md`](docs/OWNER_QUICKSTART_AR.md).
 
 Production requires `NODE_ENV=production`, an `https://` `APP_ORIGIN` and a generated `APP_SECRET` (see
 `.env.example`); backups use a separate key file (`npm run cli -- backup:keygen --out <path>`). Run one instance per data directory, on a local
@@ -57,7 +57,16 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/FRONTEND_API.md` | Browser API client and identity rules |
 | `docs/SECURITY.md` | Security policy and verification status |
 | `docs/DEPLOYMENT_AR.md` | Deployment/operations guide (Arabic): architecture, secrets, commands, backups, monitoring, upgrades, incidents |
-| `docs/RELEASE_DECISIONS_17.md` | Owner decisions required before launch (B-1, B-4, B-5) and missing deployment inputs |
+| `docs/FINAL_ACCEPTANCE_18.md` | Stage-18 final acceptance report: blockers first, proxy findings, evidence, performance, launch status |
+| `docs/REQUIREMENTS_EVIDENCE.md` | Requirements → implementation → evidence → environment → status matrix (stages 00–17) |
+| `docs/OWNER_DECISIONS_18.md` | Owner decision pack DR-1…DR-6 (all pending) |
+| `docs/RELEASE_CHECKLIST.md` | Release / launch gates with PASS · NOT RUN · PENDING |
+| `docs/KNOWN_LIMITATIONS.md` | Known limitations and open blockers |
+| `docs/DEPLOYMENT_INPUTS.md` | What the owner must provide for hosted acceptance |
+| `docs/RELEASE_NOTES.md` | Versioned release notes with artifact hashes |
+| `docs/OWNER_QUICKSTART_AR.md` | Owner/operator quick-start (Arabic): daily tasks, stock, imports, reconciliation, secrets |
+| `docs/MAINTENANCE_AR.md` | Maintenance and incident checklist (Arabic) |
+| `docs/RELEASE_DECISIONS_17.md` | Stage-17 decision record (superseded by OWNER_DECISIONS_18) |
 | `docs/SECURITY_REVIEW_16.md` | Stage-16 adversarial review: findings, fixes, residual risks, NOT RUN checks, release blockers |
 | `docs/THREAT_MODEL.md` | Threats and controls |
 | `docs/DECISIONS.md` | Decision log |

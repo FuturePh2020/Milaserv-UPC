@@ -1,4 +1,4 @@
-# دليل النشر والتشغيل (المرحلة 17)
+# دليل النشر والتشغيل (المرحلتان 17 و18 — الإصدار 1.0.0-rc.1)
 
 > **ما الذي يثبته هذا الدليل وما الذي لا يثبته**
 > - **ملفات النشر جاهزة:** `Dockerfile`، و`deploy/compose.yaml`، و`deploy/caddy/Caddyfile`، و`deploy/env.example`.
@@ -27,7 +27,9 @@
 - **Caddy 2.11.9:**
   - شهادة ACME في الإنتاج، وتحويل HTTP إلى HTTPS.
   - يستبدل ترويسات X-Forwarded-For ولا يثق بما يرسله العميل.
-  - يرفض أي Host لا يطابق اسم TLS (421)، ويحدّ حجم الطلب بـ 3MB.
+  - يرفض أي Host لا يطابق اسم TLS (421).
+  - يرفض الطلب الذي يعلن حجمًا 3,000,000 بايت أو أكثر (413) دون قراءته. لا يُستخدم `request_body` بسبب ثغرة
+    GO-2026-6859 (المرحلة 18)؛ الحدود الدقيقة يطبقها التطبيق على كل طلب.
   - سجلاته بلا كوكيز أو رموز CSRF أو query.
 - **خدمة backup:**
   - تنفّذ `backup:run` في مواعيد محددة.
@@ -83,8 +85,8 @@ chmod 0400 secrets/backup.key
 ## 3. أول نشر (بالترتيب، والخادم متوقف)
 
 ```sh
-docker build -t alkhayr-b2b:17.0.0 .                      # من مجلد alkhayr-b2b
-cd deploy && cp env.example .env && nano .env              # PUBLIC_HOST, ACME_EMAIL, ALKHAYR_VERSION=17.0.0
+docker build -t alkhayr-b2b:1.0.0-rc.1 .                  # من مجلد alkhayr-b2b
+cd deploy && cp env.example .env && nano .env              # PUBLIC_HOST, ACME_EMAIL, ALKHAYR_VERSION=1.0.0-rc.1
 docker compose --env-file .env config --quiet              # التحقق من الإعداد
 docker compose --env-file .env run --rm cli db:init        # مرة واحدة فقط
 docker compose --env-file .env run --rm -it cli setup-admin   # المدير الأول (طرفية تفاعلية)
@@ -106,7 +108,7 @@ docker compose --env-file .env start app
 docker compose --env-file .env ps
 docker compose --env-file .env logs --tail 200 app        # JSON بلا كلمات مرور أو رموز أو كوكيز أو محتوى CSV
 docker compose --env-file .env run --rm cli db:status
-docker compose --env-file .env run --rm cli db:check       # فحص الاتساق (قراءة فقط)
+docker compose --env-file .env run --rm cli db:check       # فحص الاتساق: لا يكتب شيئًا، لكنه يحتاج مجلد البيانات مركّبًا للقراءة والكتابة (WAL)
 docker compose --env-file .env run --rm cli recovery:status
 docker compose --env-file .env run --rm cli ops:status     # JSON؛ 0 سليم، 3 تحذير، 1 حرِج
 ```
@@ -277,6 +279,23 @@ docker compose --env-file .env run --rm cli db:check
 | المراقبة: الأحداث وأمر `ops:status` | جاهزة. قناة التنبيه **NOT RUN** |
 | الصلاحيات بمستخدم غير root | **PASS** (uid 1000؛ كل حالات الرفض برموز واضحة) |
 | تمرين استعادة على حجم إنتاجي ونسخة خارجية حقيقية | **NOT RUN** (بيانات اصطناعية وخادم S3 محلي فقط) |
+
+### نتائج المرحلة 18 (الصورة 1.0.0-rc.1، بيانات اصطناعية، الجهاز نفسه)
+- **تثبيت نظيف من هذا الدليل** (`accept18`): 123/123 فحصًا عبر HTTPS بجهة Caddy المحلية؛ من مجلد فارغ إلى الجاهزية 8.9 ث؛
+  الاستعادة على مشروع منفصل حتى الخدمة في وضع الاستعادة 3.0 ث، و4.4 ث مع `db:check` وإعادة الفتح.
+- **الترقية من إصدار المرحلة 15 (مخطط 7)** (`upgrade18`): 36/36؛ البيانات التاريخية متطابقة صفًا بصف؛ الرجوع إلى صورة سابقة
+  بالمخطط نفسه 0.8 ث؛ الإصدار القديم يرفض المخطط الأحدث.
+- **حمل مختلط محدود** (`load18`، بلا proxy، 2 CPU / 1GB، قاعدة 59MB):
+  - 70 جلسة دخول متزامنة نجحت كلها خلال 13.1 ث؛
+  - تصفح 196 طلب/ث بزمن p95 من 11 إلى 12 ms؛
+  - مرحلة مختلطة 170 طلب/ث: 360 طلب شراء جديد، و151 انتقال حالة، واستيراد 100 صف، ونسخة احتياطية أثناء الحمل؛
+    0 أخطاء؛ p95 للقراءة نحو 114 ms؛
+  - أعلى CPU 198%، وأعلى ذاكرة 312MB؛
+  - بعدها `db:check` سليم.
+  - **ملاحظة محلية فقط، وليست وعدًا بعدد تجار.**
+- **تصحيح لملخص حمل المرحلة 17:** كان للقراءة فقط وبلا proxy، وكانت ذروة CPU والذاكرة أثناء موجة الدخول. الوضع المستقر
+  كان نحو 25% CPU و45–54MB.
+- التفاصيل: `FINAL_ACCEPTANCE_18.md`.
 
 ## 11. المسؤوليات والصيانة الدورية
 

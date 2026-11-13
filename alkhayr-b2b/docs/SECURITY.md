@@ -455,6 +455,18 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   - the earlier slim base had 1 critical / 34 high (unused OS packages), which is why the runtime switched to
     distroless.
 
+## 7n. Stage 18 acceptance changes (docs/FINAL_ACCEPTANCE_18.md)
+- **Proxy:** `request_body` is no longer used (GO-2026-6859 / CVE-2026-97054: Go `MaxBytesReader` race can crash an
+  HTTP/1 proxy). Declared `Content-Length ≥ 3 000 000` → 413 at the proxy without reading; the application enforces
+  the exact limits (64 KiB default, 2 MiB imports) on every body including chunked. Remaining Caddy advisories
+  (go-jose v3, x/net/html, klauspost zstd, x/crypto/openpgp, Alpine zlib) are in code our configuration does not
+  load or route to; residual risk is an owner decision (DR-6). Never enable `request_body`, `acme_server`, the admin
+  API, `encode zstd` or HTML-processing modules without re-review.
+- **Sign-in:** a request refused for capacity (credential concurrency 429, hashing queue 503) gives back its login
+  attempts (`RateLimiter.refund`); attempts whose password/TOTP were checked always count. Distributed-source DoS
+  residual unchanged in nature (DR-3).
+- **Merchant status UI:** after a version conflict the controls stay disabled until the current record is loaded.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -560,4 +572,7 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Draft storage scoped per account, validated, cleared on logout/switch/success | ✅ | ✅ 11 (unit + Chromium) |
 | Atomic ledger + balance + audit (rollback on any failure) | ✅ | ✅ 07 (three injected failures) |
 | Targeted username lockout (availability) | ✘ open risk | carried to stages 16/18 |
+| Capacity refusals do not spend sign-in attempts | ✅ | ✅ 18 (regression test fails without the fix; 70/70 logins in a burst) |
+| Proxy not exposed to GO-2026-6859 (`request_body` removed) | ✅ | ✅ 18 (adapted config, 413/421/308 re-tested, browser suites) |
+| Merchant status choices disabled until the current record loads after a conflict | ✅ | ✅ 18 (Chromium, delayed reload: rc8 fails, rc.1 passes) |
 | Dependency audit | — | `npm audit` 2026-11-12 (stages 01 and 02), registry.npmjs.org, 57 packages incl. optional: 0 findings. Stage 02 added no dependencies. Point-in-time only; not a container/OS scan. |

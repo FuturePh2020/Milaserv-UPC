@@ -114,6 +114,10 @@ function StatusChange({ merchant, csrf, onChanged }: { merchant: AdminMerchant; 
   const [failure, setFailure] = useState<ApiFailure | null>(null);
   const [reauth, setReauth] = useState(false);
   const [unknown, setUnknown] = useState(false);
+  // Version submitted when the server answered VERSION_CONFLICT. Until the CURRENT record (a different version) has
+  // been loaded, the displayed record and its choices are stale: the controls stay disabled (stage 18 fix).
+  const [conflictVersion, setConflictVersion] = useState<number | null>(null);
+  const awaitingCurrent = conflictVersion !== null && merchant.version === conflictVersion;
   const rule = options.find((o) => o.to === to) ?? options[0]!;
   const reasonText = reason.trim();
   const reasonError = rule.reasonRequired && reasonText.length < 3 ? 'السبب مطلوب (3 إلى 200 حرف).' : reasonText.length > 200 ? 'السبب حتى 200 حرف.' : null;
@@ -139,7 +143,10 @@ function StatusChange({ merchant, csrf, onChanged }: { merchant: AdminMerchant; 
     }
     if (handleAuthFailure(r)) return;
     setFailure(r);
-    if (r.code === 'VERSION_CONFLICT') onChanged(); // show the CURRENT record; the draft must be reviewed again
+    if (r.code === 'VERSION_CONFLICT') {
+      setConflictVersion(merchant.version);
+      onChanged(); // show the CURRENT record; the draft must be reviewed again
+    }
   };
 
   if (merchant.role === 'admin') {
@@ -168,13 +175,19 @@ function StatusChange({ merchant, csrf, onChanged }: { merchant: AdminMerchant; 
       {failure && !unknown ? (
         <Notice tone="danger" title="لم يُنفذ التغيير">
           <p>{failure.message}</p>
-          {failure.code === 'VERSION_CONFLICT' ? <p>عُرضت البيانات الحالية للتاجر. راجعها ثم أكّد قرارك من جديد إن كان ما زال مناسبًا.</p> : null}
+          {failure.code === 'VERSION_CONFLICT' ? (
+            awaitingCurrent ? (
+              <p role="status">جارٍ تحميل البيانات الحالية للتاجر… لا يمكن تغيير الحالة حتى تظهر.</p>
+            ) : (
+              <p>عُرضت البيانات الحالية للتاجر. راجعها ثم أكّد قرارك من جديد إن كان ما زال مناسبًا.</p>
+            )
+          ) : null}
           <RequestRef requestId={failure.requestId} />
         </Notice>
       ) : null}
       <Field id="merchant-to" label="الحالة الجديدة">
         {(p) => (
-          <Select {...p} value={to} onChange={(e) => setTo(e.target.value as MerchantStatus)}>
+          <Select {...p} value={to} disabled={awaitingCurrent} onChange={(e) => setTo(e.target.value as MerchantStatus)}>
             {options.map((o) => <option key={o.to} value={o.to}>{MERCHANT_STATUS_LABEL[o.to]}</option>)}
           </Select>
         )}
@@ -183,7 +196,7 @@ function StatusChange({ merchant, csrf, onChanged }: { merchant: AdminMerchant; 
         {(p) => <TextArea {...p} maxLength={200} value={reason} onChange={(e) => setReason(e.target.value)} />}
       </Field>
       <Notice tone="info"><p>{CONSEQUENCE[to]}</p></Notice>
-      <Button variant={to === 'approved' ? 'primary' : 'danger'} disabled={Boolean(reasonError) || busy} onClick={() => setConfirming(true)}>
+      <Button variant={to === 'approved' ? 'primary' : 'danger'} disabled={Boolean(reasonError) || busy || awaitingCurrent} onClick={() => setConfirming(true)}>
         {to === 'approved' ? 'اعتماد الحساب…' : to === 'suspended' ? 'إيقاف الحساب…' : 'إعادة للمراجعة…'}
       </Button>
       <ConfirmDialog

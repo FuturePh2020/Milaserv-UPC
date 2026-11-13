@@ -418,3 +418,11 @@ changed the account's credentials while the request was in flight.
   sources (not reset by success); and at most 2 concurrent credential jobs per source (429, `Retry-After: 1`).
   Responses stay generic (`INVALID_CREDENTIALS` / `RATE_LIMITED`).
 - `POST /auth/password` now authenticates and checks CSRF before reading the body (401/403 before 400).
+
+## Stage 18 changes
+- No endpoint, request or response shape changed.
+- `POST /auth/login`: a refusal for capacity (429 `RATE_LIMITED` with `Retry-After: 1` from the per-source credential
+  concurrency limit, or 503 `UNAVAILABLE` with `Retry-After: 5` when the hashing queue is full) no longer counts
+  against the login attempt limits. Refusals after a credential check are unchanged.
+- At the proxy (not the application): a declared `Content-Length` of 3 000 000 bytes or more is answered 413 by Caddy
+  with an empty body (no JSON error envelope); smaller oversized bodies get the application's 413 `PAYLOAD_TOO_LARGE`.

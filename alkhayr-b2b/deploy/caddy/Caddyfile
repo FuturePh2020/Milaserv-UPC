@@ -27,9 +27,15 @@
 {$PUBLIC_HOST} {
 	import tls-{$TLS_MODE}
 
-	# Bodies: imports are ≤ 2 MiB JSON (base64 CSV); everything else is small.
-	request_body {
-		max_size 3MB
+	# Bodies: imports are ≤ 2 MiB JSON (base64 CSV); everything else is small. The application enforces the exact
+	# per-route limits (64 KiB default, 2 MiB import) on every body, chunked included.
+	# Stage 18: the `request_body` directive is NOT used. In Caddy 2.11.9 (Go 1.27.3) it wraps the body in
+	# net/http MaxBytesReader, which GO-2026-6859 / CVE-2026-97054 can crash when a proxied handler reads the body
+	# while response headers are written. Instead, a declared Content-Length ≥ 3 000 000 bytes is refused here
+	# (413, connection closed) without reading the body.
+	@oversize header_regexp Content-Length ^0*(?:[1-9][0-9]{7,}|[3-9][0-9]{6})$
+	respond @oversize 413 {
+		close
 	}
 
 	# Security headers (CSP, HSTS in production, nosniff, frame, referrer…) come from the application —

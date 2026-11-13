@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
 import { describe, test } from 'node:test';
-import { PasswordHasher } from '../../src/server/auth/passwords.ts';
+import { PasswordHasher, PasswordHasherBusyError } from '../../src/server/auth/passwords.ts';
 import { hashSessionToken } from '../../src/server/auth/sessions.ts';
 import { requireApproved, requireOwnMerchant, requireRecentAdminAuth, requireSession, requireSessionCsrf } from '../../src/server/auth/authorization.ts';
 import { sendJson } from '../../src/server/http/response.ts';
@@ -242,6 +242,54 @@ describe('abuse limits before expensive work', () => {
       // Reference work factor (≈350 ms per hash) so the concurrent requests really overlap.
       { hasher: new PasswordHasher({ maxConcurrent: 1, maxQueue: 1 }) },
     ));
+
+  test('capacity refusals (503 before any check) do not spend sign-in attempts (stage 18)', () => {
+    // A hasher whose queue is "full" for the first N calls: the request is refused before any password is checked.
+    class BusyThenOk {
+      readonly inner = new PasswordHasher({ params: CHEAP_PARAMS });
+      busy = 0;
+      constructor(busy: number) {
+        this.busy = busy;
+      }
+      hash(p: string) {
+        return this.inner.hash(p);
+      }
+      async verify(p: string, h: string) {
+        if (this.busy > 0) {
+          this.busy--;
+          throw new PasswordHasherBusyError();
+        }
+        return this.inner.verify(p, h);
+      }
+      async verifyDummy(p: string): Promise<false> {
+        if (this.busy > 0) {
+          this.busy--;
+          throw new PasswordHasherBusyError();
+        }
+        return this.inner.verifyDummy(p);
+      }
+    }
+    const hasher = new BusyThenOk(0);
+    return withApp(
+      async (app) => {
+        const t = await createTrader(app);
+        const src = '198.51.100.40';
+        // 12 retries from ONE source during a surge: more than the 5 per (source, username) limit.
+        hasher.busy = 12;
+        for (let i = 0; i < 12; i++) expectCode(await new Client(app, src).login(t.username, t.password), 503, 'UNAVAILABLE');
+        const ok = await new Client(app, src).login(t.username, t.password);
+        assert.equal(ok.status, 200, 'the legitimate user is not locked out by capacity refusals');
+        // 40 refusals from many sources: more than the 30-per-username backstop.
+        hasher.busy = 40;
+        for (let i = 0; i < 40; i++) expectCode(await new Client(app, `198.51.100.${100 + i}`).login(t.username, 'Wrong-Password-000'), 503, 'UNAVAILABLE');
+        assert.equal((await new Client(app, '198.51.100.250').login(t.username, t.password)).status, 200);
+        // Real failed checks are still counted: 5 wrong passwords from one source → the 6th attempt is refused.
+        for (let i = 0; i < 5; i++) expectCode(await new Client(app, '198.51.100.60').login(t.username, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+        expectCode(await new Client(app, '198.51.100.60').login(t.username, t.password), 429, 'RATE_LIMITED');
+      },
+      { hasher },
+    );
+  });
 
   test('unknown users run a full dummy verification at the configured work factor', () =>
     withApp(

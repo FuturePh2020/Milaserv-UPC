@@ -1,5 +1,7 @@
 # Stage 17 — Decisions required from the owner before a public launch
 
+> **Superseded for decision-making by [`OWNER_DECISIONS_18.md`](OWNER_DECISIONS_18.md)** (stage 18: updated evidence, DR-6 added). Kept as the stage-17 record; nothing here was approved.
+
 These records **prepare** decisions; they do **not** make them. Nothing here is accepted on the owner's behalf.
 Until each one is answered (and B-2/B-3 are closed), the portal must not be opened to traders.
 

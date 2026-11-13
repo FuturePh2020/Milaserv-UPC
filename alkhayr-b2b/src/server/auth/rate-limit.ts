@@ -127,6 +127,19 @@ export class RateLimiter {
     );
   }
 
+  /**
+   * Gives back ONE attempt counted in the current window. Used only when a request was refused for server
+   * capacity before any credential was checked (stage 18): such a refusal reveals nothing, so it must not spend
+   * the caller's attempts. Never goes below zero; an expired window or an overflow-shared counter is left alone.
+   */
+  refund(bucket: RateLimitBucket, identifier: string): void {
+    const run = () => {
+      this.#db.prepare('UPDATE rate_limits SET count = count - 1 WHERE key = ? AND count > 0 AND window_ends_at > ?').run(this.keyFor(bucket, identifier), this.#now());
+    };
+    if (this.#db.isTransaction) run();
+    else writeTransaction(this.#db, run);
+  }
+
   /** Forget an identifier's counter (e.g. the account counter after a successful login). */
   reset(bucket: RateLimitBucket, identifier: string): void {
     this.#db.prepare('DELETE FROM rate_limits WHERE key = ?').run(this.keyFor(bucket, identifier));

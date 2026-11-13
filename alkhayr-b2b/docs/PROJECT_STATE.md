@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-13 |
-| Current stage | **17 — Production deployment packaging, HTTPS staging (LOCAL) and operations: COMPLETE** — not deployed, not launched |
-| Next stage | **18** (awaiting owner prompt; owner decisions DR-1…DR-5 in docs/RELEASE_DECISIONS_17.md) |
+| Current stage | **18 — Final acceptance, release evidence and owner handover: COMPLETE** — release candidate 1.0.0-rc.1; **ACCEPTANCE PASSED FOR LOCAL DEPLOYMENT PACKAGE; PUBLIC LAUNCH BLOCKED** |
+| Next stage | None planned by the implementer. Next actions are the owner's: answer DR-1…DR-6 (`docs/OWNER_DECISIONS_18.md`) and provide `docs/DEPLOYMENT_INPUTS.md`; then hosted acceptance |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
@@ -33,7 +33,66 @@
 | 15 | ✅ Done (backup, restore, account recovery) | Commit `9097aac` — 571/571 tests ×3 clean-copy runs, real-process restore drill + real-PTY run, 24 mutants — below |
 | 16 | ✅ Done (adversarial review, consistency, recovery gate) | Commit `6389115` — 610/610 tests ×3 clean-copy runs, 19/19 + 87/87 + 125/125 + 44/44 + 67/67 browser checks, 21/21 mutants caught (after fixes to the tests) — below |
 | 17 | ✅ Done (packaging + local production-like verification) | 617/617 tests, 3 clean copies 617/617 each, HTTPS browser runs 87+125+44+67+19+19 via Caddy, restore drill 23/23, upgrade + load rehearsals — below |
-| 18 | ⏳ Not started | — |
+| 18 | ✅ Done (final acceptance, local package only) | Stage-18 commit ("Stage 18: final acceptance…"): 618/618 tests, CLEAN18, `accept18` 123/123, `upgrade18` UPG18, HTTPS browser 87+126+44+67+19+COOK18, load + consistency — below |
+
+## Stage 18 — final status (first)
+
+**ACCEPTANCE PASSED FOR LOCAL DEPLOYMENT PACKAGE; PUBLIC LAUNCH BLOCKED.**
+- No hosted check could run (no server, domain, DNS or storage provided). Production technical acceptance is NOT
+  passed.
+- Business launch approval is the owner's and was not given.
+- Full report: [`FINAL_ACCEPTANCE_18.md`](FINAL_ACCEPTANCE_18.md).
+
+### Stage 18 — open blockers and weaknesses
+- **B-1 … B-5:** unchanged in nature. B-5 was reduced (capacity refusals no longer lock users out).
+- **B-6 (new):** Caddy 2.11.9 carries HIGH advisories with no official fixed build. The one reachable path
+  (`request_body` → GO-2026-6859) is removed; the rest are unreachable by configuration review.
+- **All six owner decisions pending:** [`OWNER_DECISIONS_18.md`](OWNER_DECISIONS_18.md).
+- **Hosted inputs missing:** [`DEPLOYMENT_INPUTS.md`](DEPLOYMENT_INPUTS.md).
+- **NOT RUN:**
+  - every hosted check;
+  - non-Chromium browsers; manual accessibility review;
+  - load through the proxy from many addresses;
+  - upgrade from schemas 1–6;
+  - alert delivery;
+  - independent penetration test.
+
+### Stage 18 — findings fixed
+1. **Proxy crash exposure:** `request_body` removed. A declared-length 413 check is used instead (D-173).
+2. **Capacity refusals spent sign-in attempts:**
+   - legitimate users were locked out for 15 min during bursts (49/70 sessions);
+   - refund added (D-174), giving 70/70 sessions;
+   - a regression test fails without the fix.
+3. **Merchant status screen:** stale choices were selectable after a conflict. Controls are now disabled until the
+   current record loads (D-175); the deterministic browser check fails on rc8 and passes on rc.1.
+4. **Docs:**
+   - stage-17 load summary corrected (read-only, no proxy, peaks during the login burst);
+   - guide no longer claims a 3MB `request_body` limit;
+   - `db:check` needs a read-write mount;
+   - an intermittent admin-journey failure was traced to defect 3, not dismissed as flaky.
+
+### Stage 18 — checks run (2026-11-13 UTC; same container: 4 vCPU Xeon 2.1 GHz, 16 GB, Docker 29.9.2)
+| Check | Result |
+|---|---|
+| `npm run check` | ✅ 618/618 (new: capacity-refund regression) |
+| Clean copies ×3 + `npm audit` | CLEAN18_DETAIL |
+| Image `alkhayr-b2b:1.0.0-rc.1` | Id `sha256:e8cf6ad9…a562da`; hashes in RELEASE_NOTES |
+| Trivy 0.76.2 (DB 2026-11-13 12:56 UTC) | App: 0 C / 0 H. Caddy: 2 H, 4 M, 2 U — analysed in FINAL_ACCEPTANCE §3 |
+| govulncheck 1.9.0, binary mode, Caddy | 5 advisories with symbols present; the one reachable path mitigated |
+| `accept18` (clean install, real terminal, HTTPS API, restore) | ✅ 123/123 on the final image |
+| `upgrade18` (stage-15 schema 7 → 1.0.0-rc.1, rollback) | UPG18_DETAIL |
+| HTTPS browser suites on the final image | merchant 87/87, admin 126/126, import 44/44, business 67/67, recovery 19/19, cookies COOK18 |
+| `load18` (bounded mixed load + backup + import) | 70/70 logins in 13.1 s; browse 196 req/s, p95 11–12 ms; mixed 170 req/s, 0 errors, p95 about 114 ms; 360 orders exactly once; `db:check` ok |
+
+### How to continue
+1. The owner answers DR-1…DR-6 and provides the inputs in `DEPLOYMENT_INPUTS.md`.
+2. The operator runs hosted acceptance (`DEPLOYMENT_AR.md` §2–§10 on the real host) and records PASS/FAIL in
+   `RELEASE_CHECKLIST.md`.
+3. The owner gives (or withholds) written launch approval.
+
+---
+
+## Stage 17 record (retained)
 
 ## Stage 17 — what this stage did and did NOT prove (first)
 

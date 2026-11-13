@@ -6,7 +6,7 @@ import { cookieNames, parseCookies, serializeCookie } from '../auth/cookies.ts';
 import { newPreSessionNonce, PRELOGIN_TTL_MS, PRESESSION_NONCE_PATTERN, preLoginToken, sessionCsrfToken, verifyPreLoginToken } from '../auth/csrf.ts';
 import { decryptSecret, totpAad } from '../auth/encryption.ts';
 import { hmacHex } from '../auth/keys.ts';
-import { checkPasswordPolicy, PASSWORD_POLICY, UnsupportedPasswordHashError, type PasswordPolicyIssue } from '../auth/passwords.ts';
+import { checkPasswordPolicy, PASSWORD_POLICY, PasswordHasherBusyError, UnsupportedPasswordHashError, type PasswordPolicyIssue } from '../auth/passwords.ts';
 import type { RateLimitBucket } from '../auth/rate-limit.ts';
 import { deleteSession, deleteUserSessions, hashSessionToken, insertSession, lookupSession, SESSION_POLICY, SESSION_TOKEN_PATTERN, type Role } from '../auth/sessions.ts';
 import { verifyTotp } from '../auth/totp.ts';
@@ -243,12 +243,32 @@ export async function login(ctx: RequestContext): Promise<void> {
   // Abuse limits BEFORE any expensive work enters the hashing queue (docs/SECURITY.md §7):
   // per source, per (source, username), then the account-wide distributed-guessing backstop.
   const source = rateLimitIdentity(ctx.clientIp);
-  enforce(ctx, 'login_ip', source);
-  enforce(ctx, 'login_source_account', `${source}\u0000${username}`);
-  enforce(ctx, 'login_account', username);
-  const release = admitCredentialWork(ctx, source);
+  const counted: Array<[RateLimitBucket, string]> = [];
+  const count = (bucket: RateLimitBucket, identifier: string) => {
+    enforce(ctx, bucket, identifier);
+    counted.push([bucket, identifier]);
+  };
+  count('login_ip', source);
+  count('login_source_account', `${source}\u0000${username}`);
+  count('login_account', username);
+  // Stage 18: a refusal for CAPACITY (per-source credential concurrency, or a full hashing queue → 503) happens
+  // before any password or code is checked, so it gives the attempts back. Otherwise a legitimate user retrying
+  // during a sign-in surge — or while an attacker keeps the queue full — would lock themselves out for 15 minutes.
+  const refund = () => {
+    for (const [bucket, identifier] of counted) ctx.services.rateLimiter.refund(bucket, identifier);
+  };
+  let release: () => void;
+  try {
+    release = admitCredentialWork(ctx, source);
+  } catch (err) {
+    refund();
+    throw err;
+  }
   try {
     await loginAdmitted(ctx, body, username, source);
+  } catch (err) {
+    if (err instanceof PasswordHasherBusyError) refund();
+    throw err;
   } finally {
     release();
   }
