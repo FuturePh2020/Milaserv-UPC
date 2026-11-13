@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { newRequestKey, SECURE_RANDOM_MESSAGE, SecureRandomUnavailableError, type ApiFailure, type SessionCsrfToken } from '../../api/client.ts';
-import { commitImport, importTemplateUrl, isImportRowReport, previewImport, type ImportCommitPayload, type ImportMode, type ImportPreview, type ImportResult, type ImportRowReport } from '../../api/admin.ts';
+import { commitImport, importTemplateUrl, isImportRowReport, prefilledTemplate, previewImport, type ImportCommitPayload, type ImportMode, type ImportPreview, type ImportResult, type ImportRowReport } from '../../api/admin.ts';
 import { Badge } from '../../components/Badges.tsx';
 import { Button } from '../../components/Button.tsx';
 import { DataTable } from '../../components/DataTable.tsx';
@@ -13,7 +13,9 @@ import { formatDateTime, formatInteger } from '../../format.ts';
 import { useOperation } from '../../hooks/useOperation.ts';
 import { href } from '../../router.tsx';
 import { useIdentity } from '../../session/identity.tsx';
+import { ExportButton } from './ExportButton.tsx';
 import { OperationNotice } from './OperationNotice.tsx';
+import { Field, TextInput } from '../../components/Form.tsx';
 
 /**
  * CSV import (stage 13): choose mode → select file → server validation → preview → explicit
@@ -267,6 +269,7 @@ export function ImportPage({ csrf }: { csrf: SessionCsrfToken }) {
   const [confirming, setConfirming] = useState(false);
   const [randomError, setRandomError] = useState(false);
   const [reconfirm, setReconfirm] = useState(false);
+  const [templateQ, setTemplateQ] = useState('');
   /** Re-validation requested after re-authentication; runs once the page has the NEW session/CSRF token. */
   const [revalidate, setRevalidate] = useState<{ mode: ImportMode; file: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -348,6 +351,9 @@ export function ImportPage({ csrf }: { csrf: SessionCsrfToken }) {
           <h1 id="imp-title">استيراد CSV</h1>
           <p className="c-page-header__desc">ملف CSV ‏(UTF-8) حتى 1 ميجابايت و1000 صف. كل الملف يُنفّذ أو لا شيء. المعاينة لا تكتب شيئًا ولا تحجز البيانات.</p>
         </div>
+        <a className="c-button c-button--secondary" href={href('/admin/imports/history')}>
+          عمليات الاستيراد المنفّذة
+        </a>
       </div>
 
       {randomError ? <Notice tone="danger">{SECURE_RANDOM_MESSAGE}</Notice> : null}
@@ -412,6 +418,24 @@ export function ImportPage({ csrf }: { csrf: SessionCsrfToken }) {
                 <Icon name="download" /> تنزيل قالب «{info.title}» (CSV UTF-8)
               </a>
             </p>
+            {activeMode !== 'create_products' ? (
+              <div className="c-card stack">
+                <h3 className="c-card__title">قالب معبّأ بالمنتجات الحالية</h3>
+                <p className="muted">
+                  يحتوي على معرّف كل منتج وإصداره الحالي والاسم الحالي للمراجعة. أعمدة {activeMode === 'update_products' ? 'التعديل' : activeMode === 'receive_stock' ? 'الكمية والسبب' : 'الإجمالي الفعلي والسبب'}{' '}
+                  <strong>فارغة</strong> عمدًا؛ املأ ما تحتاجه واحذف باقي الصفوف (الصف بلا قيم يُرفض). القالب يصبح قديمًا بعد أي تعديل أو حركة مخزون على المنتج. هذا ملف
+                  للاستيراد: لا تُضاف فيه علامة ' للحماية، والاسم الذي قد يُفسَّر كمعادلة يُترك فارغًا. برامج الجداول قد تحذف الأصفار في بداية الأرقام عند الحفظ.
+                </p>
+                <Field label="تصفية بالاسم أو الماركة أو الباركود (اختياري)">
+                  {(p) => <TextInput {...p} value={templateQ} onChange={(e) => setTemplateQ(e.target.value)} />}
+                </Field>
+                <ExportButton
+                  view={false}
+                  label="تنزيل القالب المعبّأ"
+                  run={() => prefilledTemplate(csrf, activeMode as 'update_products' | 'receive_stock' | 'set_stock_total', templateQ.trim() ? { q: templateQ.trim() } : {})}
+                />
+              </div>
+            ) : null}
             <DataTable
               caption={`أعمدة ${info.title}`}
               rows={info.columns}

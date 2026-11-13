@@ -43,6 +43,13 @@ export const ADMIN_NAV: ReadonlyArray<{ heading: string; items: readonly NavItem
   },
   { heading: 'الحسابات', items: [{ href: '#/admin/merchants', label: 'التجار', icon: 'users' }] },
   {
+    heading: 'التقارير والإعدادات',
+    items: [
+      { href: '#/admin/reports', label: 'التقارير', icon: 'chart' },
+      { href: '#/admin/settings', label: 'الإعدادات', icon: 'settings' },
+    ],
+  },
+  {
     // The administrator's OWN approved company profile ordering (own-order routes, not admin views).
     heading: 'مشتريات الشركة',
     items: [

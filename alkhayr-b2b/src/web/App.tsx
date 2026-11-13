@@ -7,6 +7,10 @@ import { AdminLayout, AuthLayout, MerchantLayout, type AccountView } from './lay
 import { OperationsProvider } from './admin/operations.tsx';
 import { hasUnresolved } from './admin/unresolved.ts';
 import { ImportPage } from './pages/admin/Imports.tsx';
+import { ImportDetailPage, ImportHistoryPage } from './pages/admin/ImportHistory.tsx';
+import { ReportsPage } from './pages/admin/Reports.tsx';
+import { SettingsPage } from './pages/admin/Settings.tsx';
+import { OrderSummaryPrintPage } from './pages/OrderSummaryPrint.tsx';
 import { UnresolvedBanner } from './pages/admin/UnresolvedBanner.tsx';
 import { ForbiddenView, IdentityLoadingScreen, NetworkFailureView, NotFoundView, PendingApprovalView } from './layouts/States.tsx';
 import { AdminHomePage } from './pages/admin/AdminHome.tsx';
@@ -58,11 +62,16 @@ function adminScreen(route: Route, csrf: SessionCsrfToken): ReactNode {
   };
   if (path === '/admin') return <AdminHomePage />;
   if (path === '/admin/merchants') return <MerchantsPage query={query} />;
-  if (path === '/admin/products') return <ProductsPage query={query} />;
+  if (path === '/admin/products') return <ProductsPage query={query} csrf={csrf} />;
   if (path === '/admin/products/new') return <ProductCreatePage csrf={csrf} />;
   if (path === '/admin/inventory') return <InventoryPage query={query} />;
   if (path === '/admin/orders') return <AdminOrdersPage query={query} />;
   if (path === '/admin/imports') return <ImportPage csrf={csrf} />;
+  if (path === '/admin/imports/history') return <ImportHistoryPage />;
+  if (path === '/admin/settings') return <SettingsPage csrf={csrf} />;
+  if (path === '/admin/reports') return <ReportsPage query={query} csrf={csrf} />;
+  const importOp = id(/^\/admin\/imports\/([^/]+)$/);
+  if (importOp) return <ImportDetailPage key={importOp} id={importOp} />;
   const merchant = id(/^\/admin\/merchants\/([^/]+)$/);
   if (merchant) return <MerchantDetailPage key={merchant} id={merchant} csrf={csrf} />;
   const product = id(/^\/admin\/products\/([^/]+)$/);
@@ -157,6 +166,11 @@ function Routes() {
     );
   }
   const { me, csrf } = state;
+  // Printable order summaries render WITHOUT the application shell (no navigation, buttons only on screen).
+  const printOwn = /^\/orders\/([0-9a-f-]{36})\/print$/.exec(route.path);
+  const printAdmin = /^\/admin\/orders\/([0-9a-f-]{36})\/print$/.exec(route.path);
+  if (printAdmin && shellKind(me) === 'admin') return <OrderSummaryPrintPage key={`a${printAdmin[1]}`} id={printAdmin[1]!} admin />;
+  if (printOwn && shellKind(me) !== 'pending') return <OrderSummaryPrintPage key={`m${printOwn[1]}`} id={printOwn[1]!} admin={false} />;
   const onLogout = async () => {
     // Signing out discards the in-memory key/payload of an operation whose outcome is unknown.
     if (hasUnresolved() && !window.confirm('توجد عملية إدارية لم تتأكد نتيجتها. تسجيل الخروج يفقد إمكانية إعادة إرسالها بنفس المفتاح. تحقق من السجل أولًا. هل تريد تسجيل الخروج؟')) return;

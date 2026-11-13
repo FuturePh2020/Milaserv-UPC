@@ -138,7 +138,10 @@ export function OrderDetailPage({ id, received }: { id: string; received: string
           </h1>
           <p className="c-page-header__desc">أُنشئ في {formatDateTime(o.createdAt)} — البيانات أدناه كما سُجلت وقت الطلب.</p>
         </div>
-        <OrderStatusBadge state={o.state} />
+        <div className="cluster">
+          <OrderStatusBadge state={o.state} />
+          <ButtonLink href={href(`/orders/${o.id}/print`)} icon="orders">ملخص للطباعة</ButtonLink>
+        </div>
       </div>
       <div className="c-card">
         <h2 className="c-card__title">مراحل الطلب</h2>

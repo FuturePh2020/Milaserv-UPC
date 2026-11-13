@@ -1,4 +1,4 @@
-import { apiGet, apiMutate, type ApiResult, type SessionCsrfToken } from './client.ts';
+import { apiDownload, apiGet, apiMutate, type ApiResult, type SessionCsrfToken } from './client.ts';
 import { isOrderState, isPage, type AdminOrder, type AdminOrderSummary, type MerchantStatus, type OrderState, type Page, type StockStatus } from './contracts.ts';
 
 /**
@@ -318,4 +318,99 @@ export function previewImport(csrf: SessionCsrfToken, mode: ImportMode, file: st
 /** All-or-nothing; idempotent per (administrator, operationKey): a same-key retry returns the original batch. */
 export function commitImport(csrf: SessionCsrfToken, payload: ImportCommitPayload): Promise<ApiResult<ImportResult>> {
   return apiMutate({ method: 'POST', path: '/api/v1/admin/imports/commit', csrf, body: payload, validate: isImportResult });
+}
+
+// ------------------------------------------------------------------ settings, reports, exports, import history (stage 14)
+
+export interface BusinessSettings {
+  company: { name: string | null; phone: string | null; email: string | null; address: string | null };
+  shippingCents: number;
+  shippingTaxable: boolean;
+  taxBps: number;
+  minimumOrderCents: number;
+  lowStockThresholdCartons: number;
+  version: number;
+  updatedAt: number;
+  updatedBy: string | null;
+}
+const isSettings = (v: unknown): v is BusinessSettings =>
+  isObject(v) && isObject(v.company) && isInt(v.shippingCents) && typeof v.shippingTaxable === 'boolean' && isInt(v.taxBps) && isInt(v.minimumOrderCents) && isInt(v.lowStockThresholdCartons) && isInt(v.version);
+export type SettingsPatch = Partial<{ companyName: string | null; companyPhone: string | null; companyEmail: string | null; companyAddress: string | null; shippingCents: number; shippingTaxable: boolean; taxBps: number; minimumOrderCents: number; lowStockThresholdCartons: number }>;
+
+export async function getSettings(signal?: AbortSignal): Promise<ApiResult<BusinessSettings>> {
+  const r = await apiGet('/api/v1/admin/settings', (v): v is { settings: BusinessSettings } => isObject(v) && isSettings(v.settings), signal);
+  return r.ok ? { ...r, data: r.data.settings } : r;
+}
+export async function updateSettings(csrf: SessionCsrfToken, expectedVersion: number, changes: SettingsPatch): Promise<ApiResult<BusinessSettings>> {
+  const r = await apiMutate({ method: 'PATCH', path: '/api/v1/admin/settings', csrf, body: { expectedVersion, ...changes }, validate: (v): v is { settings: BusinessSettings } => isObject(v) && isSettings(v.settings) });
+  return r.ok ? { ...r, data: r.data.settings } : r;
+}
+
+export interface MoneyRow {
+  orders: number;
+  subtotalCents: string;
+  shippingCents: string;
+  taxCents: string;
+  totalCents: string;
+}
+export interface ReportRange {
+  from: string;
+  to: string;
+  timeZone: string;
+}
+export interface OrdersReport {
+  range: ReportRange;
+  states: Array<MoneyRow & { state: OrderState }>;
+  notCancelled: MoneyRow;
+}
+export interface ProductsReport {
+  range: ReportRange;
+  filters: { states: OrderState[] };
+  items: Array<{ productId: string; name: string; brand: string; barcode: string | null; orders: number; cartons: string; valueCents: string }>;
+  totals: { products: number; cartons: string; valueCents: string };
+}
+export interface InventoryReport {
+  threshold: number;
+  items: Array<{ productId: string; name: string; brand: string; barcode: string | null; category: string; active: boolean; onHand: number; reserved: number; available: number; status: StockStatus }>;
+  totals: { products: number; onHand: string; reserved: string; available: string; byStatus: Record<StockStatus, number> };
+}
+export interface MovementsReport {
+  range: ReportRange;
+  items: Array<{ type: string; kind: string; adjustmentType: string | null; movements: number; products: number; onHandDelta: string; reservedDelta: string }>;
+}
+const isReport = (v: unknown): v is { report: unknown } => isObject(v) && isObject(v.report);
+async function report<T>(path: string, signal?: AbortSignal): Promise<ApiResult<T>> {
+  const r = await apiGet(path, isReport, signal);
+  return r.ok ? { ...r, data: r.data.report as T } : r;
+}
+export const getOrdersReport = (q: Record<string, string | undefined>, signal?: AbortSignal) => report<OrdersReport>(`/api/v1/admin/reports/orders${qs(q)}`, signal);
+export const getProductsReport = (q: Record<string, string | undefined>, signal?: AbortSignal) => report<ProductsReport>(`/api/v1/admin/reports/products${qs(q)}`, signal);
+export const getInventoryReport = (q: Record<string, string | undefined>, signal?: AbortSignal) => report<InventoryReport>(`/api/v1/admin/reports/inventory${qs(q)}`, signal);
+export const getMovementsReport = (q: Record<string, string | undefined>, signal?: AbortSignal) => report<MovementsReport>(`/api/v1/admin/reports/movements${qs(q)}`, signal);
+
+export type ExportType = 'products' | 'inventory' | 'orders' | 'report_orders' | 'report_products' | 'report_movements';
+/** Spreadsheet-safe VIEW export (not a re-import format). Requires recent authentication. */
+export function exportFile(csrf: SessionCsrfToken, body: { type: ExportType; filters?: Record<string, unknown>; includeBuyerContact?: boolean }) {
+  return apiDownload({ path: '/api/v1/admin/exports', csrf, body });
+}
+/** Canonical pre-filled import template (stage-13 headers; amounts and reasons left empty). */
+export function prefilledTemplate(csrf: SessionCsrfToken, mode: 'update_products' | 'receive_stock' | 'set_stock_total', filters: Record<string, string> = {}) {
+  return apiDownload({ path: '/api/v1/admin/imports/templates/prefilled', csrf, body: { mode, filters } });
+}
+
+export interface ImportHistoryItem {
+  id: string;
+  mode: ImportMode;
+  recordCount: number;
+  fileBytes: number;
+  createdAt: number;
+  actor: string;
+}
+const isHistoryItem = (v: unknown): v is ImportHistoryItem => isObject(v) && isString(v.id) && isImportMode(v.mode) && isInt(v.recordCount) && isInt(v.createdAt) && isString(v.actor);
+export function listImports(q: { mode?: ImportMode; cursor?: string }, signal?: AbortSignal): Promise<ApiResult<Page<ImportHistoryItem>>> {
+  return apiGet(`/api/v1/admin/imports${qs(q)}`, isPage(isHistoryItem), signal);
+}
+export async function getImport(id: string, signal?: AbortSignal): Promise<ApiResult<ImportHistoryItem & { items: ImportResult['import']['items'] }>> {
+  const r = await apiGet(`/api/v1/admin/imports/${encodeURIComponent(id)}`, (v): v is { import: ImportHistoryItem & { items: ImportResult['import']['items'] } } => isObject(v) && isHistoryItem(v.import) && Array.isArray((v.import as { items?: unknown }).items), signal);
+  return r.ok ? { ...r, data: r.data.import } : r;
 }

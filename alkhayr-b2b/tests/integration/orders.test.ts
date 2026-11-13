@@ -98,7 +98,14 @@ const line = (p: Product, cartons = 1, extra: Record<string, unknown> = {}) => (
   ...extra,
 });
 const orderBody = (items: unknown[], extra: Record<string, unknown> = {}) => ({ requestKey: randomUUID(), items, ...extra });
-const place = (c: Client, body: unknown) => c.request('POST', '/api/v1/orders', { body });
+/** The terms a trader would have reviewed in a quote right now (stage 14 expectedTerms). */
+const currentTerms = (app: TestApp) => {
+  const t = app.fixtureDb.prepare('SELECT shipping_cents, shipping_taxable, tax_bps FROM business_settings WHERE id = 1').get() as { shipping_cents: number; shipping_taxable: number; tax_bps: number };
+  return { shippingCents: t.shipping_cents, shippingTaxable: t.shipping_taxable === 1, taxBps: t.tax_bps };
+};
+const withTerms = (c: Client, body: unknown) =>
+  body !== null && typeof body === 'object' && !Array.isArray(body) && !('expectedTerms' in body) ? { ...(body as object), expectedTerms: currentTerms(c.app) } : body;
+const place = (c: Client, body: unknown) => c.request('POST', '/api/v1/orders', { body: withTerms(c, body) });
 const productRow = (app: TestApp, id: string) => ({ ...(app.fixtureDb.prepare('SELECT on_hand, reserved, version, last_ledger_id, price_cents FROM products WHERE id = ?').get(id) as object) });
 const orderCount = (app: TestApp) => count(app, 'SELECT count(*) FROM orders') + count(app, 'SELECT count(*) FROM order_items') + count(app, 'SELECT count(*) FROM order_events');
 const settings = (app: TestApp, set: string) => app.fixtureDb.exec(`UPDATE business_settings SET ${set}, version = version + 1`);
@@ -128,7 +135,7 @@ describe('access and ownership of order creation', () => {
       for (const field of ['merchantId', 'userId', 'actorUserId', 'createdByUserId', 'buyer']) {
         expectCode(await place(a.c, orderBody([line(p)], { [field]: field === 'buyer' ? { businessName: 'x' } : b.account.merchantId })), 400, 'VALIDATION_FAILED');
       }
-      const r = await a.c.request('POST', '/api/v1/orders', { body: orderBody([line(p)]), headers: { 'X-Merchant-Id': b.account.merchantId, 'X-User-Id': b.account.id } });
+      const r = await a.c.request('POST', '/api/v1/orders', { body: withTerms(a.c, orderBody([line(p)])), headers: { 'X-Merchant-Id': b.account.merchantId, 'X-User-Id': b.account.id } });
       assert.equal(r.status, 201, r.body);
       const stored = app.fixtureDb.prepare('SELECT merchant_id, created_by_user_id FROM orders WHERE id = ?').get(r.json.order.id) as { merchant_id: string; created_by_user_id: string };
       assert.deepEqual({ ...stored }, { merchant_id: a.account.merchantId, created_by_user_id: a.account.id });
@@ -610,7 +617,7 @@ describe('eligibility at commit', () => {
       ];
       for (const [label, midway, status, code] of cases) {
         const t = await w.trader();
-        const r = await t.c.requestSlow('POST', '/api/v1/orders', orderBody([line(p)]), () => midway(t));
+        const r = await t.c.requestSlow('POST', '/api/v1/orders', withTerms(t.c, orderBody([line(p)])), () => midway(t));
         assert.equal(r.status, status, `${label}: ${r.body}`);
         assert.equal(r.json.error.code, code, label);
       }

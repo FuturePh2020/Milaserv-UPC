@@ -148,6 +148,16 @@ installations get it through `db:init`. Administrators can then import products 
 [`IMPORT_GUIDE_AR.md`](IMPORT_GUIDE_AR.md). Imported products are created inactive with zero stock. Keep the original
 files: the server stores only their hash, size and record count.
 
+### Stage 14 note: settings, reports, exports and printing (no migration)
+No database change. After upgrading, open «الإعدادات» and configure the company details you want printed, the
+shipping charge, the tax rate (your business decision — the system does not certify it), whether shipping is taxable,
+the minimum goods subtotal and the low-stock threshold; until then the defaults are 0 / 0% / 10 cartons. Changes apply to
+future quotes and orders only. A trader who reviewed totals before a shipping/tax change is asked to review again.
+Browsers holding an unclear order submission saved before this release cannot resend it (it lacks the reviewed terms)
+and drop it: check «طلباتي» for that trader. Reports use Cairo calendar days and show order values, not collected
+money. Exports are CSV for viewing (not for re-import); pre-filled import templates are on the import page. Printed
+«ملخص طلب» documents are not tax invoices or receipts. See [`IMPORT_GUIDE_AR.md`](IMPORT_GUIDE_AR.md).
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|

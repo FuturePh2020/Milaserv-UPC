@@ -83,7 +83,10 @@ export function parsePending(v: unknown): PendingSubmission | null {
       : null,
   );
   if (items.some((i) => i === null)) return null;
-  const payload: CreateOrderPayload = { requestKey: v.requestKey, items: items as CreateOrderPayload['items'], ...(typeof p.note === 'string' ? { note: p.note } : {}) };
+  const t = p.expectedTerms;
+  if (!isObj(t) || !int(t.shippingCents, 0, 10_000_000) || typeof t.shippingTaxable !== 'boolean' || !int(t.taxBps, 0, 10_000)) return null;
+  const expectedTerms = { shippingCents: t.shippingCents, shippingTaxable: t.shippingTaxable, taxBps: t.taxBps };
+  const payload: CreateOrderPayload = { requestKey: v.requestKey, expectedTerms, items: items as CreateOrderPayload['items'], ...(typeof p.note === 'string' ? { note: p.note } : {}) };
   return { requestKey: v.requestKey, createdAt: v.createdAt, payload };
 }
 

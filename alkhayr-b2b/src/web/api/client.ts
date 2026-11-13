@@ -192,3 +192,55 @@ export function newRequestKey(): string {
   const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
+
+/**
+ * Authenticated CSV download (stage 14 exports): POST with session CSRF, returns the file as a Blob.
+ * Errors use the same typed failures as JSON requests. The filename is accepted only if it matches
+ * the server's fixed pattern. Never retried automatically.
+ */
+export async function apiDownload(spec: { path: string; csrf: SessionCsrfToken; body: unknown }): Promise<ApiResult<{ blob: Blob; filename: string; omittedNames: number }>> {
+  if (!API_PATH.test(spec.path)) throw new Error(`Refusing to call a non-API path: ${spec.path}`);
+  let response: Response;
+  try {
+    response = await fetch(spec.path, {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      redirect: 'error',
+      headers: { Accept: 'text/csv, application/json', 'Content-Type': 'application/json', 'X-CSRF-Token': spec.csrf },
+      body: JSON.stringify(spec.body),
+    });
+  } catch {
+    return failure({ kind: 'network', status: 0, message: NETWORK_MESSAGE });
+  }
+  const requestId = response.headers.get('X-Request-Id');
+  if (response.ok) {
+    if (!(response.headers.get('Content-Type') ?? '').startsWith('text/csv')) return failure({ kind: 'invalid_response', status: response.status, message: INVALID_RESPONSE_MESSAGE, requestId });
+    const m = /filename="(alkhayr-[a-z0-9-]{1,80}\.csv)"/.exec(response.headers.get('Content-Disposition') ?? '');
+    const omitted = Number(response.headers.get('X-Omitted-Display-Names') ?? '0');
+    try {
+      return { ok: true, status: response.status, data: { blob: await response.blob(), filename: m?.[1] ?? 'alkhayr-export.csv', omittedNames: Number.isSafeInteger(omitted) ? omitted : 0 }, requestId };
+    } catch {
+      return failure({ kind: 'network', status: 0, message: NETWORK_MESSAGE, requestId });
+    }
+  }
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    /* non-JSON error */
+  }
+  const err = (body as { error?: { code?: unknown; details?: { fields?: unknown; current?: unknown } } } | null)?.error;
+  const code = isErrorCode(err?.code) ? err.code : null;
+  const current = typeof err?.details?.current === 'object' && err.details.current !== null ? (err.details.current as Record<string, unknown>) : null;
+  const retryAfter = Number(response.headers.get('Retry-After'));
+  return failure({
+    kind: kindForStatus(response.status),
+    status: response.status,
+    code,
+    message: code ? ERROR_CATALOG[code].messageAr : INVALID_RESPONSE_MESSAGE,
+    requestId,
+    current,
+    retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null,
+  });
+}

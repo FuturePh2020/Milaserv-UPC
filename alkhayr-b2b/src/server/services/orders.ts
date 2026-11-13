@@ -12,6 +12,7 @@ import type { RequestContext } from '../http/router.ts';
 import { BASIS_POINTS_DENOMINATOR, LIMITS } from '../../shared/constants.ts';
 import { STOCK_STATUS_LABEL_AR, stockStatus } from '../../shared/stock-status.ts';
 import { writeAudit } from './audit.ts';
+import { companyDetails, loadSettings } from './settings.ts';
 import { lowStockThreshold } from './products.ts';
 
 /**
@@ -63,6 +64,19 @@ export const createOrderSchema = z.strictObject({
     .nullable()
     .optional()
     .transform((s) => (s ? s : null)),
+  /**
+   * The financial terms the trader reviewed in the quote (stage 14). A stale-data check only:
+   * amounts are always computed by the server from the current settings, and a mismatch refuses
+   * the order (TERMS_CHANGED) so the trader reviews the new terms. Not part of the request digest.
+   */
+  expectedTerms: z.strictObject(
+    {
+      shippingCents: z.number({ error: 'رسوم الشحن المعروضة مطلوبة.' }).int().min(0).max(10_000_000),
+      shippingTaxable: z.boolean({ error: 'خضوع الشحن للضريبة مطلوب.' }),
+      taxBps: z.number({ error: 'نسبة الضريبة المعروضة مطلوبة.' }).int().min(0).max(10_000),
+    },
+    { error: 'شروط الطلب التي راجعها التاجر مطلوبة (expectedTerms).' },
+  ),
   items: z
     .array(lineSchema, { error: 'قائمة الأصناف مطلوبة.' })
     .min(1, 'الطلب يجب أن يحتوي على صنف واحد على الأقل.')
@@ -386,6 +400,12 @@ export async function createOrder(ctx: RequestContext): Promise<void> {
     }
 
     const { resolved, isDemo, settings, amounts } = evaluateOrderLines(ctx, request.items);
+    // 4b. The shipping/tax terms the trader reviewed must still be the current ones (stage 14).
+    const terms = { shippingCents: settings.shipping_cents, shippingTaxable: settings.shipping_taxable === 1, taxBps: settings.tax_bps };
+    const e = request.expectedTerms;
+    if (e.shippingCents !== terms.shippingCents || e.shippingTaxable !== terms.shippingTaxable || e.taxBps !== terms.taxBps) {
+      throw new AppError('TERMS_CHANGED', { current: { terms, minimumOrderCents: settings.minimum_order_cents } });
+    }
     if (amounts.subtotal < BigInt(settings.minimum_order_cents)) {
       throw new AppError('MINIMUM_ORDER_NOT_MET', { current: { minimumOrderCents: settings.minimum_order_cents, subtotalCents: Number(amounts.subtotal) } });
     }
@@ -584,4 +604,34 @@ export function getOwnOrder(ctx: RequestContext): void {
   const order = loadOwnOrder(ctx, auth.identity.merchantId, id);
   if (!order) throw new AppError('NOT_FOUND');
   sendJson(ctx.res, 200, { order: orderDetail(ctx, order) });
+}
+
+// ------------------------------------------------------------------ order summaries (stage 14)
+
+/**
+ * Printable order summary ("ملخص طلب") built ONLY from the order snapshot: buyer, lines, prices,
+ * amounts, number, creation time and current state. No administrator identities, reasons, stock or
+ * allocation data. Company details are the CURRENT settings (orders never snapshotted them), labelled
+ * as such; absent fields stay absent. Not a tax invoice, receipt or proof of payment.
+ */
+export function orderSummary(ctx: RequestContext, o: OrderRow) {
+  const d = orderDetail(ctx, o);
+  return {
+    kind: 'order_summary' as const,
+    order: { id: d.id, displayNumber: d.displayNumber, state: d.state, isDemo: d.isDemo, note: d.note, createdAt: d.createdAt, buyer: d.buyer, items: d.items, amounts: d.amounts },
+    company: companyDetails(loadSettings(ctx.services.db)),
+    companyIsCurrent: true as const,
+    generatedAt: ctx.services.now(),
+  };
+}
+
+export function getOwnOrderSummary(ctx: RequestContext): void {
+  const auth = requireSession(ctx);
+  requireEligible(auth);
+  parseQuery(ctx.query, z.strictObject({}));
+  const id = ctx.params.id;
+  if (!id || !UUID.test(id)) throw new AppError('NOT_FOUND');
+  const order = loadOwnOrder(ctx, auth.identity.merchantId, id);
+  if (!order) throw new AppError('NOT_FOUND');
+  sendJson(ctx.res, 200, { summary: orderSummary(ctx, order) });
 }

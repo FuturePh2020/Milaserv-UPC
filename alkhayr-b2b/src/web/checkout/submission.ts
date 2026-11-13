@@ -1,5 +1,5 @@
 import type { ApiFailure } from '../api/client.ts';
-import type { CreateOrderPayload } from '../api/endpoints.ts';
+import type { CreateOrderPayload, OrderTerms } from '../api/endpoints.ts';
 import { newRequestKey } from '../api/client.ts';
 import { payloadLines, type Cart } from '../cart/model.ts';
 import type { PendingSubmission } from '../cart/storage.ts';
@@ -13,10 +13,12 @@ import type { PendingSubmission } from '../cart/storage.ts';
  * - Nothing is retried automatically.
  */
 
-export function newSubmission(cart: Cart, note: string, now: number = Date.now()): PendingSubmission {
+export function newSubmission(cart: Cart, note: string, terms: OrderTerms, now: number = Date.now()): PendingSubmission {
   const requestKey = newRequestKey();
   const trimmed = note.trim();
-  const payload: CreateOrderPayload = { requestKey, items: payloadLines(cart), ...(trimmed ? { note: trimmed } : {}) };
+  // The reviewed shipping/tax terms travel with the payload: a retry re-sends them unchanged.
+  const expectedTerms: OrderTerms = { shippingCents: terms.shippingCents, shippingTaxable: terms.shippingTaxable, taxBps: terms.taxBps };
+  const payload: CreateOrderPayload = { requestKey, expectedTerms, items: payloadLines(cart), ...(trimmed ? { note: trimmed } : {}) };
   return { requestKey, payload, createdAt: now };
 }
 

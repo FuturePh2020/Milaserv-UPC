@@ -330,3 +330,71 @@ consume the key. The request digest is `SHA-256(["import.commit.v1", mode, fileS
 | Outcome unknown (no response, 5xx, malformed) | the client keeps key + exact body for a same-key retry; never retried automatically |
 | Committed | 201 `replayed:false` |
 | Identical committed retry | 200 `replayed:true` with the original result |
+
+## 7. Business settings, quote terms and order summaries (stage 14)
+| Route | Auth | Contract |
+|---|---|---|
+| GET `/api/v1/admin/settings` | D | `{settings:{company:{name,phone,email,address}, shippingCents, shippingTaxable, taxBps, minimumOrderCents, lowStockThresholdCartons, version, updatedAt, updatedBy}}` — business fields only (no secrets, cookies, auth policy, paths or deployment data). Absent company fields are `null`. |
+| PATCH `/api/v1/admin/settings` | R + CSRF + Origin | Strict JSON ≤ 8 KiB: `{expectedVersion, companyName?, companyPhone?, companyEmail?, companyAddress?, shippingCents?, shippingTaxable?, taxBps?, minimumOrderCents?, lowStockThresholdCartons?}` (`null` clears a company field; integers only; unknown fields 400). One transaction: re-validate session/role/recency → version (409 `VERSION_CONFLICT` with current settings) → update (+1 version) → `settings.updated` audit (field names; before/after for shipping, taxable, tax, minimum, threshold; never free text). No change → no version bump. → `{settings, changedFields}` |
+| GET `/api/v1/orders/:id/summary` | A (own merchant) | `{summary:{kind:'order_summary', order:{id, displayNumber, state, isDemo, note, createdAt, buyer, items, amounts}, company, companyIsCurrent:true, generatedAt}}` — snapshot data only; no administrator identities, reasons, stock, allocations, request key or version. Foreign/unknown → 404 |
+| GET `/api/v1/admin/orders/:id/summary` | D | the same trader-safe document for any order |
+
+**Financial settings apply to future quotes and orders only.** Orders keep their snapshot (`shipping_cents`,
+`shipping_taxable`, `tax_bps`, `minimum_order_cents`, amounts). The tax rate is the operator's business choice.
+
+**Quote → order terms binding.** `POST /api/v1/orders` now REQUIRES `expectedTerms: {shippingCents, shippingTaxable,
+taxBps}` — the values the trader reviewed in the quote (`quote.amounts`). After the per-merchant idempotency check, a
+mismatch with the current settings refuses the order with 409 `TERMS_CHANGED` (`details.current = {terms,
+minimumOrderCents}`); the client re-quotes and the trader must submit again (new key). Amounts are always computed by
+the server; client totals are never trusted; the quote is not a reservation or a price lock. A raised minimum is
+still enforced (`MINIMUM_ORDER_NOT_MET`). `expectedTerms` is NOT part of the request digest: a committed identical
+retry returns the original order (200 `replayed`) even after settings changed. Missing `expectedTerms` → 400.
+
+## 8. Operational reports (stage 14)
+GET, administrator only (D), strict query, one read transaction each. Money is returned as **decimal strings of
+integer piastres** (exact beyond 2^53); counts as numbers.
+
+**Dates:** `from`/`to` are calendar dates `YYYY-MM-DD` in **Africa/Cairo** (DST-aware). Range = first instant of
+`from` (inclusive) to first instant of the day after `to` (exclusive), so `to` includes the whole day; ≤ 3 660 days.
+The response echoes `range:{from, to, timeZone, startMs, endMsExclusive}`.
+
+| Route | Definition |
+|---|---|
+| `/api/v1/admin/reports/orders?from&to[&merchantId][&demo=exclude|include|only]` | Orders whose **creation time** is in range, grouped by **current state** (all six states listed, zeros included; every order counts in exactly one state). Per state: `orders, subtotalCents, shippingCents, taxCents, totalCents` from the order snapshot. `notCancelled` = sum of the five non-cancelled states; cancelled orders are shown separately and never added to it. Demo orders excluded by default. These are ORDER VALUES — not collected revenue, paid sales, profit or receivables. |
+| `/api/v1/admin/reports/products?from&to[&states=a,b][&demo]` | Order lines of orders created in range with the selected **current** states (default: all except cancelled): per product `orders` (distinct), `cartons` (ORDERED cartons, not shipped), `valueCents` (sum of historical line totals, no shipping/tax). Names are current product names. |
+| `/api/v1/admin/reports/inventory[?status][&active]` | Current balances now: `onHand, reserved, available (= onHand − reserved), status` by the CURRENT low-stock threshold (0 → out_of_stock; 1..threshold → low_stock; above → normal); totals and counts per status. |
+| `/api/v1/admin/reports/movements?from&to[&productId]` | Ledger rows whose **recording time** is in range, grouped by exact ledger type: `opening, receipt, correction:correction_delta, correction:set_total, correction, reserve, release, ship, import` (the last is an allowed kind, unused). Per type: `movements, products, onHandDelta, reservedDelta` (net cartons). |
+
+`AGGREGATE_OVERFLOW` (422) if a sum exceeds 64-bit integers; never a rounded or wrapped value.
+
+## 9. Exports and pre-filled templates (stage 14)
+| Route | Auth | Contract |
+|---|---|---|
+| POST `/api/v1/admin/exports` | R + CSRF + Origin; `export_account` 20/10 min; ≤ 2 concurrent | Strict JSON ≤ 4 KiB: `{type, filters, includeBuyerContact?}`. Types: `products` (filters q/category/active, as the product list), `inventory` (status/active), `orders` (from/to required, state, merchantId, demo; summary columns; buyer contact name/phone/address ONLY with `includeBuyerContact: true`), `report_orders`, `report_products`, `report_movements` (same filters as the reports). → `text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="alkhayr-<type>-<YYYYMMDD-HHmm>.csv"` (fixed ASCII pattern), `Cache-Control: no-store, private`. |
+| POST `/api/v1/admin/imports/templates/prefilled` | same | `{mode: update_products|receive_stock|set_stock_total, filters:{q?, category?, active?, status?}}` → canonical stage-13 CSV (see below); header `X-Omitted-Display-Names` = number of `currentName` values left empty. |
+
+Limits: at most **10 000 rows** and **8 MiB** per export (templates: 1 MiB, the import limit; ≤ 5 000 products by the
+catalog cap). A request above a cap is refused with 422 `EXPORT_TOO_LARGE` (`details.current.rows/maxRows` or
+`maxBytes`) — never truncated; narrow the range or filters. Rows and totals come from one read transaction; the
+audit event `export.created` (`type`, a ≤ 400-character JSON of the filters, `rows`, `bytes`, `contact_data`) is
+written after re-checking the session, role and recent authentication, before the file is sent. No content is logged.
+
+**Two formats:**
+- **View exports** (all of `/admin/exports`): every cell quoted (RFC 4180), UTF-8 BOM, CRLF, Arabic headers, money as
+  decimal pounds `1234.50`, Cairo times `YYYY-MM-DD HH:mm`. Text cells that a spreadsheet could treat as a formula
+  — first character after any leading whitespace/control characters is `= + - @` or full-width `＝ ＋ － ＠`, or the cell
+  starts with a tab or carriage return — are prefixed with `'` in the FILE only (stored data unchanged). Server-generated
+  numeric cells are never prefixed. **Not a re-import format**; the importer never strips apostrophes (they may be
+  legitimate data).
+- **Canonical templates** (pre-filled): exact stage-13 headers (`IMPORT_COLUMNS`), values written exactly (quoted, no
+  prefix): `productId`, `expectedVersion` (current), `currentName` (or EMPTY when formula-like — an optional display
+  field is omitted rather than altered). Quantity, total, reason, reference and all update-change columns are EMPTY
+  (nothing that looks like an approved quantity or count). Rows the operator does not fill must be deleted (a row
+  without values is an import error). Templates become stale when a product or its stock changes.
+
+## 10. Import history (stage 14)
+| Route | Auth | Contract |
+|---|---|---|
+| GET `/api/v1/admin/imports?[mode][&limit][&cursor]` | D | committed batches newest first, signed keyset cursor bound to the administrator and filters: `{items:[{id, mode, recordCount, fileBytes, createdAt, actor}], nextCursor}` |
+| GET `/api/v1/admin/imports/:id` | D | `{import:{id, mode, recordCount, fileBytes, createdAt, actor, items:[{recordNo, line, productId, productName, ledgerId, productVersionAfter}]}}` |
+No operation keys, digests, content hashes, preview tokens or file content are returned. There is no "run again".

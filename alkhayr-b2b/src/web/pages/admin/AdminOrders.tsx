@@ -3,7 +3,7 @@ import { newRequestKey, SECURE_RANDOM_MESSAGE, SecureRandomUnavailableError, typ
 import { getAdminOrder, listAdminOrders, transitionOrder, type TransitionPayload, type TransitionResult } from '../../api/admin.ts';
 import { ORDER_STATES, type AdminOrder, type AdminOrderSummary, type OrderState } from '../../api/contracts.ts';
 import { AllocationBadge, Badge, DemoBadge, MerchantStatusBadge, OrderStatusBadge } from '../../components/Badges.tsx';
-import { Button } from '../../components/Button.tsx';
+import { Button, ButtonLink } from '../../components/Button.tsx';
 import { DataTable, LoadMore } from '../../components/DataTable.tsx';
 import { ConfirmDialog } from '../../components/Dialog.tsx';
 import { EmptyState, ErrorState, Notice, SkeletonLines, StateView } from '../../components/Feedback.tsx';
@@ -339,6 +339,7 @@ export function AdminOrderDetailPage({ id, csrf }: { id: string; csrf: SessionCs
         <div className="cluster">
           <OrderStatusBadge state={o.state} />
           {o.isDemo ? <DemoBadge /> : null}
+          <ButtonLink href={href(`/admin/orders/${o.id}/print`)} icon="orders">ملخص للطباعة</ButtonLink>
         </div>
       </div>
       {data.refreshing ? <p className="muted" role="status">جارٍ تحديث البيانات…</p> : null}

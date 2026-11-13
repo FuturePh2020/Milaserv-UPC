@@ -7,6 +7,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
 import './styles/layouts.css';
+import './styles/print.css';
 import './gallery/gallery.css';
 
 /**

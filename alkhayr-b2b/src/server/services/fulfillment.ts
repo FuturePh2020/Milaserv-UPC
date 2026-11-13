@@ -11,7 +11,7 @@ import { sendJson } from '../http/response.ts';
 import type { RequestContext } from '../http/router.ts';
 import { likePattern } from '../http/search.ts';
 import { writeAudit } from './audit.ts';
-import { FINALIZED, orderDetail, type OrderRow } from './orders.ts';
+import { FINALIZED, orderDetail, orderSummary, type OrderRow } from './orders.ts';
 
 /**
  * Administrator order reads and fulfillment (stage 09).
@@ -272,6 +272,14 @@ export function getAdminOrder(ctx: RequestContext): void {
   requireAdmin(auth);
   parseQuery(ctx.query, z.strictObject({}));
   sendJson(ctx.res, 200, { order: adminOrder(ctx, loadOrder(ctx, ctx.params.id)) });
+}
+
+/** Administrator access to the SAME trader-safe printable summary (no internal data on paper). */
+export function getAdminOrderSummary(ctx: RequestContext): void {
+  const auth = requireSession(ctx);
+  requireAdmin(auth);
+  parseQuery(ctx.query, z.strictObject({}));
+  sendJson(ctx.res, 200, { summary: orderSummary(ctx, loadOrder(ctx, ctx.params.id)) });
 }
 
 // ------------------------------------------------------------------ POST /admin/orders/:id/transitions

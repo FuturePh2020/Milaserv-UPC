@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { requireAdmin, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
 import { hmacBase64Url, hmacHex } from '../auth/keys.ts';
 import { readTransaction, writeTransaction } from '../database/transaction.ts';
+import { decodeCursor, encodeCursor } from '../http/cursor.ts';
 import { AppError } from '../http/errors.ts';
 import { parseQuery } from '../http/query.ts';
 import { readJsonBody } from '../http/request-body.ts';
@@ -645,4 +646,69 @@ export async function commitImport(ctx: RequestContext): Promise<void> {
 
     sendJson(ctx.res, outcome.replayed ? 200 : 201, { replayed: outcome.replayed, import: importResult(db, outcome.op) });
   });
+}
+
+// ------------------------------------------------------------------ GET committed imports (stage 14)
+
+const listQuery = z.strictObject({
+  mode: modeField.optional(),
+  limit: z
+    .string()
+    .regex(/^\d{1,3}$/)
+    .transform(Number)
+    .pipe(z.number().int().min(1).max(100))
+    .optional(),
+  cursor: z.string().max(2048).optional(),
+});
+
+/**
+ * Read-only history of COMMITTED import batches for reconciliation (newest first, signed keyset
+ * cursor). No file content, preview tokens, operation keys or digests are returned. There is no
+ * "run again": a new key is a new operation.
+ */
+export function listImports(ctx: RequestContext): void {
+  const auth = requireSession(ctx);
+  requireAdmin(auth);
+  const q = parseQuery(ctx.query, listQuery);
+  const limit = q.limit ?? 25;
+  const scope = `admin.imports\0${q.mode ?? ''}`;
+  const where: string[] = [];
+  const params: Array<string | number> = [];
+  if (q.mode) {
+    where.push('o.mode = ?');
+    params.push(q.mode);
+  }
+  if (q.cursor) {
+    const p = decodeCursor(ctx.services.keys.cursor, scope, auth.identity.userId, q.cursor);
+    if (p.length !== 2 || typeof p[0] !== 'number' || typeof p[1] !== 'string' || !UUID.test(p[1])) {
+      throw new AppError('VALIDATION_FAILED', { fields: [{ path: 'cursor', message: 'مؤشر الصفحة غير صالح.' }] });
+    }
+    where.push('(o.created_at, o.id) < (?, ?)');
+    params.push(p[0], p[1]);
+  }
+  const rows = ctx.services.db
+    .prepare(
+      `SELECT o.id, o.mode, o.record_count, o.file_bytes, o.created_at, u.username FROM import_operations o JOIN auth_users u ON u.id = o.actor_user_id
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY o.created_at DESC, o.id DESC LIMIT ?`,
+    )
+    .all(...params, limit + 1) as Array<{ id: string; mode: ImportMode; record_count: number; file_bytes: number; created_at: number; username: string }>;
+  const page = rows.slice(0, limit);
+  const last = page[page.length - 1];
+  sendJson(ctx.res, 200, {
+    items: page.map((r) => ({ id: r.id, mode: r.mode, recordCount: r.record_count, fileBytes: r.file_bytes, createdAt: r.created_at, actor: r.username })),
+    nextCursor: rows.length > limit && last ? encodeCursor(ctx.services.keys.cursor, scope, auth.identity.userId, [last.created_at, last.id]) : null,
+  });
+}
+
+export function getImport(ctx: RequestContext): void {
+  const auth = requireSession(ctx);
+  requireAdmin(auth);
+  parseQuery(ctx.query, z.strictObject({}));
+  const id = ctx.params.id;
+  if (!id || !UUID.test(id)) throw new AppError('NOT_FOUND');
+  const op = ctx.services.db.prepare('SELECT * FROM import_operations WHERE id = ?').get(id) as unknown as ImportRow | undefined;
+  if (!op) throw new AppError('NOT_FOUND');
+  const actor = (ctx.services.db.prepare('SELECT username FROM auth_users WHERE id = ?').get(op.actor_user_id) as { username: string }).username;
+  const r = importResult(ctx.services.db, op);
+  sendJson(ctx.res, 200, { import: { id: r.id, mode: r.mode, recordCount: r.recordCount, fileBytes: r.fileBytes, createdAt: r.createdAt, actor, items: r.items } });
 }

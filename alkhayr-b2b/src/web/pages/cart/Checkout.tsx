@@ -22,6 +22,13 @@ type SendState = { status: 'idle' } | { status: 'sending' } | { status: 'unknown
 /** Explains a refused quote/order and offers the corresponding cart change (never automatic). */
 function ConflictPanel({ failure, cart, onApply }: { failure: ApiFailure; cart: Cart; onApply: (next: Cart, message: string) => void }) {
   const names = new Map(cart.lines.map((l) => [l.productId, l]));
+  if (failure.code === 'TERMS_CHANGED') {
+    return (
+      <Notice tone="warning" title="تغيّرت رسوم الشحن أو نسبة الضريبة">
+        <p>لم يُرسل الطلب. أُعيد حساب الإجمالي بالشروط الحالية أدناه؛ راجعه ثم اضغط «تأكيد وإرسال الطلب» من جديد إن كان مناسبًا.</p>
+      </Notice>
+    );
+  }
   if (failure.code === 'PRICE_CHANGED' || failure.code === 'PACKAGING_CHANGED') {
     const terms = conflictTerms(failure);
     return (
@@ -152,14 +159,16 @@ export function CheckoutPage({ csrf }: { csrf: SessionCsrfToken }) {
       cart.setPending(null); // a definite refusal: nothing was created, the key is released
       setSend({ status: 'rejected', failure: r });
       handleAuthFailure(r);
+      // Shipping/tax changed after the review: recompute the read-only quote; a NEW explicit submission is required.
+      if (r.code === 'TERMS_CHANGED') setQuoteGen((g) => g + 1);
     }
   };
 
   const submit = () => {
-    if (cart.pending || send.status === 'sending') return;
+    if (cart.pending || send.status === 'sending' || quote.status !== 'ok') return;
     let pending: PendingSubmission;
     try {
-      pending = newSubmission(cart.cart, note);
+      pending = newSubmission(cart.cart, note, quote.quote.amounts);
     } catch (err) {
       if (err instanceof SecureRandomUnavailableError) {
         setInfo(SECURE_RANDOM_MESSAGE); // nothing is sent without a secure key

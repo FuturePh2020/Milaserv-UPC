@@ -145,3 +145,11 @@ the CSSOM, which the CSP permits. No style exception was required.
 - Shell-wide warning banner for unresolved administrator operations with a link back to the owning screen.
 - `fieldset { min-width: 0 }`: fieldsets otherwise widen the page to their content (found at 360–768 px).
 - Product and inventory pages show the product id (LTR, monospace) next to the version for use in import files.
+
+## 13. Stage 14 additions
+- Navigation group «التقارير والإعدادات» (icons `chart`, `settings`).
+- Report tabs and status filters as link "chips" (`c-chip`, `aria-current`), collapsible «تعريف التقرير» boxes,
+  checkbox groups (`c-checks`).
+- Print document (`styles/print.css`, `p-doc`): A4 with 14/12/16 mm margins, repeated table heading
+  (`table-header-group`), rows and totals kept together, headings not broken in print, on-screen buttons hidden,
+  bundled fonts only. Verified with Chromium print-to-PDF (45 lines → 5 pages; 2-line order → 1 page).

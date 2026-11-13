@@ -27,6 +27,10 @@ const METADATA_ALLOW_LIST: Readonly<Record<string, readonly string[]>> = {
   'order.created': ['display_number', 'lines', 'total_cents', 'is_demo'],
   /** The event row holds the reason; ledger rows hold the per-line movements. */
   'order.transitioned': ['from', 'to', 'version', 'event_id', 'movement', 'lines_moved'],
+  /** Changed field names; before/after only for financial and threshold values (never free text). */
+  'settings.updated': ['fields', 'version', 'shipping_from', 'shipping_to', 'shipping_taxable_from', 'shipping_taxable_to', 'tax_bps_from', 'tax_bps_to', 'minimum_order_from', 'minimum_order_to', 'low_stock_threshold_from', 'low_stock_threshold_to'],
+  /** Export metadata only (type, filter summary, row count) — never the exported content. */
+  'export.created': ['type', 'filters', 'rows', 'bytes', 'contact_data'],
   /** One per committed CSV batch; per-record effects have their own product/inventory events. Never file content. */
   'import.committed': ['import_id', 'mode', 'records', 'file_bytes'],
 };

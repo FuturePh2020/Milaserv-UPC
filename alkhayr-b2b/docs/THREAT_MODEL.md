@@ -105,6 +105,15 @@ third-party content rendered by the browser only (never fetched server-side).
 | T77 | Duplicate stock movement or transition after a lost response | network / operator | same key + exact payload retry (server replay); new attempts carry the old expected version and are refused | 09/12 ✅ |
 | T78 | Predictable operation keys from a weak random source | bug / old browser | `getRandomValues` only; refusal without it (no fallback) | 12 ✅ |
 | T79 | Products of inactive categories shown to traders | configuration | trader catalog list/detail/filters exclude inactive categories | 12 ✅ |
+| T87 | Order accepted under terms the trader never reviewed (shipping/tax changed after the quote) | operator change / race | required `expectedTerms`, compared after idempotency; renewed review required | 14 ✅ |
+| T88 | Settings changed by a stolen idle admin session | session theft | recent authentication, CSRF, Origin, version check, audit | 14 ✅ |
+| T89 | Formula injection through exported text (CSV opened in a spreadsheet) | malicious trader/product text | apostrophe prefix for formula-like cells incl. whitespace/control/full-width bypasses; quoting | 14 ✅ (real spreadsheet apps NOT RUN) |
+| T90 | Re-import corrupts data with export-safety prefixes | operator | separate canonical template format; view exports labelled "not for import"; importer never strips prefixes | 14 ✅ |
+| T91 | Bulk data exfiltration through exports | stolen admin session | recent auth, rate limit, caps, contact data opt-in, audit metadata | 14 ✅ (residual: an authorized admin can export) |
+| T92 | Misleading financial reports (wrong timezone, cancelled/demo mixed, overflow) | design error | documented definitions, Cairo day bounds tested at boundaries, cancelled/demo separate, exact BigInt sums, overflow error | 14 ✅ |
+| T93 | Order summary read by another merchant or with internal data | trader | ownership 404, trader-safe content, no public links | 14 ✅ |
+| T94 | Printed summary mistaken for a tax invoice/receipt | business misuse | title «ملخص طلب», explicit disclaimer, current company labelled | 14 (documented) |
+| T95 | Unbounded growth of append-only import records | time | rate limit bounds growth RATE only; retention/archive policy open | 15/16 (open) |
 | T80 | Malformed/oversized CSV exhausts memory or CPU | administrator account misuse / compromised admin | streamed 2 MiB body limit, 1 MiB/1 000 rows/4 096-char cells, strict parser, 2 concurrent jobs, per-admin rate limits | 13 ✅ |
 | T81 | Edited preview or swapped file executed as the reviewed plan | attacker with admin session / bug | server never trusts preview JSON; HMAC binding of admin, mode, content hash, versions, expiry; full re-evaluation inside the commit transaction | 13 ✅ |
 | T82 | Partial import leaves catalog/stock inconsistent | bug / concurrent change | one transaction; any invalid or stale record rejects the batch; injected middle-record and audit failures roll back everything | 13 ✅ |

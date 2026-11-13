@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react';
 import type { ApiFailure, SessionCsrfToken } from '../../api/client.ts';
-import { createProduct, getAdminProduct, isAdminProduct, listAdminProducts, updateProduct, type AdminProduct, type AdminProductQuery, type ProductPatch } from '../../api/admin.ts';
+import { createProduct, exportFile, getAdminProduct, isAdminProduct, listAdminProducts, updateProduct, type AdminProduct, type AdminProductQuery, type ProductPatch } from '../../api/admin.ts';
 import { getCatalogFilters } from '../../api/endpoints.ts';
 import { barcodeValue, moneyInputText, parseImageUrl, parseMoneyInput, parseWhole } from '../../admin/logic.ts';
 import { Badge, CategoryBadge } from '../../components/Badges.tsx';
@@ -20,6 +20,7 @@ import { usePaged } from '../../hooks/usePaged.ts';
 import { href, navigate } from '../../router.tsx';
 import { useIdentity } from '../../session/identity.tsx';
 import { ReauthPanel } from './Reauth.tsx';
+import { ExportButton } from './ExportButton.tsx';
 
 const SORTS = [
   ['newest', 'الأحدث'],
@@ -29,7 +30,7 @@ const SORTS = [
   ['price_desc', 'السعر: من الأعلى'],
 ] as const;
 
-export function ProductsPage({ query }: { query: URLSearchParams }) {
+export function ProductsPage({ query, csrf }: { query: URLSearchParams; csrf: SessionCsrfToken }) {
   const q: AdminProductQuery = {};
   const text = (query.get('q') ?? '').slice(0, 80);
   if (text.trim()) q.q = text;
@@ -98,6 +99,11 @@ export function ProductsPage({ query }: { query: URLSearchParams }) {
           </div>
         </details>
       </FilterBar>
+      <ExportButton
+        label="تصدير بيانات المنتجات (CSV)"
+        note="بنفس عوامل التصفية المطبّقة (البحث، القسم، التفعيل)."
+        run={() => exportFile(csrf, { type: 'products', filters: { ...(q.q ? { q: q.q } : {}), ...(q.category ? { category: q.category } : {}), ...(q.active ? { active: q.active } : {}) } })}
+      />
       {list.status === 'loading' ? <SkeletonLines lines={6} label="جارٍ تحميل المنتجات…" /> : null}
       {list.status === 'error' && list.failure ? <ErrorState failure={list.failure} onRetry={list.reload} /> : null}
       {list.status === 'ok' && list.items.length === 0 ? <EmptyState title="لا توجد منتجات مطابقة" /> : null}

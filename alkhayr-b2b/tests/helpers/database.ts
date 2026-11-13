@@ -208,6 +208,11 @@ export interface OrderInput {
   state?: string;
   /** Write the creation event (finalization marker, migration 0004); the order then becomes visible to reads. */
   finalize?: boolean;
+  /** Creation time (epoch ms); default now. */
+  createdAt?: number;
+  buyerBusinessName?: string;
+  isDemo?: boolean;
+  displayNumber?: string;
 }
 
 /**
@@ -216,23 +221,23 @@ export interface OrderInput {
  */
 export function insertOrder(db: DatabaseSync, o: OrderInput): string {
   const id = o.id ?? randomUUID();
-  const t = now();
+  const t = o.createdAt ?? now();
   const subtotal = o.items.reduce((sum, i) => sum + i.unitPrice * i.cartons, 0);
   const shipping = o.shipping ?? 0;
   const shippingTaxable = o.shippingTaxable ?? 0;
   const taxBase = subtotal + (shippingTaxable ? shipping : 0);
   const taxBps = o.taxBps ?? 0;
   const tax = o.taxCents ?? Math.round((taxBase * taxBps) / 10000);
-  const display = `AK-261112-${randomBytes(3).toString('hex').toUpperCase()}`;
+  const display = o.displayNumber ?? `AK-261112-${randomBytes(3).toString('hex').toUpperCase()}`;
   db.prepare(
     `INSERT INTO orders (id, display_number, merchant_id, created_by_user_id, state, subtotal_cents, shipping_cents, shipping_taxable, tax_bps,
        tax_base_cents, tax_cents, total_cents, minimum_order_cents, buyer_business_name, buyer_contact_name, buyer_phone, buyer_governorate,
        buyer_address, note, is_demo, request_key, request_digest, version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, 0, ?, ?, 1, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 1, ?, ?)`,
   ).run(
     id, display, o.merchantId, o.userId, o.state ?? 'pending', subtotal, shipping, shippingTaxable, taxBps,
-    taxBase, tax, o.totalOverride ?? subtotal + tax + shipping, 'محل الاختبار', 'أحمد علي', '01012345678', 'القاهرة',
-    '١٢ شارع التجربة، مدينة نصر', o.requestKey ?? randomUUID(), hex64(), t, t,
+    taxBase, tax, o.totalOverride ?? subtotal + tax + shipping, o.buyerBusinessName ?? 'محل الاختبار', 'أحمد علي', '01012345678', 'القاهرة',
+    '١٢ شارع التجربة، مدينة نصر', o.isDemo ? 1 : 0, o.requestKey ?? randomUUID(), hex64(), t, t,
   );
   const stmt = db.prepare(
     `INSERT INTO order_items (order_id, product_id, line_no, product_name, product_brand, product_barcode, pack_size, unit_price_cents, cartons, line_total_cents)

@@ -15,7 +15,7 @@ export type Parsed<T> = { ok: true; value: T } | { ok: false; message: string };
  * Arabic-Indic digits. Rejects more than two decimals (never rounds), signs, exponents and
  * anything else. Integer string arithmetic only (no floating point).
  */
-export function parseMoneyInput(raw: string, max = 100_000_000): Parsed<number> {
+export function parseMoneyInput(raw: string, max = 100_000_000, allowZero = false): Parsed<number> {
   const s = toAsciiDigits(raw.trim()).replace(/[,٬]/g, '').replace('٫', '.');
   const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(s);
   if (!m) {
@@ -23,7 +23,7 @@ export function parseMoneyInput(raw: string, max = 100_000_000): Parsed<number> 
     return { ok: false, message: 'أدخل السعر بالجنيه، مثل 125.50' };
   }
   const cents = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0') || '0');
-  if (cents < 1) return { ok: false, message: 'السعر يجب أن يكون أكبر من صفر.' };
+  if (cents < (allowZero ? 0 : 1)) return { ok: false, message: 'السعر يجب أن يكون أكبر من صفر.' };
   if (cents > max) return { ok: false, message: `أقصى سعر للكرتونة ${(max / 100).toLocaleString('en-US')} ج.م` };
   return { ok: true, value: cents };
 }
@@ -104,4 +104,27 @@ export function parseImageUrl(raw: string): Parsed<string | null> {
 /** Barcode kept EXACTLY as typed (case, leading zeros); only an empty field means "no barcode" (null). */
 export function barcodeValue(raw: string): string | null {
   return raw === '' ? null : raw;
+}
+
+/**
+ * Exact percentage -> integer basis points (14 -> 1400, 14.5 -> 1450, 0.25 -> 25). At most two
+ * decimals (basis-point precision); more precision is refused, never rounded. 0–100 %.
+ */
+export function parsePercentToBps(raw: string): Parsed<number> {
+  const s = toAsciiDigits(raw.trim()).replace('٫', '.').replace(/%$/, '').trim();
+  const m = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(s);
+  if (!m) {
+    if (/^\d+\.\d{3,}$/.test(s)) return { ok: false, message: 'النسبة تقبل رقمين عشريين فقط (نقطة أساس)؛ لا يتم التقريب.' };
+    return { ok: false, message: 'أدخل النسبة المئوية مثل 14 أو 14.5' };
+  }
+  const bps = Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0') || '0');
+  if (bps > 10_000) return { ok: false, message: 'النسبة من 0 إلى 100%.' };
+  return { ok: true, value: bps };
+}
+
+/** Basis points -> the text shown in a percentage field ("14", "14.5", "0.25"). */
+export function bpsInputText(bps: number): string {
+  const whole = Math.floor(bps / 100);
+  const frac = String(bps % 100).padStart(2, '0').replace(/0+$/, '');
+  return frac ? `${whole}.${frac}` : String(whole);
 }

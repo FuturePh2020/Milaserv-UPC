@@ -7,6 +7,8 @@ import { acceptCurrentTerms, addProduct, cartIsValid, cartMatchesPayload, EMPTY_
 import { clearAllDrafts, DRAFT_TTL_MS, draftKey, loadDraft, purgeOtherDrafts, saveDraft } from '../../src/web/cart/storage.ts';
 import { classifyFailure, conflictProductIds, conflictTerms, newSubmission } from '../../src/web/checkout/submission.ts';
 
+const TERMS = { shippingCents: 5000, shippingTaxable: false, taxBps: 1400 };
+
 /** Storage-like object: data as own enumerable properties, methods on the prototype (like window.localStorage). */
 class FakeStorage {
   getItem(k: string) {
@@ -82,12 +84,13 @@ describe('cart model', () => {
 describe('order submission rules', () => {
   test('each intended submission gets a new key; the payload is stored with exactly that key', () => {
     const { cart } = addProduct(EMPTY_CART, product(), 2);
-    const a = newSubmission(cart, '  ملاحظة  ');
-    const b = newSubmission(cart, '  ملاحظة  ');
+    const a = newSubmission(cart, '  ملاحظة  ', TERMS);
+    const b = newSubmission(cart, '  ملاحظة  ', TERMS);
     assert.notEqual(a.requestKey, b.requestKey);
     assert.equal(a.payload.requestKey, a.requestKey);
     assert.equal(a.payload.note, 'ملاحظة');
-    assert.equal(newSubmission(cart, '   ').payload.note, undefined);
+    assert.deepEqual(a.payload.expectedTerms, TERMS, 'the reviewed shipping/tax terms travel with the payload');
+    assert.equal(newSubmission(cart, '   ', TERMS).payload.note, undefined);
     assert.equal(cartMatchesPayload(cart, a.payload), true);
     assert.equal(cartMatchesPayload(setCartons(cart, cart.lines[0]!.productId, 3), a.payload), false);
   });
@@ -111,7 +114,7 @@ describe('draft storage (the only browser storage)', () => {
   test('round trip per account; nothing secret is written', () => {
     const s = scope();
     const { cart } = addProduct(EMPTY_CART, product(), 2);
-    const pending = newSubmission(cart, 'x');
+    const pending = newSubmission(cart, 'x', TERMS);
     saveDraft(s, { cart, pending });
     const raw = store.getItem(draftKey(s))!;
     assert.doesNotMatch(raw, /csrf|token|password|totp|buyer|session/i);
@@ -119,6 +122,21 @@ describe('draft storage (the only browser storage)', () => {
     assert.deepEqual(loaded.cart, cart);
     assert.deepEqual(loaded.pending, pending);
     assert.deepEqual(loadDraft(scope()).cart.lines, [], 'another account never sees it');
+  });
+
+  test('a stored pending submission without valid reviewed terms is dropped (never sent without them)', () => {
+    const s = scope();
+    const { cart } = addProduct(EMPTY_CART, product(), 2);
+    const pending = newSubmission(cart, 'x', TERMS);
+    const put = (expectedTerms: unknown) =>
+      store.setItem(draftKey(s), JSON.stringify({ v: 1, savedAt: Date.now(), lines: cart.lines, pending: { ...pending, payload: { ...pending.payload, expectedTerms } } }));
+    put(TERMS);
+    assert.deepEqual(loadDraft(s).pending, pending, 'control: valid terms load');
+    for (const bad of [undefined, { ...TERMS, taxBps: 1.5 }, { ...TERMS, shippingTaxable: 'yes' }, { shippingCents: 1 }]) {
+      put(bad);
+      assert.equal(loadDraft(s).pending, null, JSON.stringify(bad));
+      assert.equal(loadDraft(s).cart.lines.length, 1, 'the cart itself is kept');
+    }
   });
 
   test('untrusted stored data is validated: malformed lines and pending entries are dropped', () => {

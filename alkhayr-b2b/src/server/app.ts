@@ -19,6 +19,7 @@ import { registerAdminInventoryRoutes } from './routes/admin-inventory.ts';
 import { registerOrderRoutes } from './routes/orders.ts';
 import { registerAdminOrderRoutes } from './routes/admin-orders.ts';
 import { registerAdminImportRoutes } from './routes/admin-imports.ts';
+import { registerAdminBusinessRoutes } from './routes/admin-business.ts';
 import type { AppServices } from './context.ts';
 import { rateLimitIdentity, resolveClientIp, trustedProxySet } from './http/client-ip.ts';
 import { assertApiRequestBoundary } from './http/request-guards.ts';
@@ -57,6 +58,7 @@ export function createApp(config: AppConfig, log: Logger, deps: AppDependencies)
   registerOrderRoutes(router);
   registerAdminOrderRoutes(router);
   registerAdminImportRoutes(router);
+  registerAdminBusinessRoutes(router);
   // Business routes under /api/v1 are registered by later stages.
 
   const state: AppState = { shuttingDown: false };

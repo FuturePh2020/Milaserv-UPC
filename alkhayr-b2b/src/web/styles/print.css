@@ -1,0 +1,179 @@
+/* Order summary document (stage 14): screen preview + A4 print. No remote assets; fonts are the bundled ones. */
+.p-print {
+  max-inline-size: 210mm;
+  margin-inline: auto;
+  padding: var(--space-4) var(--space-3);
+}
+.p-print__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  margin-block-end: var(--space-4);
+}
+.p-doc {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-5, 1.5rem);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.p-doc h1 {
+  font-size: 1.6rem;
+  margin: 0;
+}
+.p-doc h2 {
+  font-size: 1rem;
+  margin: 0 0 var(--space-1);
+}
+.p-doc p {
+  margin: 0;
+}
+.p-doc__header {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: var(--space-4);
+  border-block-end: 2px solid var(--color-text);
+  padding-block-end: var(--space-3);
+  margin-block-end: var(--space-3);
+}
+.p-doc__disclaimer {
+  font-weight: 600;
+  margin-block-start: var(--space-1) !important;
+}
+.p-doc__small {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.p-doc__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+}
+.p-doc__meta dt,
+.p-doc__totals dt {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.p-doc__meta dd,
+.p-doc__totals dd {
+  margin: 0;
+  font-weight: 600;
+}
+.p-doc__demo {
+  font-weight: 700;
+  border: 2px dashed var(--color-text);
+  padding: var(--space-2);
+  margin-block-end: var(--space-3) !important;
+}
+.p-doc__buyer,
+.p-doc__note {
+  margin-block-end: var(--space-3);
+}
+.p-doc__table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  margin-block-end: var(--space-3);
+}
+.p-doc__table th,
+.p-doc__table td {
+  border: 1px solid var(--color-border-strong);
+  padding: 0.35rem 0.45rem;
+  text-align: start;
+  vertical-align: top;
+}
+.p-doc__table th {
+  background: var(--color-surface-sunken);
+  font-size: 0.85rem;
+}
+.p-doc__table td.num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.p-doc__name {
+  font-weight: 600;
+}
+.p-doc__totals {
+  margin: 0 0 var(--space-3) 0;
+  margin-inline-start: auto;
+  max-inline-size: 22rem;
+  display: grid;
+  gap: var(--space-1);
+}
+.p-doc__totals > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.p-doc__grand {
+  border-block-start: 2px solid var(--color-text);
+  padding-block-start: var(--space-1);
+  font-size: 1.1rem;
+}
+.p-doc__footer {
+  border-block-start: 1px solid var(--color-border);
+  padding-block-start: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+@page {
+  size: A4;
+  margin: 14mm 12mm 16mm;
+}
+@media print {
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .no-print,
+  .c-toasts,
+  .l-header,
+  .l-sidenav,
+  .l-tabbar,
+  .l-skip {
+    display: none !important;
+  }
+  .p-print {
+    max-inline-size: none;
+    padding: 0;
+  }
+  .p-doc {
+    border: 0;
+    padding: 0;
+    font-size: 10.5pt;
+  }
+  .p-doc__table thead {
+    display: table-header-group; /* repeated on every printed page */
+  }
+  .p-doc__table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .p-doc__header,
+  .p-doc__meta,
+  .p-doc__buyer,
+  .p-doc__totals,
+  .p-doc__note,
+  .p-doc__footer {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .p-doc__table th {
+    background: #eee !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+/* Printed column headings stay whole (on screen they may wrap to fit phones). */
+@media print {
+  .p-doc__table th {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+}

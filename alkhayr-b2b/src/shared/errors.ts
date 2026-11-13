@@ -25,6 +25,7 @@ export const ERROR_CATALOG = {
   ACCESS_CHANGED: { status: 409, messageAr: 'تغيّرت حالة الحساب أثناء تنفيذ الطلب. حدّث الصفحة وحاول مرة أخرى.' },
   PRODUCT_UNAVAILABLE: { status: 409, messageAr: 'بعض المنتجات في الطلب لم تعد متاحة للطلب. راجع السلة ثم أعد المحاولة.' },
   PRICE_CHANGED: { status: 409, messageAr: 'تغيّر سعر بعض المنتجات. راجع الأسعار الحالية ثم أعد إرسال الطلب.' },
+  TERMS_CHANGED: { status: 409, messageAr: 'تغيّرت رسوم الشحن أو نسبة الضريبة منذ مراجعة الطلب. راجع الإجماليات الجديدة ثم أرسل الطلب من جديد.' },
   PACKAGING_CHANGED: { status: 409, messageAr: 'تغيّر عدد القطع في كرتونة بعض المنتجات. راجع البيانات الحالية ثم أعد إرسال الطلب.' },
   INSUFFICIENT_STOCK: { status: 409, messageAr: 'الكمية المطلوبة من بعض المنتجات غير متاحة حاليًا. قلّل الكمية أو احذف المنتج.' },
   PACKAGING_LOCKED: { status: 409, messageAr: 'لا يمكن تغيير عدد القطع في الكرتونة أثناء وجود رصيد أو حجوزات لهذا المنتج. صفّر الرصيد بحركة مخزون موثّقة أولًا.' },
@@ -50,12 +51,14 @@ export const ERROR_CATALOG = {
   INVENTORY_BELOW_RESERVED: { status: 422, messageAr: 'لا يمكن أن يقل الرصيد الإجمالي عن الكمية المحجوزة لطلبات مؤكدة.' },
   INVENTORY_LIMIT: { status: 422, messageAr: 'الرصيد الناتج أكبر من الحد المسموح.' },
   CATALOG_LIMIT: { status: 422, messageAr: 'تم بلوغ الحد الأقصى لعدد المنتجات في الكتالوج (5000 منتج).' },
+  AGGREGATE_OVERFLOW: { status: 422, messageAr: 'الإجمالي أكبر من نطاق الحساب الآمن؛ لم يُعرض رقم غير دقيق. ضيّق الفترة أو عوامل التصفية.' },
+  EXPORT_TOO_LARGE: { status: 422, messageAr: 'الملف المطلوب أكبر من الحد المسموح، ولم يُقتطع جزء منه. ضيّق الفترة أو عوامل التصفية ثم أعد المحاولة.' },
   IMPORT_REJECTED: { status: 422, messageAr: 'لم يُستورد أي سجل: الملف يحتوي على أخطاء. صحّحها ثم أعد المعاينة.' },
   RECENT_AUTH_REQUIRED: { status: 428, messageAr: 'لأمان العملية، يلزم تسجيل الدخول مرة أخرى بكلمة المرور ورمز التحقق.' },
   RATE_LIMITED: { status: 429, messageAr: 'عدد المحاولات كبير. حاول مرة أخرى لاحقًا.' },
   INTERNAL: { status: 500, messageAr: 'حدث خطأ غير متوقع في الخادم. حاول مرة أخرى لاحقًا.' },
   UNAVAILABLE: { status: 503, messageAr: 'الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.' },
-  IMPORT_BUSY: { status: 503, messageAr: 'عمليات استيراد أخرى قيد المعالجة الآن. حاول بعد لحظات.' },
+  IMPORT_BUSY: { status: 503, messageAr: 'عمليات استيراد أو تصدير أخرى قيد المعالجة الآن. حاول بعد لحظات.' },
   NOT_READY: { status: 503, messageAr: 'الخدمة غير جاهزة لاستقبال الطلبات حاليًا.' },
 } as const satisfies Record<string, { status: number; messageAr: string }>;
 

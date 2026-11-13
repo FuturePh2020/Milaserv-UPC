@@ -68,7 +68,14 @@ async function world(app: TestApp) {
   }
   async function order(c: Client, lines: Array<[Product, number]>) {
     const r = await c.request('POST', '/api/v1/orders', {
-      body: { requestKey: randomUUID(), items: lines.map(([p, cartons]) => ({ productId: p.id, cartons, expectedCartonPriceCents: p.price, expectedPackSize: p.pack })) },
+      body: {
+        requestKey: randomUUID(),
+        expectedTerms: (() => {
+          const t = app.fixtureDb.prepare('SELECT shipping_cents, shipping_taxable, tax_bps FROM business_settings WHERE id = 1').get() as { shipping_cents: number; shipping_taxable: number; tax_bps: number };
+          return { shippingCents: t.shipping_cents, shippingTaxable: t.shipping_taxable === 1, taxBps: t.tax_bps };
+        })(),
+        items: lines.map(([p, cartons]) => ({ productId: p.id, cartons, expectedCartonPriceCents: p.price, expectedPackSize: p.pack })),
+      },
     });
     assert.equal(r.status, 201, r.body);
     return r.json.order as { id: string; version: number; [k: string]: any };

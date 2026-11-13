@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { ADJUSTMENT_ERROR, adjustmentPreview, barcodeValue, MAX_ON_HAND, MERCHANT_TRANSITIONS, moneyInputText, parseImageUrl, parseMoneyInput, parseWhole } from '../../src/web/admin/logic.ts';
+import { ADJUSTMENT_ERROR, adjustmentPreview, barcodeValue, bpsInputText, parsePercentToBps, MAX_ON_HAND, MERCHANT_TRANSITIONS, moneyInputText, parseImageUrl, parseMoneyInput, parseWhole } from '../../src/web/admin/logic.ts';
 import { OperationCoordinator } from '../../src/web/admin/coordinator.ts';
 import { hasUnresolved } from '../../src/web/admin/unresolved.ts';
 import { loadWebModules } from '../helpers/web.ts';
@@ -161,5 +161,26 @@ describe('administration markup', () => {
     assert.match(html, /href="#\/admin\/merchants\?status=pending"/);
     const text = html.replace(/<[^>]+>/g, ' ').replace(/15 دقيقة/, '');
     assert.doesNotMatch(text, /[0-9٠-٩]/, 'no counts or statistics are rendered');
+  });
+});
+
+describe('settings inputs (stage 14): exact percent -> basis points and zero-allowed money', () => {
+  it('converts percentages exactly and refuses extra precision instead of rounding', () => {
+    for (const [raw, bps] of [['14', 1400], ['14.5', 1450], ['14.50', 1450], ['0.25', 25], ['0', 0], ['100', 10000], ['١٤٫٥', 1450], ['14%', 1400], [' 7.01 ', 701]] as const) {
+      assert.deepEqual(parsePercentToBps(raw), { ok: true, value: bps }, raw);
+    }
+    for (const bad of ['14.505', '100.01', '101', '-1', '1e2', '', 'abc', '14,5', '.5']) assert.equal(parsePercentToBps(bad).ok, false, bad);
+    assert.match((parsePercentToBps('14.505') as { message: string }).message, /لا يتم التقريب/);
+  });
+  it('round-trips basis points through the field text', () => {
+    for (const bps of [0, 1, 25, 1400, 1450, 1405, 9999, 10000]) assert.deepEqual(parsePercentToBps(bpsInputText(bps)), { ok: true, value: bps }, String(bps));
+    assert.equal(bpsInputText(1450), '14.5');
+    assert.equal(bpsInputText(1400), '14');
+  });
+  it('shipping and minimum may be zero; prices may not', () => {
+    assert.deepEqual(parseMoneyInput('0', 1e8, true), { ok: true, value: 0 });
+    assert.deepEqual(parseMoneyInput('0.00', 1e8, true), { ok: true, value: 0 });
+    assert.equal(parseMoneyInput('0').ok, false);
+    assert.equal(parseMoneyInput('50.005', 1e8, true).ok, false);
   });
 });

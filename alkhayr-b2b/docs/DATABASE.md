@@ -333,5 +333,18 @@ already shipped order stay possible.
 - Import stock movements are ordinary ledger rows (`kind` receipt/correction, `adjustment_type` receipt/set_total,
   reason, reference, actor, `product_version_after`) without a per-row operation key; the batch record links them.
   The 0003 pairing trigger applies unchanged. No existing table, trigger or migration was modified.
-- Rows are retained like the ledger (no purge in this stage). Growth is bounded by the commit rate limit
-  (20 per administrator per 10 minutes) and 1 000 items per batch.
+- Rows are retained like the ledger (no purge in this stage). **Correction (stage 14):** the commit rate limit
+  (20 per administrator per 10 minutes) and the 1 000-item batch cap bound the *growth rate*, not lifetime storage:
+  over months the tables grow without limit. Open work (stage 15/16): a documented retention policy that keeps
+  idempotency records long enough for recovery (e.g. a minimum age before any purge), never deletes links still
+  needed for traceability, and is implemented as an operator-run, audited archive — not by deleting rows in place
+  (the append-only triggers forbid it).
+
+## 16. Stage 14 (no migration)
+- `business_settings` (0001) is now editable through `PATCH /api/v1/admin/settings`: the existing columns, the
+  existing version trigger (+1 per update) and `updated_by_user_id`. No new columns: company details stay optional
+  (NULL = absent); no registration or tax numbers exist.
+- Orders never stored company details; printable summaries show the CURRENT company details, labelled as such.
+- Reports read existing timestamps (UTC epoch ms, unchanged) and filter by Africa/Cairo calendar days
+  (API_CONTRACT §7). Aggregates use SQLite 64-bit `sum()` read as BigInt; an int64 overflow raises an error
+  (`AGGREGATE_OVERFLOW`) instead of a wrong total.

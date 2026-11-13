@@ -337,6 +337,24 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   Responses contain no raw database errors or paths (500 `INTERNAL` with a request id).
 - Open risks unchanged: username lockout (T40), stock inference (T57/T73), stage-09 consistency gaps (stage 16).
 
+## 7j. Settings, reports, exports and summaries (implemented stage 14)
+- Administrator-only routes enforced by the server (traders 403; the UI never calls them). Settings reads/reports: live
+  admin session. Settings changes, exports and pre-filled templates: recent authentication + session CSRF + exact
+  Origin, re-checked inside the transaction (settings) or right before the file is released (exports).
+- Settings API returns business fields only; strict schema rejects unknown fields; version-checked; atomic with its
+  audit row (audit failure rolls back — tested).
+- Order creation binds the reviewed shipping/tax terms (`expectedTerms`); idempotency is checked first so committed
+  retries still replay.
+- Exports: per-administrator rate limit, two concurrent jobs, row/byte caps (refused, never truncated), one read
+  transaction, fixed ASCII filenames (no user text in headers), `Cache-Control: no-store, private`, audit metadata only
+  (no content). Buyer contact data only on explicit request (audited as `contact_data`).
+- Spreadsheet formula defence in VIEW exports (apostrophe prefix for formula-like text including whitespace/control/
+  full-width bypasses); canonical templates never altered (formula-like display names omitted). Untested in real
+  spreadsheet applications (NOT RUN).
+- Order summaries: own-merchant or administrator; trader-safe content only; no public/bearer links; JSON no-store;
+  printing only after authorized data loaded; CSP unchanged (no inline styles, no remote assets).
+- Still open: username lockout (T40), stock inference (T57/T73), stage-09 consistency gaps, import-record retention.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),

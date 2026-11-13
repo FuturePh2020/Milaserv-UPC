@@ -36,6 +36,8 @@ export const DEFAULT_RATE_LIMITS = {
   import_preview_account: { limit: 30, windowMs: 10 * 60_000 },
   /** CSV import confirmations (including same-key retries) per administrator. */
   import_commit_account: { limit: 20, windowMs: 10 * 60_000 },
+  /** Exports and pre-filled templates per administrator (bulk sensitive output). */
+  export_account: { limit: 20, windowMs: 10 * 60_000 },
   /** All /api requests per client IP. */
   api_ip: { limit: 300, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitRule>;

@@ -6,6 +6,7 @@ import './styles/tokens.css';
 import './styles/base.css';
 import './styles/components.css';
 import './styles/layouts.css';
+import './styles/print.css';
 
 /** PRODUCTION entry: contains no component gallery or preview fixtures. */
 const container = document.getElementById('root');

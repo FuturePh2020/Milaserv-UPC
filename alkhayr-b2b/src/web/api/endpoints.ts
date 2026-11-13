@@ -121,9 +121,17 @@ export async function quoteOrder(csrf: SessionCsrfToken, items: OrderLinePayload
   return r.ok ? { ...r, data: r.data.quote } : r;
 }
 
+/** Shipping/tax terms the trader reviewed in the quote (stage 14): refused with TERMS_CHANGED if they changed since. */
+export interface OrderTerms {
+  shippingCents: number;
+  shippingTaxable: boolean;
+  taxBps: number;
+}
+
 export interface CreateOrderPayload {
   requestKey: string;
   note?: string;
+  expectedTerms: OrderTerms;
   items: OrderLinePayload[];
 }
 
@@ -144,4 +152,29 @@ export function listOrders(q: { state?: OrderState; cursor?: string }, signal?: 
 export async function getOrder(id: string, signal?: AbortSignal): Promise<ApiResult<Order>> {
   const r = await apiGet(`/api/v1/orders/${encodeURIComponent(id)}`, isOrderResponse, signal);
   return r.ok ? { ...r, data: r.data.order } : r;
+}
+
+// ------------------------------------------------------------------ order summaries (stage 14)
+
+/** "ملخص طلب": immutable order snapshot + CURRENT company details. Not a tax invoice or receipt. */
+export interface OrderSummaryDoc {
+  kind: 'order_summary';
+  order: Pick<Order, 'id' | 'displayNumber' | 'state' | 'isDemo' | 'note' | 'createdAt' | 'buyer' | 'items' | 'amounts'>;
+  company: { name: string | null; phone: string | null; email: string | null; address: string | null };
+  companyIsCurrent: true;
+  generatedAt: number;
+}
+const isSummary = (v: unknown): v is { summary: OrderSummaryDoc } => {
+  if (typeof v !== 'object' || v === null) return false;
+  const s = (v as { summary?: unknown }).summary as Record<string, unknown> | undefined;
+  if (!s || s.kind !== 'order_summary' || s.companyIsCurrent !== true || typeof s.company !== 'object' || s.company === null) return false;
+  const o = s.order as Record<string, unknown> | undefined;
+  return !!o && typeof o.id === 'string' && typeof o.displayNumber === 'string' && Array.isArray(o.items) && typeof o.amounts === 'object' && typeof o.buyer === 'object';
+};
+
+/** Own order (approved merchant) or, with `admin`, any order (administrator). */
+export async function getOrderSummary(id: string, admin: boolean, signal?: AbortSignal): Promise<ApiResult<OrderSummaryDoc>> {
+  const base = admin ? '/api/v1/admin/orders/' : '/api/v1/orders/';
+  const r = await apiGet(`${base}${encodeURIComponent(id)}/summary`, isSummary, signal);
+  return r.ok ? { ...r, data: r.data.summary } : r;
 }

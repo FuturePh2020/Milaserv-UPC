@@ -149,3 +149,24 @@ the coordinator. 428 → dedicated re-authentication panel → identity refresh 
 with the new token → a new explicit confirmation (new key). `IMPORT_REJECTED` / stale responses show the failing
 records; expired/invalid previews offer "re-preview". Success shows the import id, mode, record count, committed
 status and product/ledger links; a replay says "already recorded — not repeated".
+
+## Stage 14: settings, checkout terms, reports, exports, printing
+- **Checkout terms:** `newSubmission(cart, note, quote.amounts)` stores `expectedTerms` (shipping, taxable, tax rate)
+  with the key and exact payload; a retry re-sends them unchanged. `TERMS_CHANGED` is a definite refusal: the key is
+  released, the quote is recomputed and the trader must press «تأكيد وإرسال الطلب» again (new key). A stored pending
+  submission without valid terms (e.g. from before this release) is dropped on load; the cart is kept.
+- **Settings** (`#/admin/settings`, `pages/admin/Settings.tsx`): EGP → piastres with `parseMoneyInput(raw, max,
+  allowZero)`, percent → basis points with `parsePercentToBps` (≤ 2 decimals, refused otherwise, never rounded).
+  Financial/threshold changes open a confirmation listing from → to and the future-only effect. Conflicts keep typed
+  values and show the current record (re-apply or discard); 428 opens the re-authentication panel and nothing is saved
+  until confirmed again; an unclear outcome is never resent.
+- **Reports** (`#/admin/reports?tab=orders|products|inventory|movements&from&to…`): definitions shown above each
+  table; money strings formatted with BigInt (`MoneyText`). Date inputs are Cairo calendar dates.
+- **Exports** (`ExportButton`, `apiDownload`, `download.ts`): POST → Blob → object URL → `a.download`. The UI says the
+  file was *offered* to the browser, never that it was saved. 428 shows the re-authentication panel; the export is NOT
+  repeated automatically. `EXPORT_TOO_LARGE` asks for narrower filters. Buyer contact data only via an explicit checkbox.
+- **Pre-filled templates** on the import page (non-create modes), with optional name/brand/barcode filter.
+- **Import history:** `#/admin/imports/history`, `#/admin/imports/<id>` (read-only; no "run again").
+- **Order summaries:** `#/orders/<id>/print` (own) and `#/admin/orders/<id>/print` render without the shell; the
+  «طباعة» button calls `window.print()` only after the authorized summary loaded; `styles/print.css` (A4, repeated
+  table heading, no navigation/toasts in print).
