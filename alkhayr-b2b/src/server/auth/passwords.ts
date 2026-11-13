@@ -216,15 +216,30 @@ export class PasswordHasher {
    * full scrypt with the current parameters through the same limiter, always false.
    */
   async verifyDummy(password: string): Promise<false> {
-    this.#dummyHash ??= this.hash(randomBytes(24).toString('base64url'));
-    const dummy = await this.#dummyHash;
+    const dummy = await this.#dummy();
     await this.verify(typeof password === 'string' ? password : '', dummy);
     return false;
   }
 
   /** Exposed for tests/diagnostics: the dummy hash uses the current parameters. */
   async dummyHashForTesting(): Promise<string> {
-    this.#dummyHash ??= this.hash(randomBytes(24).toString('base64url'));
-    return this.#dummyHash;
+    return this.#dummy();
+  }
+
+  /**
+   * The dummy hash, created lazily (one scrypt through the limiter) and then reused. Overlapping callers share one
+   * in-flight attempt. A FAILED attempt (e.g. PasswordHasherBusyError when the queue is full) is forgotten so a
+   * later call tries again — otherwise the rejected promise would stay cached and every unknown username would get
+   * 503 while known usernames get 401 (account enumeration). Only the attempt that failed is cleared, never a newer
+   * one. There is no retry loop: each later call makes at most one new attempt, through the same bounded limiter.
+   */
+  #dummy(): Promise<string> {
+    if (this.#dummyHash) return this.#dummyHash;
+    const attempt = this.hash(randomBytes(24).toString('base64url'));
+    this.#dummyHash = attempt;
+    attempt.catch(() => {
+      if (this.#dummyHash === attempt) this.#dummyHash = null;
+    });
+    return attempt;
   }
 }

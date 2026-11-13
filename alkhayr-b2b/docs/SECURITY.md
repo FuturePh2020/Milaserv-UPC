@@ -467,6 +467,26 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   residual unchanged in nature (DR-3).
 - **Merchant status UI:** after a version conflict the controls stay disabled until the current record is loaded.
 
+## 7o. Fix A (after stage 18): dummy-hash initialization under load
+- **Finding (external review, confirmed):**
+  - `PasswordHasher.verifyDummy()` cached its first `hash()` promise with `??=`.
+  - If that first creation was refused because the hashing queue was full (`PasswordHasherBusyError`), the rejected
+    promise stayed cached for the life of the process.
+  - Afterwards unknown usernames got 503 `UNAVAILABLE` while existing usernames with a wrong password got 401
+    `INVALID_CREDENTIALS`: an account-enumeration signal.
+  - Reproduced here with the default limits (2 active / 32 waiting) before the fix.
+- **Fix (`#dummy()` in `src/server/auth/passwords.ts`):**
+  - One shared in-flight attempt.
+  - A failed attempt is forgotten (only if it is still the cached one), so the next unknown-username login makes
+    one new attempt through the same bounded limiter.
+  - No retry loop, no unbounded work, no change to scrypt parameters, the random dummy secret and salt, generic
+    errors, capacity responses or rate-limit refunds.
+- **Cost (unchanged by the fix):**
+  - The first unknown-username check after start-up, or after a failed attempt, costs TWO scrypt runs (create +
+    verify).
+  - Later checks cost one, like a real verification.
+  - Status codes and messages now match. **Response timing is not claimed indistinguishable.**
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),

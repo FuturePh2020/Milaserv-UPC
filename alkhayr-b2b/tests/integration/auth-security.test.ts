@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
 import { describe, test } from 'node:test';
-import { PasswordHasher, PasswordHasherBusyError } from '../../src/server/auth/passwords.ts';
+import { PasswordHasher, PasswordHasherBusyError, REFERENCE_PARAMS } from '../../src/server/auth/passwords.ts';
 import { hashSessionToken } from '../../src/server/auth/sessions.ts';
 import { requireApproved, requireOwnMerchant, requireRecentAdminAuth, requireSession, requireSessionCsrf } from '../../src/server/auth/authorization.ts';
 import { sendJson } from '../../src/server/http/response.ts';
@@ -242,6 +242,39 @@ describe('abuse limits before expensive work', () => {
       // Reference work factor (≈350 ms per hash) so the concurrent requests really overlap.
       { hasher: new PasswordHasher({ maxConcurrent: 1, maxQueue: 1 }) },
     ));
+
+  test('prompt A: a dummy-hash initialization refused under load recovers; afterwards unknown and existing usernames fail identically', async () => {
+    // Real PasswordHasher, DEFAULT limits (2 active / 32 waiting). New hashes use reduced cost for speed; the two
+    // jobs that hold the active slots verify against a PRODUCTION-cost (REFERENCE_PARAMS) hash so the queue stays
+    // full for a whole production scrypt (hundreds of ms) while the login request travels over HTTP.
+    const hasher = new PasswordHasher({ params: CHEAP_PARAMS, accepted: [CHEAP_PARAMS, REFERENCE_PARAMS] });
+    const slowHash = await new PasswordHasher().hash('slot-holder-password');
+    const cheapHash = await hasher.hash('queue-filler-password');
+    await withApp(
+      async (app) => {
+        const t = await createTrader(app);
+        const sessions = () => Number((app.fixtureDb.prepare('SELECT count(*) AS n FROM sessions').get() as { n: number }).n);
+        // Fill: 2 production-cost jobs take the slots, 32 cheap jobs fill the queue. Nothing else has initialized the dummy hash.
+        const fillers = [...Array.from({ length: 2 }, () => hasher.verify('x', slowHash)), ...Array.from({ length: 32 }, () => hasher.verify('x', cheapHash))];
+        assert.deepEqual({ active: hasher.stats().active, queued: hasher.stats().queued }, { active: 2, queued: 32 });
+        expectCode(await new Client(app, ip()).login('no.such.user', 'Wrong-Password-000'), 503, 'UNAVAILABLE');
+        await Promise.all(fillers);
+        assert.equal(hasher.stats().active, 0, 'queue drained');
+        const s0 = sessions();
+        const unknown = await new Client(app, ip()).login('no.such.user', 'Wrong-Password-000');
+        const wrong = await new Client(app, ip()).login(t.username, 'Wrong-Password-000');
+        expectCode(unknown, 401, 'INVALID_CREDENTIALS');
+        expectCode(wrong, 401, 'INVALID_CREDENTIALS');
+        assert.equal(unknown.json.error.message, wrong.json.error.message, 'same generic message');
+        assert.equal(sessions(), s0, 'no session created by either failed attempt');
+        for (let i = 0; i < 3; i++) expectCode(await new Client(app, ip()).login(`ghost.${i}`, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+        const ok = await new Client(app, ip()).login(t.username, t.password);
+        assert.equal(ok.status, 200, 'correct credentials still succeed');
+        assert.equal(sessions(), s0 + 1);
+      },
+      { hasher },
+    );
+  });
 
   test('capacity refusals (503 before any check) do not spend sign-in attempts (stage 18)', () => {
     // A hasher whose queue is "full" for the first N calls: the request is refused before any password is checked.

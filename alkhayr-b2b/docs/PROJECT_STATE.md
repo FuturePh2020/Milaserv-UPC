@@ -35,6 +35,31 @@
 | 17 | ✅ Done (packaging + local production-like verification) | 617/617 tests, 3 clean copies 617/617 each, HTTPS browser runs 87+125+44+67+19+19 via Caddy, restore drill 23/23, upgrade + load rehearsals — below |
 | 18 | ✅ Done (final acceptance, local package only) | Stage-18 commit ("Stage 18: final acceptance…"): 618/618 tests, 3 clean copies 618/618 each, `accept18` 123/123, `upgrade18` 36/36, HTTPS browser 87+126+44+67+19+19, load + consistency — below |
 
+## Fix A (after stage 18) — cached dummy-hash failure (authentication enumeration)
+- **Root cause:** `verifyDummy()` memoized `this.hash(...)` with `??=`. A busy-queue rejection of the first
+  creation stayed cached, so unknown usernames got 503 and known ones 401.
+- **Fix:** `#dummy()` shares one in-flight attempt and clears only the failed attempt (identity check). The next
+  call makes one new attempt through the limiter (D-178, SECURITY §7o, T122).
+- **Tests** (4 new; all fail with the old caching restored, all pass with the fix):
+  - **unit A:** cold initialization refused under the default 2/32 queue → recovery → repeated calls;
+  - **unit C:** shared initialization while overloaded and with room, bounded concurrency, no unhandled rejections,
+    reuse;
+  - **unit C race:** the newer attempt stays cached. A naive caller-clears variant also passes, because promise
+    callback ordering makes that race unreachable with direct awaits; the identity check is defensive;
+  - **HTTP B:** after recovery, unknown and existing usernames get identical 401 code and message, no sessions are
+    created, and correct credentials succeed.
+- **Results:** `npm run check` 622/622; the auth suites (passwords, auth-security, auth-flows, auth-process) 61/61.
+- **Parameters:**
+  - The production work factor (REFERENCE_PARAMS) is used by the existing dummy work-factor unit test and by the two
+    slot-holding jobs in HTTP test B.
+  - The new dummy creations use reduced cost.
+- **NOT RUN:**
+  - container image rebuild;
+  - browser suites;
+  - acceptance re-runs (no interface or flow change);
+  - timing-indistinguishability measurement.
+- **Open:** release blockers B-1…B-6 and decisions DR-1…DR-6 are unchanged. Launch is still blocked.
+
 ## Stage 18 — final status (first)
 
 **ACCEPTANCE PASSED FOR LOCAL DEPLOYMENT PACKAGE; PUBLIC LAUNCH BLOCKED.**

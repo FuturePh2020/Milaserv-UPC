@@ -174,3 +174,84 @@ describe('dummy verification for unknown users', () => {
     assert.equal(await hasher.verifyDummy(''), false);
   });
 });
+
+describe('dummy hash initialization survives a full queue (prompt A regression)', () => {
+  // A deterministic way to occupy the limiter: hash()/verify() take their slot synchronously, before their
+  // first await, so a call made right afterwards sees the limiter exactly as these calls left it.
+  const fill = (hasher: PasswordHasher, n: number) => Array.from({ length: n }, (_, i) => hasher.hash(`filler-password-${i}`));
+
+  test('A: cold initialization refused under the DEFAULT 2 active / 32 waiting limits recovers once capacity returns', async () => {
+    const hasher = new PasswordHasher({ params: CHEAP }); // default maxConcurrent 2, maxQueue 32
+    const fillers = fill(hasher, 34);
+    assert.deepEqual({ active: hasher.stats().active, queued: hasher.stats().queued }, { active: 2, queued: 32 });
+    await assert.rejects(hasher.verifyDummy('unknown-user-password'), PasswordHasherBusyError);
+    await Promise.all(fillers); // drain
+    assert.equal(hasher.stats().active, 0);
+    assert.equal(await hasher.verifyDummy('unknown-user-password'), false, 'unknown-user checking recovers');
+    for (let i = 0; i < 3; i++) assert.equal(await hasher.verifyDummy(`again-${i}`), false, 'repeated calls are not stuck');
+  });
+
+  test('C: overlapping callers share ONE initialization; a refused one is shared too, then retried once', async () => {
+    class Counting extends PasswordHasher {
+      hashCalls = 0;
+      override hash(password: string) {
+        this.hashCalls++;
+        return super.hash(password);
+      }
+    }
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      // Overloaded: one slot, no queue, slot taken.
+      const busy = new Counting({ params: CHEAP, maxConcurrent: 1, maxQueue: 0 });
+      const blocker = busy.hash('blocker-password');
+      const refused = await Promise.allSettled([busy.verifyDummy('a'), busy.verifyDummy('b'), busy.verifyDummy('c')]);
+      assert.ok(refused.every((r) => r.status === 'rejected' && r.reason instanceof PasswordHasherBusyError));
+      assert.equal(busy.hashCalls, 2, 'blocker + ONE shared initialization attempt (no retry storm while overloaded)');
+      await blocker;
+      assert.equal(await busy.verifyDummy('after'), false, 'the next call after capacity returns initializes again');
+      assert.equal(busy.hashCalls, 3, 'exactly one new attempt');
+      assert.equal(await busy.verifyDummy('again'), false);
+      assert.equal(busy.hashCalls, 3, 'the successful initialization is reused');
+
+      // Room for one active job plus a queue: three overlapping cold callers.
+      const roomy = new Counting({ params: CHEAP, maxConcurrent: 1, maxQueue: 8 });
+      assert.deepEqual(await Promise.all([roomy.verifyDummy('a'), roomy.verifyDummy('b'), roomy.verifyDummy('c')]), [false, false, false]);
+      assert.equal(roomy.hashCalls, 1, 'one shared successful initialization');
+      assert.equal(roomy.stats().maxActiveObserved, 1, 'work stays bounded by the limiter');
+      await new Promise((r) => setImmediate(r));
+      assert.deepEqual(unhandled, [], 'no unhandled promise rejections');
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
+  });
+
+  test('C: a failed EARLIER initialization never clears a NEWER cached value', async () => {
+    // hash() is replaced by controllable promises to order the calls exactly. Note: with direct awaits, every caller
+    // already waiting on attempt 1 observes its failure in the same microtask burst, before a new attempt can be
+    // created, so a naive "any failing caller clears the cache" variant also passes this test. The identity check in
+    // #dummy() (clear only if the cached value IS the failed attempt) is therefore defensive; this test pins the
+    // observable contract: the newer attempt stays cached and is reused.
+    const pending: Array<{ resolve: (v: string) => void; reject: (e: unknown) => void }> = [];
+    class Controlled extends PasswordHasher {
+      override hash(_password: string) {
+        return new Promise<string>((resolve, reject) => pending.push({ resolve, reject }));
+      }
+    }
+    const hasher = new Controlled({ params: CHEAP });
+    const real = await new PasswordHasher({ params: CHEAP }).hash('dummy-source');
+    const a = hasher.verifyDummy('a');
+    const b = hasher.verifyDummy('b');
+    assert.equal(pending.length, 1, 'A and B share attempt 1');
+    pending[0]!.reject(new PasswordHasherBusyError());
+    await assert.rejects(a, PasswordHasherBusyError);
+    const c = hasher.verifyDummy('c'); // attempt 2 starts while B has not yet observed attempt 1's failure
+    assert.equal(pending.length, 2);
+    await assert.rejects(b, PasswordHasherBusyError); // B's continuation runs now
+    pending[1]!.resolve(real);
+    assert.equal(await c, false);
+    assert.equal(await hasher.verifyDummy('d'), false);
+    assert.equal(pending.length, 2, 'attempt 2 is still cached: no third initialization');
+  });
+});
