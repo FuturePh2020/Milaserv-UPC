@@ -3,13 +3,13 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-13 |
-| Current stage | **14 — Business settings, reports, safe export and order printing: COMPLETE** |
-| Next stage | **15** (awaiting owner prompt) |
+| Current stage | **15 — Encrypted backup, verified restore and operator account recovery: COMPLETE** |
+| Next stage | **16** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001–0005 + **0006** (committed import batches) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, the complete merchant experience in the browser, **and the administration screens (merchant review, products, inventory and ledger, order fulfillment) with safe re-authentication and idempotent retries, and CSV imports (four modes, preview, all-or-nothing confirmation, durable idempotency), and business settings, operational reports, spreadsheet-safe exports, pre-filled import templates and printable order summaries**. |
+| Schema | Migrations 0001–0006 + **0007** (`auth_users.credential_version`) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, the complete merchant experience in the browser, **and the administration screens (merchant review, products, inventory and ledger, order fulfillment) with safe re-authentication and idempotent retries, and CSV imports (four modes, preview, all-or-nothing confirmation, durable idempotency), and business settings, operational reports, spreadsheet-safe exports, pre-filled import templates and printable order summaries**, **and encrypted backups, verified restore, rotation/status, and server-host account recovery commands**. |
 
 ## Stage log
 
@@ -29,10 +29,137 @@
 | 11 | ✅ Done (merchant experience) | Commit `8be8fbe` — 458/458 tests ×3 clean-copy runs, 87/87 end-to-end Chromium checks, axe 7 pages 0 violations, 19 mutants (21 runs) — below |
 | 12 | ✅ Done (administration experience) | Commit `562b9f5` — 473/473 tests ×3 clean-copy runs, 125/125 administration lifecycle checks + 87/87 merchant journey, axe 21 states 0 violations, 16 mutants — below |
 | 13 | ✅ Done (CSV imports) | Commit `9f9149e` — 513/513 tests ×3 clean-copy runs, 44/44 import lifecycle + 125/125 + 87/87 regression journeys, axe 0 violations, 30 mutants (final 27 caught / 3 survived; see stage-14 reconciliation) |
-| 14 | ✅ Done (settings, reports, exports, printing) | 541/541 tests ×3 clean-copy runs, 67/67 browser run + 87/87, 125/125, 44/44 regressions, axe 0 violations, 24 mutants — below |
-| 15–18 | ⏳ Not started | — |
+| 14 | ✅ Done (settings, reports, exports, printing) | Commit `051fd43` — 541/541 tests ×3 clean-copy runs, 67/67 browser run + 87/87, 125/125, 44/44 regressions, axe 0 violations, 24 mutants — below |
+| 15 | ✅ Done (backup, restore, account recovery) | 571/571 tests ×3 clean-copy runs, real-process restore drill + real-PTY run, 24 mutants — below |
+| 16–18 | ⏳ Not started | — |
 
-## Stage 14 — known weaknesses first
+## Stage 15 — known weaknesses first
+- **RTO is not measured on real data.** The only measurement is a tiny synthetic drill:
+  restore + verify + server ready took ≈ 0.3 s. RPO 24 h and RTO 2 h are OBJECTIVES, not results.
+  Nothing was tested on large databases, slow disks or Windows.
+- **The off-server copy is not implemented** (by instruction: no external uploads without configured access). Local
+  rotation does not survive a lost disk. The operator must copy the `.akbk` files elsewhere, and keep the key file
+  and APP_SECRET separately. This is documented, not automated or verified.
+- **Verification does not include the stage-09 cross-history checks.** These are per-order event/allocation
+  sequences and the per-movement ledger/allocation pairing. Stage 15 verifies:
+  - integrity and foreign keys;
+  - migration checksums;
+  - stock = last ledger row = ledger sum;
+  - reserved = open allocations;
+  - import item counts;
+  - admins have MFA, and that MFA is decryptable.
+  The rest is owned by stage 16.
+- **Plaintext exposure window:** the decrypted or snapshotted database exists briefly in a 0700 staging directory
+  inside DATA_DIR. If the process is killed, that directory stays until the next backup removes it (after > 1 h).
+  `backup:status` reports it. The live database itself is not encrypted at rest (host disk encryption required).
+- **An attacker holding the backup key** (and write access to the backup storage) can forge a valid backup. The design
+  cannot prevent this; keep the key off the server where possible (hidden-prompt mode).
+- **Lost APP_SECRET:** administrator authenticators cannot be recovered, only re-enrolled after identity checks.
+  **Lost backup key:** its backups are unrecoverable. APP_SECRET rotation is unsupported.
+- **Sessions and in-flight browsers:** after a restore every user signs in again. A browser retry for an order placed
+  AFTER the backup can create that order again (its key is not in the restored data). The guide requires
+  reconciliation before reopening; there is no technical guard.
+- **The account commands run only with the server stopped** (instance lock), so a password reset means short downtime.
+  Their prompt flow was exercised through the in-process scripted terminal. A real PTY was used only for
+  `backup:create` (hidden key) and `account:reset-password`; not for `admin:create`, `reset-mfa` or `revoke-sessions`.
+- **UX bug found and fixed:** an informational line («New password: 12–128 characters…»; in setup-admin «Password: …»)
+  looked like a prompt. The PTY driver typed the password into it while echo was still on. Both lines now read
+  «Password rules: … Wait for the hidden prompt below». An operator who typed early in earlier releases could have
+  shown the password on screen.
+- **Import/idempotency growth is not bounded** (retained indefinitely by decision D-153). Orders measured ≈ 1.6 KB
+  each; import growth not measured.
+- **Legacy-notice UI:** covered by unit tests (storage conversion, rewrite, dismissal). The banner was NOT
+  browser-verified (no Playwright run this stage).
+- `npm run cli --` itself was not executed in tests; tests ran `node dist/server/cli.js` (what the script calls) and
+  the in-process `runCli`.
+
+## Stage 15 — what was built
+- **Migration 0007:** `auth_users.credential_version`, plus triggers that make it monotonic and force a bump on any
+  TOTP change. Login and password-change commits compare it (`stale_credentials`).
+- **`src/server/backup/backup.ts`:**
+  - versioned AES-256-GCM container with per-backup HKDF key and authenticated header;
+  - key-file checks; online snapshot; verification (integrity, FK, schema, invariants, MFA readability);
+  - create with re-verification of the final file and a `.verified` marker;
+  - restore to a new DATA_DIR or `--replace` (old database moved aside), sessions removed, NULL-actor audit;
+  - rotation (keeps N + newest verified), stale cleanup and status diagnostics.
+- **`src/server/services/account-recovery.ts` + `src/server/cli/operator.ts`:**
+  - account commands: `admin:create`, `account:reset-password`, `account:reset-mfa`, `account:revoke-sessions`;
+  - backup commands: `backup:keygen|create|inspect|verify|restore|prune|status`;
+  - strict argv parser; hidden prompts.
+- **Config:** `BACKUP_KEY` is no longer required (still checked to differ from APP_SECRET if set). `npm run cli`
+  script added.
+- **Web:** an old pending submission without reviewed terms becomes a dismissible notice («قد يكون الطلب قد وصل…»,
+  link to «طلباتي»). It is never resent, and the payload is removed from storage immediately.
+- **Docs:**
+  - new `docs/BACKUP_RECOVERY_AR.md` (cases A–F, custody, commands, post-restore effects, reconciliation,
+    retention, RPO/RTO, what was tested);
+  - updated DATABASE §17, SECURITY §7k and table, THREAT_MODEL T95–T105, DECISIONS D-145–D-155, MIGRATION,
+    API_CONTRACT note (no HTTP change), README and `.env.example`.
+
+## Checks run in stage 15 (2026-11-13 UTC, this container, Node 24.22.1)
+| Check | Result |
+|---|---|
+| `npm run check` (typecheck server + web, build, all tests) | ✅ 571/571 |
+| Clean copies ×3 (`npm ci` → typecheck → build + tests) | ✅ 571/571 in each of 3 runs |
+| `tests/integration/backup.test.ts` | ✅ 15/15 — keygen; key-file mode/symlink/location; create/inspect/verify; hidden key; wrong key, tampered ciphertext/header, truncation, foreign/unknown version, oversized header, wrong APP_SECRET; corrupt DB, changed migration checksum, broken invariant, wrong plaintext digest, newer schema inside valid containers; restore to new dir (sessions removed, audit, idempotency); running/existing-target refusal and `--replace`; failed restore/backup leave nothing; case E; prune/stale cleanup/symlinks/status; snapshot during concurrent order + stock writes |
+| `tests/integration/recovery-cli.test.ts` | ✅ 12/12 — admin:create (proof, sign-in, audit, cancel/wrong code/existing username → nothing), lock refusal, secrets-as-args refusal, reset-password, mistyped confirmation/weak password/no reason, reset-mfa (old refused, enrollment step not replayable, traders refused, wrong proof keeps old), revoke-sessions, three paused-login races, 0007 triggers |
+| `tests/integration/restore-drill.test.ts` (real bundled server + CLI processes) | ✅ 2/2 — live server → online backup → post-backup order → stop → wrong-APP_SECRET restore refused → restore into new DATA_DIR → real startup; old cookie 401; pre-backup TOTP code refused, original authenticator accepted; admin reads order; trader history (post-backup order absent); same-key replay returns original order; ledger reconciliation; NULL-actor restore audit; no secrets in output. PTY: hidden backup key not echoed; reset-password via terminal |
+| Mutation checks | 24 mutants (`mut15.py`). First run: 18 caught, 6 survived (M02, M03, M06, M09, M10, M12). Tests added; final: **24 caught, 0 survived**. Notes: M02 (symlink key file) is behaviourally blocked by the permission check (a symlink's own mode is 0777) and is caught only by the specific message; M06 (plaintext digest) and M09 (header APP_SECRET id) are defence in depth — another layer (GCM / MFA decryption) also refuses, the tests pin the specific layer |
+| Storage growth | 2 000 single-line orders = 3 166 208 bytes (`dbstat`) ≈ 1 583 B/order |
+| `npm audit` | "found 0 vulnerabilities" (2026-11-13T13:15Z; registry advisory data only, not OS packages) |
+| Browser | NOT RUN this stage (legacy notice unit-tested only) |
+
+| Mutant | Result |
+|---|---|
+| M01 key-file group/other bits · M04 no AAD · M05 key id unchecked · M07 restored sessions kept · M08 overwrite without --replace · M11 prune deletes newest verified · M13 invariants skipped · M14 MFA readability skipped | caught (backup tests; M07 also drill) |
+| M15 login ignores credential_version · M16 revoke without bump · M17 reset keeps sessions · M18 MFA replace lowers step · M19 fabricated actor · M20 no target confirmation · M21 unknown options accepted · M22 admin:create without TOTP proof | caught (recovery tests) |
+| M23 legacy notice not produced · M24 legacy payload kept | caught (web unit tests) |
+| M02 · M03 · M06 · M09 · M10 · M12 | survived first run → caught after added tests (see above) |
+
+### Invariants: verified now vs. stage 16
+- **Now (every create/verify/restore):**
+  - SQLite integrity and FKs; application id; migration checksums;
+  - product balance = last linked ledger row = ledger sums;
+  - reserved = open allocations;
+  - import record counts; admins have MFA; MFA decryptable.
+- **Stage 16 (stage-09 checks):**
+  - per-order event-sequence consistency;
+  - allocation lifecycle vs. order state;
+  - ledger/allocation pairing per movement;
+  - shipped quantities vs. ledger.
+
+## Limitations (known)
+See weaknesses above. Not in this stage by design: deployment, off-server upload, scheduled jobs, APP_SECRET rotation,
+automatic purge/archive, destructive repair, public password reset, email/SMS.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 16.
+
+## Files changed in stage 15 (all under `alkhayr-b2b/`)
+- **New:**
+  - `migrations/0007_credential_version.sql`;
+  - `src/server/backup/backup.ts`, `src/server/cli/operator.ts`, `src/server/services/account-recovery.ts`;
+  - `src/web/pages/cart/LegacySubmissionNotice.tsx`;
+  - `tests/helpers/prompter.ts`, `tests/integration/{backup,recovery-cli,restore-drill}.test.ts`;
+  - `docs/BACKUP_RECOVERY_AR.md`.
+- **Modified:**
+  - `src/server/{config.ts,cli/index.ts,cli/setup-admin.ts,services/authentication.ts}`;
+  - `src/web/{App.tsx,cart/CartContext.tsx,cart/storage.ts}`;
+  - `package.json` (cli script), `.env.example`;
+  - tests `unit/{config,web-cart}.test.ts`, `integration/server.test.ts`;
+  - docs.
+
+## How to continue
+Next: send **PROMPT 16**. Existing installations need `db:migrate --confirm-backup` for 0007 (MIGRATION.md, stage-15 note).
+
+---
+
+## Stage 14 record (retained)
+
+### Stage 14 — known weaknesses first
 - **Still open, owned by stage 16:** username lockout (T40), slow stock inference (T57/T73), stage-09 consistency gaps.
 - **Import-record retention is open (stage 15/16).** Correction of the stage-13 report: the commit rate limit bounds
   the *growth rate* of `import_operations`/items, not lifetime storage. A retention/archive policy that preserves
@@ -50,7 +177,7 @@
   per request, the rate limit per administrator. Browser-to-PDF was tested in Chromium only; no server-generated PDF.
 - Browser verification: Chromium, plain HTTP test origin, automated axe rules only (no screen reader).
 
-## Stage 14 — reconciliation of the stage-13 report
+### Stage 14 — reconciliation of the stage-13 report
 - **Mutation count, final and unambiguous:** 30 mutants. First run: 25 caught, 5 survived (M08, M11, M12, C02,
   C03). Two survivors exposed weak tests and were caught after adding tests (M12 in-flight recency expiry; C02 balanced
   quote inside a cell). Final: **27 caught, 3 survived** — M08 redundant (the in-transaction evaluation enforces the
@@ -59,7 +186,7 @@
   survived") was wrong; the stage-13 table below was right.
 - **Storage claim corrected** (DATABASE §15, T95): rate limits bound growth rate only.
 
-## Stage 14 — what was built
+### Stage 14 — what was built
 | Capability | Server | Browser |
 |---|---|---|
 | Business settings | `services/settings.ts`: GET (live admin) / PATCH (recent auth, CSRF, Origin, strict ≤ 8 KiB, version, commit-time checks, atomic audit with financial before/after) | `#/admin/settings`: exact EGP → piastres, % → basis points (≤ 2 decimals, refused otherwise), confirmation of financial changes, conflict keeps typed values, re-auth panel |
@@ -72,7 +199,7 @@
 No migration. New error codes: `TERMS_CHANGED`, `AGGREGATE_OVERFLOW`, `EXPORT_TOO_LARGE` (and the busy message now
 covers exports). New rate limit `export_account` (20/10 min). New audit actions `settings.updated`, `export.created`.
 
-## Checks run in stage 14 (2026-11-13 UTC, this container, Node 24.22.1)
+### Checks run in stage 14 (2026-11-13 UTC, this container, Node 24.22.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check, build | `npm run typecheck`, `npm run build` | ✅ |
@@ -102,17 +229,17 @@ check, so the DOM download helper moved to `web/download.ts`.
 Final: **23 caught, 1 survived (S05, protected by an independent layer)**. Not mutation-tested (browser-verified
 only): the checkout re-quote on `TERMS_CHANGED`, print CSS, no automatic export after re-authentication.
 
-## Limitations (known)
+### Limitations (known)
 See weaknesses above. Not in this stage by design: accounting, payments, tax-authority integration, shipping
 integrations, backups/recovery, deployment, category management.
 
-## Open questions
+### Open questions
 None.
 
-## Remaining blockers
+### Remaining blockers
 None for stage 15. Stage 15 (backup/recovery) should include the import-record retention/archive design.
 
-## Files changed in stage 14 (all under `alkhayr-b2b/`)
+### Files changed in stage 14 (all under `alkhayr-b2b/`)
 New: `src/server/services/{settings,reports,exports}.ts`, `src/server/reports/{time,csv-out}.ts`,
 `src/server/routes/admin-business.ts`, `src/web/pages/admin/{Settings,Reports,ExportButton,ImportHistory}.tsx`,
 `src/web/pages/OrderSummaryPrint.tsx`, `src/web/download.ts`, `src/web/styles/print.css`,
@@ -124,7 +251,7 @@ Modified: `src/server/{app.ts}`, `src/server/auth/rate-limit.ts`, `src/server/se
 `src/web/pages/{cart/Checkout,orders/Orders}.tsx`, `src/web/styles/components.css`,
 tests `helpers/database.ts`, `integration/{orders,fulfillment}.test.ts`, `unit/{web-admin,web-cart}.test.ts`, docs.
 
-## How to continue
+### How to continue
 Next: send **PROMPT 15**. No migration is needed for stage 14.
 
 ---

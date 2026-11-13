@@ -355,6 +355,42 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   printing only after authorized data loaded; CSP unchanged (no inline styles, no remote assets).
 - Still open: username lockout (T40), stock inference (T57/T73), stage-09 consistency gaps, import-record retention.
 
+## 7k. Backups and operator recovery (implemented stage 15)
+- **Recovery authority = OS access to the server host.** No HTTP route, email/SMS reset or default account was added.
+  Account commands (`admin:create`, `account:reset-password`, `account:reset-mfa`, `account:revoke-sessions`):
+  - are interactive only, with hidden input for passwords;
+  - require a TOTP proof before any authenticator is stored;
+  - take the instance lock (server stopped) and require a current schema;
+  - require retyping the target username and giving a reason;
+  - use the same password policy and scrypt;
+  - commit as one transaction that bumps `credential_version` and deletes the account's sessions;
+  - are audited with actor NULL and the reason (no secrets, verified by tests);
+  - never change role or approval status; never promote an existing account.
+- **Secrets never in argv** (strict parser, exit 2), logs, filenames or committed config. The backup key comes from
+  a key file or a hidden prompt. The key file must be:
+  - a regular file, not a symlink;
+  - owned by the current user;
+  - without any group/other permission bits;
+  - ≤ 256 bytes;
+  - outside `DATA_DIR`/`BACKUP_DIR`.
+  `backup:keygen` creates it with `wx`/0600 and prints only the key id.
+- **Backup encryption:**
+  - AES-256-GCM (Node `crypto`, OpenSSL) with a per-backup HKDF key, a fresh 32-byte salt and a fresh 12-byte nonce;
+  - prefix and header authenticated as AAD;
+  - strict bounded header (4 KiB), unknown versions refused, no attacker-chosen KDF parameters;
+  - generic error codes; streamed decryption whose output is deleted unless the tag and SHA-256 verify.
+- **Plaintext exposure:** only in a 0700 staging directory inside `DATA_DIR` (same protection as the live database),
+  removed in `finally`; files are created 0600 with `wx`. A crash can leave plaintext staging until the next backup
+  removes it (> 1 h) — reported by `backup:status`.
+- **APP_SECRET loss** is never silent: restore needs `--accept-new-app-secret`, and the server then refuses to start
+  until each administrator is re-enrolled with `account:reset-mfa`. Rotation is unsupported (documented).
+- **The runtime authorizer is unchanged.** Backup uses a separate read-only connection; maintenance commands use
+  separate short-lived connections under the instance lock.
+- **Residual:**
+  - an attacker with the backup key AND write access to backups can forge a valid backup;
+  - an operator with shell access can do anything (by design);
+  - the plaintext SHA-256 adds nothing beyond GCM against outsiders (defence in depth against writer bugs).
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -398,6 +434,9 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Session table stores only SHA-256 token hashes | ✅ (CHECK) | ✅ 02 |
 | Append-only audit/ledger/order history; immutable order snapshots | ✅ (triggers) | ✅ 02 |
 | Readiness endpoint reveals no path/SQL/config | ✅ | ✅ 02 |
+| Encrypted, authenticated, verified backups; key file permission checks; no secrets in argv/logs | ✅ | ✅ 15 (15 + 12 + 2 integration tests, 24 mutants) |
+| Restore: refuses running/existing targets, validates before replacing, keeps previous DB, removes sessions | ✅ | ✅ 15 (in-process + real-process drill) |
+| Operator recovery invalidates in-flight logins (`credential_version`) | ✅ | ✅ 15 (paused-login races) |
 | DB, WAL, SHM, lock files not fetchable over HTTP | ✅ | ✅ 02 (canary inside the real DB) |
 | scrypt hashing, allow-listed params, bounded concurrency, dummy verification | ✅ | ✅ 03 (unit; mutation-checked) |
 | Password policy without trimming/truncation | ✅ | ✅ 03 |

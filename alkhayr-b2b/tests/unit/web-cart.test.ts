@@ -124,6 +124,24 @@ describe('draft storage (the only browser storage)', () => {
     assert.deepEqual(loadDraft(scope()).cart.lines, [], 'another account never sees it');
   });
 
+  test('upgrade (stage 15): an older-release pending submission becomes a notice — order may exist, never resubmitted, payload discarded', () => {
+    const s = scope();
+    const { cart } = addProduct(EMPTY_CART, product(), 2);
+    const old = newSubmission(cart, 'x', TERMS);
+    const { expectedTerms: _drop, ...legacyPayload } = old.payload;
+    void _drop;
+    store.setItem(draftKey(s), JSON.stringify({ v: 1, savedAt: Date.now(), lines: cart.lines, pending: { ...old, payload: legacyPayload } }));
+    const loaded = loadDraft(s);
+    assert.equal(loaded.pending, null, 'never resent: no pending submission survives');
+    assert.deepEqual(loaded.legacyNotice, { createdAt: old.createdAt, lines: 1 });
+    assert.equal(loaded.cart.lines.length, 1, 'the cart itself is kept');
+    const raw = store.getItem(draftKey(s))!;
+    assert.ok(!raw.includes(old.requestKey), 'the incompatible key/payload is removed from storage at once');
+    assert.deepEqual(loadDraft(s).legacyNotice, loaded.legacyNotice, 'the notice persists until dismissed');
+    saveDraft(s, { ...loaded, legacyNotice: null });
+    assert.equal(loadDraft(s).legacyNotice, null, 'dismissed');
+  });
+
   test('a stored pending submission without valid reviewed terms is dropped (never sent without them)', () => {
     const s = scope();
     const { cart } = addProduct(EMPTY_CART, product(), 2);

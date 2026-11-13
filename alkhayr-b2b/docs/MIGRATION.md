@@ -158,6 +158,22 @@ and drop it: check «طلباتي» for that trader. Reports use Cairo calendar 
 money. Exports are CSV for viewing (not for re-import); pre-filled import templates are on the import page. Printed
 «ملخص طلب» documents are not tax invoices or receipts. See [`IMPORT_GUIDE_AR.md`](IMPORT_GUIDE_AR.md).
 
+### Stage 15 note: migration 0007, encrypted backups and operator recovery
+This release adds `0007_credential_version.sql` (one column and two triggers on `auth_users`; no data rewritten).
+Existing installations:
+1. Stop the server.
+2. Take a backup with the NEW tools: `npm run cli -- backup:keygen --out <protected path>` once, then
+   `npm run cli -- backup:create --key-file <path>` (it verifies itself).
+3. Run `db:migrate --confirm-backup`, then start the server.
+
+`BACKUP_KEY` in `.env` is no longer used or required; backups use the separate key file or a hidden prompt.
+New operator commands (server host only, interactive, server stopped): `admin:create`, `account:reset-password`,
+`account:reset-mfa` and `account:revoke-sessions`. There are also `backup:inspect`, `backup:verify`, `backup:restore`,
+`backup:prune` and `backup:status`.
+Full procedures, recovery cases A–F, secret custody and RPO/RTO: [`BACKUP_RECOVERY_AR.md`](BACKUP_RECOVERY_AR.md).
+Browsers that still hold an unclear order submission from before stage 14 now show a notice that the order may already
+exist, linking to «طلباتي»; nothing is resent automatically.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|
@@ -182,9 +198,14 @@ None has been supplied (BUILD_NEW). If one is:
 - Require a verified, restorable backup before running anything against production.
 
 ## 5. Recovery requirements (what must exist before production)
-- Off-host backups with an independent `BACKUP_KEY` and a practised restore drill (stage 15).
-- Restores go to a **new** path, with the server stopped, never mixing a restored file with an old WAL.
-- The database file is not encrypted by SQLite; rely on host disk encryption.
+- Implemented in stage 15 ([`BACKUP_RECOVERY_AR.md`](BACKUP_RECOVERY_AR.md)). Before production you still need:
+  - daily `backup:create` with `--keep`;
+  - an off-host copy of the `.akbk` files;
+  - the backup key file and `APP_SECRET`, each stored off-host and separately;
+  - a practised restore drill on real-sized data (RTO not yet measured on real data).
+- Restores go to a **new** `DATA_DIR` by default. `--replace` moves the old database aside (never deleted); the
+  server must be stopped. The restore never mixes a restored file with an old WAL: the WAL is moved aside with the database.
+- The live database file is not encrypted by SQLite; rely on host disk encryption. Backup files are encrypted (AES-256-GCM).
 
 ## الملخص بالعربية
 - ترتيب التشغيل الأول: إنشاء قاعدة البيانات `db:init` ← تسجيل المدير محليًا `setup-admin` ← تشغيل الخادم.
@@ -212,3 +233,4 @@ None has been supplied (BUILD_NEW). If one is:
   `db:migrate --confirm-backup`.
 - لا تعدّل ملف ترحيل سبق تطبيقه؛ الخادم يرفض التشغيل إذا تغيّر.
 - يعمل خادم واحد فقط على مجلد البيانات، وعلى قرص محلي دائم (لا NFS ولا مجلدات شبكة).
+- المرحلة 15 أضافت الترحيل 0007 والنسخ الاحتياطي المشفّر والاستعادة وأوامر استرداد الحسابات (على الخادم فقط)؛ التفاصيل في `BACKUP_RECOVERY_AR.md`. `BACKUP_KEY` لم يعد مستخدمًا؛ مفتاح النسخ ملف محمي منفصل.

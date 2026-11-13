@@ -338,7 +338,8 @@ already shipped order stay possible.
   over months the tables grow without limit. Open work (stage 15/16): a documented retention policy that keeps
   idempotency records long enough for recovery (e.g. a minimum age before any purge), never deletes links still
   needed for traceability, and is implemented as an operator-run, audited archive — not by deleting rows in place
-  (the append-only triggers forbid it).
+  (the append-only triggers forbid it). **Stage 15 decision:** retain indefinitely (no purge, no archive yet);
+  growth is measured and reported by `backup:status` (§17).
 
 ## 16. Stage 14 (no migration)
 - `business_settings` (0001) is now editable through `PATCH /api/v1/admin/settings`: the existing columns, the
@@ -348,3 +349,58 @@ already shipped order stay possible.
 - Reports read existing timestamps (UTC epoch ms, unchanged) and filter by Africa/Cairo calendar days
   (API_CONTRACT §7). Aggregates use SQLite 64-bit `sum()` read as BigInt; an int64 overflow raises an error
   (`AGGREGATE_OVERFLOW`) instead of a wrong total.
+
+## 17. Migration 0007 — `auth_users.credential_version`; backups and retention (stage 15)
+- `credential_version INTEGER NOT NULL DEFAULT 1 CHECK (>= 1)` is added to `auth_users`. Existing rows get 1.
+- Trigger `auth_users_credential_version_monotonic`: the version can never decrease.
+- Trigger `auth_users_totp_change_bumps_version`: changing `totp_ciphertext` without increasing the version is refused.
+- Operator recovery (password reset, authenticator replacement, session revocation) increases it in the same
+  transaction that deletes the account's sessions. Login and password change compare it at commit, so a verification
+  made with the old credentials is void (tested by racing paused logins).
+- No other table, trigger or applied migration changed.
+- **Backup file format v1** (`.akbk`):
+  - `AKHRBKP1` (8 bytes), then the header length (uint32 BE, ≤ 4096), then the strict JSON header, then the
+    AES-256-GCM ciphertext, then a 16-byte tag.
+  - The header holds:
+    - format, version and backup id;
+    - creation time;
+    - a 32-byte salt and a 12-byte nonce;
+    - `keyId` and `appSecretId` (8-byte HKDF fingerprints);
+    - application id and schema version;
+    - the migration checksums;
+    - the plaintext size and its SHA-256.
+  - The per-backup key is HKDF-SHA256(backup key, salt, `alkhayr:backup:v1:<id>`). The whole prefix and header are
+    the AAD. There are no KDF parameters in the file.
+  - Unknown versions and fields are refused.
+  - Plaintext = a consistent SQLite online-backup snapshot of the whole database (all tables, `schema_migrations`,
+    audit, idempotency records). Sessions are included in the file but deleted on restore.
+- **Verification** (create, verify, restore):
+  - GCM tag, plaintext hash, `application_id`;
+  - `integrity_check`, `foreign_key_check`, the migration-history checksums;
+  - invariants:
+    - product balance = last linked ledger row = sum of ledger deltas;
+    - reserved = open allocations;
+    - import item count = record count;
+    - every admin has MFA;
+  - administrator MFA decryptable with `APP_SECRET`.
+  - NOT checked here (stage 16): the stage-09 cross-history checks (event/allocation sequences per order,
+    ledger/allocation pairing per movement).
+- **Restore**:
+  - Decrypt into a 0700 staging directory inside the target `DATA_DIR`, then verify.
+  - On the staged copy: `DELETE FROM sessions` and an audit row `backup.restored` (actor NULL; metadata: backup id,
+    creation time, sessions removed).
+  - Checkpoint, then rename into place. A previous database (plus WAL/SHM) is moved to `pre-restore-*`, never deleted.
+  - No migration is run; a pending migration must be applied explicitly with `db:migrate`.
+- **Retention**:
+
+  | Data | Policy |
+  |---|---|
+  | Backups | `--keep N` plus the newest verified backup always kept; managed names only; no symlinks followed |
+  | `audit_logs` | ≥ 365 days (trigger); no automatic purge |
+  | `import_operations`, `import_operation_items` and order request keys (idempotency) | retained indefinitely |
+  | Orders, items, events, allocations, ledger | permanent history |
+  | Staging directories and `.partial` files | removed in `finally`; stale leftovers (> 1 h) removed by the next backup |
+
+- **Measured growth:** 2 000 single-line orders occupied 3.17 MB in all order, ledger, allocation and index pages
+  (`dbstat`), ≈ 1.6 KB per order. Import growth was not measured.
+- `backup:status` reports the database/WAL size, row counts and free space so that growth can be monitored (stage 17).

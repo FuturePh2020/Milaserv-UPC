@@ -1,0 +1,515 @@
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import type { DatabaseSync } from 'node:sqlite';
+import type { AppConfig } from '../config.ts';
+import { deriveKey, encryptSecret, totpAad } from '../auth/encryption.ts';
+import { checkPasswordPolicy, PASSWORD_POLICY, PasswordHasher } from '../auth/passwords.ts';
+import { base32Encode, generateTotpSecret, otpauthUri, verifyTotp } from '../auth/totp.ts';
+import { appSecretId, backupStatus, BackupError, createBackup, decryptBackup, keyId, listBackups, makeStaging, markVerified, parseBackupKey, pruneBackups, readHeader, readKeyFile, restoreBackup, verifyDatabaseFile, writeNewKeyFile } from '../backup/backup.ts';
+import { openDatabase } from '../database/connection.ts';
+import { DatabaseError } from '../database/errors.ts';
+import { acquireInstanceLock } from '../database/instance-lock.ts';
+import { inspectSchema, loadMigrations, type Migration } from '../database/migrations.ts';
+import { OPERATOR_COMMANDS } from '../database/runtime.ts';
+import { BootstrapError, assertUsernameAvailable } from '../services/admin-bootstrap.ts';
+import { createAdditionalAdministrator, findAccount, RecoveryError, replaceTotp, resetPassword, revokeSessions, type AccountSummary } from '../services/account-recovery.ts';
+import { merchantProfileSchema, usernameSchema, type MerchantProfile } from '../../shared/schemas.ts';
+import { CancelledError, InputTooLongError, type Prompter } from './prompt.ts';
+import { rmSync } from 'node:fs';
+import path from 'node:path';
+
+/**
+ * Trusted-operator commands added in stage 15 (account provisioning/recovery and encrypted backups).
+ * Host shell access is the recovery authority: these commands run only on the server host, never over
+ * HTTP. Secrets (passwords, codes, backup keys) are read with hidden terminal input or — for backup keys
+ * only — from a permission-checked key file; never from arguments or the server environment.
+ */
+
+export interface OperatorContext {
+  config: AppConfig;
+  migrationsDir: string;
+  out(line: string): void;
+  err(line: string): void;
+  /** Lazily created interactive prompter (throws NotInteractiveError without a TTY). */
+  prompter: () => Prompter;
+  hasher?: PasswordHasher;
+  now?: () => number;
+}
+
+class UsageError extends Error {}
+class AttemptsExhaustedError extends Error {}
+
+// ------------------------------------------------------------------ argument parsing
+
+interface Parsed {
+  positionals: string[];
+  flags: Set<string>;
+  options: Map<string, string>;
+}
+
+/** Strict parsing: only the listed flags/options; no "--x=value"; nothing that looks like a secret. */
+export function parseArgs(args: readonly string[], allowed: { flags?: string[]; options?: string[]; positionals?: number }): Parsed {
+  const r: Parsed = { positionals: [], flags: new Set(), options: new Map() };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a.startsWith('--')) {
+      if (a.includes('=')) throw new UsageError(`Use "${a.split('=')[0]} <value>" (no "=").`);
+      if (allowed.flags?.includes(a)) r.flags.add(a);
+      else if (allowed.options?.includes(a)) {
+        const v = args[++i];
+        if (v === undefined || v.startsWith('--')) throw new UsageError(`${a} needs a value.`);
+        r.options.set(a, v);
+      } else throw new UsageError(`Unknown option ${a}. Secrets are never accepted as arguments.`);
+    } else r.positionals.push(a);
+  }
+  if (r.positionals.length !== (allowed.positionals ?? 0)) throw new UsageError(`Expected ${allowed.positionals ?? 0} argument(s).`);
+  return r;
+}
+
+// ------------------------------------------------------------------ interactive helpers
+
+async function askValid<T>(p: Prompter, ask: () => Promise<string>, parse: (raw: string) => { ok: true; value: T } | { ok: false; message: string }): Promise<T> {
+  for (let i = 0; i < 3; i++) {
+    const r = parse(await ask());
+    if (r.ok) return r.value;
+    p.say(`  ✗ ${r.message}`);
+  }
+  throw new AttemptsExhaustedError('Too many invalid attempts.');
+}
+
+async function askReason(p: Prompter): Promise<string> {
+  return askValid(p, () => p.ask('Reason for this action (recorded in the audit log, 3–200 characters): '), (raw) => {
+    const s = raw.normalize('NFC').trim();
+    if (s.length < 3 || s.length > 200 || /[\u0000-\u001f\u007f]/.test(s)) return { ok: false, message: 'Give a short reason of 3–200 characters.' };
+    return { ok: true, value: s };
+  });
+}
+
+async function askNewPassword(p: Prompter, role: 'admin' | 'trader'): Promise<string> {
+  const min = PASSWORD_POLICY.minChars[role];
+  // Not phrased like a prompt: an operator must not start typing before the hidden prompt appears.
+  p.say(`\nPassword rules: ${min}–${PASSWORD_POLICY.maxChars} characters. Wait for the hidden prompt below; nothing is echoed.`);
+  for (let i = 0; i < 3; i++) {
+    let first: string;
+    try {
+      first = await p.askHidden('New password: ');
+    } catch (err) {
+      if (err instanceof InputTooLongError) {
+        p.say('  ✗ The password is too long.');
+        continue;
+      }
+      throw err;
+    }
+    const issues = checkPasswordPolicy(first, role);
+    if (issues.length) {
+      p.say(`  ✗ The password does not meet the policy (${issues.join(', ')}).`);
+      continue;
+    }
+    if ((await p.askHidden('Confirm password: ')) !== first) {
+      p.say('  ✗ The passwords do not match.');
+      continue;
+    }
+    return first;
+  }
+  throw new AttemptsExhaustedError('Too many invalid password attempts.');
+}
+
+/** Shows a NEW secret once (terminal only) and requires a current code from it. */
+async function enrollTotp(p: Prompter, username: string, now: () => number): Promise<{ secret: Buffer; step: number }> {
+  const secret = generateTotpSecret();
+  p.say('\nAdd this account to an authenticator app (manual key entry, TOTP / SHA1 / 6 digits / 30 s):');
+  p.say(`  Secret: ${base32Encode(secret).replace(/(.{4})/g, '$1 ').trim()}`);
+  p.say(`  URI:    ${otpauthUri(secret, username)}`);
+  p.say('Keep this secret private. Do NOT paste it into online QR-code generators or any third-party service.');
+  try {
+    const step = await askValid(p, () => p.ask('Enter the current 6-digit code to confirm enrollment: '), (code) => {
+      const v = verifyTotp(secret, code.trim(), now());
+      return v.ok ? { ok: true, value: v.step } : { ok: false, message: 'Code not accepted. Check the device clock and try again.' };
+    });
+    return { secret, step };
+  } catch (err) {
+    secret.fill(0);
+    throw err;
+  }
+}
+
+/** Shows the target and requires typing its username again. */
+async function confirmTarget(p: Prompter, a: AccountSummary): Promise<void> {
+  p.say(`\nAccount: ${a.username}  (id ${a.id})`);
+  p.say(`  role: ${a.role} · profile: ${a.businessName ?? '—'} · status: ${a.merchantStatus ?? '—'} · active sessions: ${a.sessions}`);
+  const typed = await p.ask('Type the username again to confirm this account: ');
+  if (typed.trim().toLowerCase() !== a.username) throw new CancelledError();
+}
+
+// ------------------------------------------------------------------ maintenance database access
+
+/**
+ * Opens the EXISTING database for a maintenance command: instance lock (the server must be stopped),
+ * private permissions, local disk, schema exactly current (no silent migration). Normal runtime
+ * restrictions are not weakened: this is a separate, short-lived operator connection.
+ */
+async function withMaintenanceDb(ctx: OperatorContext, purpose: string, fn: (db: DatabaseSync) => Promise<number>): Promise<number> {
+  if (!existsSync(ctx.config.databasePath)) {
+    ctx.err(`Error [DATABASE_MISSING]: No database found. Initialize it first with: ${OPERATOR_COMMANDS.init}`);
+    return 1;
+  }
+  const lock = acquireInstanceLock(ctx.config.dataDir, `${purpose} (stop the server first)`);
+  try {
+    const db = openDatabase(ctx.config.databasePath, { mustExist: true });
+    try {
+      const state = inspectSchema(db, loadMigrations(ctx.migrationsDir));
+      if (state.kind !== 'current') {
+        ctx.err(state.kind === 'pending' ? `Error [MIGRATIONS_PENDING]: Apply pending migrations first: ${OPERATOR_COMMANDS.migrate}` : `Error [DATABASE_UNINITIALIZED]: Run ${OPERATOR_COMMANDS.init}`);
+        return 1;
+      }
+      return await fn(db);
+    } finally {
+      db.close();
+    }
+  } finally {
+    lock.release();
+  }
+}
+
+function requireAppSecret(ctx: OperatorContext): Buffer | null {
+  if (!ctx.config.appSecret) {
+    ctx.err('Error [APP_SECRET_REQUIRED]: APP_SECRET must be configured (the same one the server uses) to encrypt or check administrator MFA secrets.');
+    return null;
+  }
+  return ctx.config.appSecret;
+}
+
+async function lookup(ctx: OperatorContext, db: DatabaseSync, p: Prompter): Promise<AccountSummary> {
+  const username = await askValid(p, () => p.ask('Username of the account: '), (raw) => {
+    const r = usernameSchema.safeParse(raw.trim().toLowerCase());
+    if (!r.success) return { ok: false, message: 'Not a valid username.' };
+    const a = findAccount(db, r.data);
+    return a ? { ok: true, value: a } : { ok: false, message: 'No account with that username.' };
+  });
+  void ctx;
+  return username;
+}
+
+function handleKnown(ctx: OperatorContext, err: unknown): number {
+  if (err instanceof CancelledError) {
+    ctx.err('Cancelled. Nothing was saved.');
+    return 1;
+  }
+  if (err instanceof AttemptsExhaustedError) {
+    ctx.err(`${err.message} Nothing was saved.`);
+    return 1;
+  }
+  if (err instanceof RecoveryError || err instanceof BootstrapError || err instanceof BackupError || err instanceof DatabaseError) {
+    ctx.err(`Error [${err.code}]: ${err.message}`);
+    return 1;
+  }
+  if (err instanceof UsageError) {
+    ctx.err(`Usage error: ${err.message}`);
+    return 2;
+  }
+  throw err;
+}
+
+// ------------------------------------------------------------------ account commands
+
+export async function adminCreate(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    parseArgs(args, {});
+    const appSecret = requireAppSecret(ctx);
+    if (!appSecret) return 1;
+    return await withMaintenanceDb(ctx, 'admin:create', async (db) => {
+      const p = ctx.prompter();
+      try {
+        p.say('ALKHAYR — create an ADDITIONAL administrator (local operator only). Existing accounts are never promoted.');
+        p.say('Nothing is saved until every step succeeds. Press Ctrl-C at any time to cancel.\n');
+        const username = await askValid(p, () => p.ask('New administrator username: '), (raw) => {
+          const r = usernameSchema.safeParse(raw);
+          if (!r.success) return { ok: false, message: 'Use 3–32 lowercase letters, digits, ".", "_" or "-", starting with a letter or digit.' };
+          try {
+            assertUsernameAvailable(db, r.data);
+          } catch (err) {
+            if (err instanceof BootstrapError) return { ok: false, message: err.message };
+            throw err;
+          }
+          return { ok: true, value: r.data };
+        });
+        const raw: Record<string, string> = {};
+        const fields: Array<[keyof MerchantProfile, string]> = [
+          ['businessName', 'Business name: '],
+          ['contactName', 'Contact person: '],
+          ['phone', 'Phone (e.g. 01012345678): '],
+          ['governorate', 'Governorate: '],
+          ['address', 'Address: '],
+          ['email', 'Email (optional, Enter to skip): '],
+        ];
+        for (const [key, q] of fields) {
+          raw[key] = await askValid(p, () => p.ask(q), (answer) => {
+            const r = merchantProfileSchema.shape[key].safeParse(answer);
+            return r.success ? { ok: true, value: answer } : { ok: false, message: r.error.issues[0]?.message ?? 'Invalid value.' };
+          });
+        }
+        const profile = merchantProfileSchema.parse(raw);
+        const reason = await askReason(p);
+        const password = await askNewPassword(p, 'admin');
+        p.say('\nHashing password…');
+        const passwordHash = await (ctx.hasher ?? new PasswordHasher()).hash(password);
+        const { secret, step } = await enrollTotp(p, username, now);
+        const userId = randomUUID();
+        const totpCiphertext = encryptSecret(deriveKey(appSecret, 'totp'), secret, totpAad(userId));
+        secret.fill(0);
+        createAdditionalAdministrator(db, { userId, merchantId: randomUUID(), username, passwordHash, totpCiphertext, acceptedStep: step, profile, reason }, now(), randomUUID());
+        p.say(`\nAdministrator "${username}" created with MFA enrollment confirmed. Wait for the NEXT 30-second code before the first sign-in.`);
+        return 0;
+      } finally {
+        p.close();
+      }
+    });
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function accountResetPassword(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    parseArgs(args, {});
+    return await withMaintenanceDb(ctx, 'account:reset-password', async (db) => {
+      const p = ctx.prompter();
+      try {
+        p.say('ALKHAYR — reset an account password (local operator only). Role and approval status are not changed.');
+        const a = await lookup(ctx, db, p);
+        await confirmTarget(p, a);
+        const reason = await askReason(p);
+        const password = await askNewPassword(p, a.role);
+        p.say('\nHashing password…');
+        const passwordHash = await (ctx.hasher ?? new PasswordHasher()).hash(password);
+        const r = resetPassword(db, { userId: a.id, expectedCredentialVersion: a.credentialVersion, passwordHash, reason, now: now(), requestId: randomUUID() });
+        p.say(`\nPassword reset for "${a.username}". ${r.sessionsRevoked} session(s) revoked; sign-ins that started before this are refused.`);
+        return 0;
+      } finally {
+        p.close();
+      }
+    });
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function accountResetMfa(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    parseArgs(args, {});
+    const appSecret = requireAppSecret(ctx);
+    if (!appSecret) return 1;
+    return await withMaintenanceDb(ctx, 'account:reset-mfa', async (db) => {
+      const p = ctx.prompter();
+      try {
+        p.say('ALKHAYR — replace an administrator authenticator (local operator only).');
+        p.say('Verify the administrator\'s identity out of band first. The current enrollment stays valid until the new one is proven.');
+        const a = await lookup(ctx, db, p);
+        if (a.role !== 'admin') throw new RecoveryError('NOT_ADMIN', 'Only administrator accounts use an authenticator. Nothing was changed.');
+        await confirmTarget(p, a);
+        const reason = await askReason(p);
+        const { secret, step } = await enrollTotp(p, a.username, now);
+        const totpCiphertext = encryptSecret(deriveKey(appSecret, 'totp'), secret, totpAad(a.id));
+        secret.fill(0);
+        const r = replaceTotp(db, { userId: a.id, expectedCredentialVersion: a.credentialVersion, totpCiphertext, acceptedStep: step, reason, now: now(), requestId: randomUUID() });
+        p.say(`\nAuthenticator replaced for "${a.username}". ${r.sessionsRevoked} session(s) revoked. The old authenticator no longer works. Wait for the NEXT code before signing in.`);
+        return 0;
+      } finally {
+        p.close();
+      }
+    });
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function accountRevokeSessions(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    parseArgs(args, {});
+    return await withMaintenanceDb(ctx, 'account:revoke-sessions', async (db) => {
+      const p = ctx.prompter();
+      try {
+        p.say('ALKHAYR — revoke all sessions of an account (local operator only). Credentials are not changed.');
+        const a = await lookup(ctx, db, p);
+        await confirmTarget(p, a);
+        const reason = await askReason(p);
+        const r = revokeSessions(db, { userId: a.id, expectedCredentialVersion: a.credentialVersion, reason, now: now(), requestId: randomUUID() });
+        p.say(`\n${r.sessionsRevoked} session(s) revoked for "${a.username}". If the password may be known to someone else, also run account:reset-password.`);
+        return 0;
+      } finally {
+        p.close();
+      }
+    });
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+// ------------------------------------------------------------------ backup commands
+
+function forbiddenKeyDirs(c: AppConfig): string[] {
+  return [c.dataDir, c.backupDir];
+}
+
+/** The backup key: a protected key file (--key-file) or hidden terminal input. Never an argument. */
+async function backupKey(ctx: OperatorContext, parsed: Parsed): Promise<Buffer> {
+  const file = parsed.options.get('--key-file');
+  if (file) return readKeyFile(path.resolve(file), forbiddenKeyDirs(ctx.config));
+  const p = ctx.prompter();
+  try {
+    return parseBackupKey(await p.askHidden('Backup key (hidden): '));
+  } finally {
+    p.close();
+  }
+}
+
+function migrations(ctx: OperatorContext): Migration[] {
+  return loadMigrations(ctx.migrationsDir);
+}
+
+export async function backupKeygen(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    const a = parseArgs(args, { options: ['--out'] });
+    const out = a.options.get('--out');
+    if (!out) throw new UsageError('backup:keygen --out <path-outside-data-and-backup-directories>');
+    const id = writeNewKeyFile(path.resolve(out), forbiddenKeyDirs(ctx.config));
+    ctx.out(`New backup key written (permissions 0600). Key id: ${id}`);
+    ctx.out('Copy this key file to protected offline storage now (separately from APP_SECRET and from the backups). Without it the backups cannot be decrypted.');
+    return 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function backupCreate(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    const a = parseArgs(args, { options: ['--key-file', '--keep'] });
+    const keep = a.options.has('--keep') ? Number(a.options.get('--keep')) : null;
+    if (keep !== null && (!Number.isSafeInteger(keep) || keep < 1 || keep > 1000)) throw new UsageError('--keep must be a whole number from 1 to 1000.');
+    if (!existsSync(ctx.config.databasePath)) throw new BackupError('DATABASE_MISSING', 'No database found to back up.');
+    const key = await backupKey(ctx, a);
+    try {
+      const created = await createBackup({ databasePath: ctx.config.databasePath, dataDir: ctx.config.dataDir, backupDir: ctx.config.backupDir, backupKey: key, appSecret: ctx.config.appSecret, migrations: migrations(ctx), now });
+      ctx.out(`Backup created and verified: ${created.file}`);
+      ctx.out(JSON.stringify({ backupId: created.header.backupId, createdAt: new Date(created.header.createdAt).toISOString(), schemaVersion: created.header.schemaVersion, keyId: created.header.keyId, appSecretId: created.header.appSecretId, bytes: created.header.plaintextBytes, checks: created.summary.checks, mfa: created.summary.mfa }, null, 2));
+      if (created.summary.mfa === 'not_checked') ctx.out('Warning: APP_SECRET was not configured, so administrator MFA readability was not checked.');
+      ctx.out('This copy is on this server only. Copy it off the server (and keep the backup key and APP_SECRET separately) to survive a lost disk.');
+      if (keep !== null) {
+        const r = await pruneBackups(ctx.config.backupDir, keep);
+        ctx.out(`Rotation: kept ${r.kept.length}, deleted ${r.deleted.length} older managed backup(s); newest verified: ${r.newestVerified ?? 'none'}.`);
+      }
+      return 0;
+    } finally {
+      key.fill(0);
+    }
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function backupInspect(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    const a = parseArgs(args, { positionals: 1 });
+    const h = readHeader(path.resolve(a.positionals[0]!));
+    const secretMatch = ctx.config.appSecret && h.header.appSecretId ? h.header.appSecretId === appSecretId(ctx.config.appSecret) : null;
+    ctx.out(JSON.stringify({ note: 'Unverified metadata (authenticated only by backup:verify).', backupId: h.header.backupId, createdAt: new Date(h.header.createdAt).toISOString(), formatVersion: h.header.formatVersion, schemaVersion: h.header.schemaVersion, keyId: h.header.keyId, appSecretId: h.header.appSecretId, configuredAppSecretMatches: secretMatch, plaintextBytes: h.header.plaintextBytes }, null, 2));
+    return 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function backupVerify(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    const a = parseArgs(args, { positionals: 1, options: ['--key-file'] });
+    const file = path.resolve(a.positionals[0]!);
+    const key = await backupKey(ctx, a);
+    // Private staging inside the data directory's parent area: same protection as the live database.
+    const staging = makeStaging(ctx.config.dataDir);
+    try {
+      const target = path.join(staging, 'verify.db');
+      const header = await decryptBackup(file, key, target);
+      const summary = verifyDatabaseFile(target, { migrations: migrations(ctx), appSecret: ctx.config.appSecret });
+      await markVerified(file, header);
+      ctx.out(`Backup verified: ${path.basename(file)} (key id ${keyId(key)}).`);
+      ctx.out(JSON.stringify({ backupId: header.backupId, createdAt: new Date(header.createdAt).toISOString(), ...summary }, null, 2));
+      if (summary.pendingMigrations.length) ctx.out(`Note: restoring it requires ${OPERATOR_COMMANDS.migrate} afterwards (${summary.pendingMigrations.join(', ')}).`);
+      return 0;
+    } finally {
+      rmSync(staging, { recursive: true, force: true });
+      key.fill(0);
+    }
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function backupRestore(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  const now = ctx.now ?? Date.now;
+  try {
+    const a = parseArgs(args, { positionals: 1, options: ['--key-file'], flags: ['--replace', '--accept-new-app-secret'] });
+    const file = path.resolve(a.positionals[0]!);
+    if (!ctx.config.appSecret) {
+      ctx.err('Error [APP_SECRET_REQUIRED]: Configure the APP_SECRET that belongs to this backup before restoring.');
+      return 1;
+    }
+    const key = await backupKey(ctx, a);
+    const lock = acquireInstanceLock(ctx.config.dataDir, 'backup:restore (stop the server first)');
+    try {
+      const r = await restoreBackup({
+        file,
+        backupKey: key,
+        dataDir: ctx.config.dataDir,
+        databasePath: ctx.config.databasePath,
+        migrations: migrations(ctx),
+        appSecret: ctx.config.appSecret,
+        replace: a.flags.has('--replace'),
+        acceptNewAppSecret: a.flags.has('--accept-new-app-secret'),
+        now,
+      });
+      ctx.out(`Restored backup ${r.header.backupId} (created ${new Date(r.header.createdAt).toISOString()}) into ${ctx.config.databasePath}.`);
+      if (r.previousMovedTo) ctx.out(`The previous database was kept unchanged in ${r.previousMovedTo}.`);
+      ctx.out(`${r.sessionsRemoved} restored session(s) removed: every user must sign in again.`);
+      ctx.out('IMPORTANT: the restored data is an OLDER point in time. Orders, stock movements, imports and accounts created after the backup are missing.');
+      ctx.out('Reconcile with the business (orders, deliveries, stock counts) BEFORE reopening the portal to traders.');
+      if (r.summary.pendingMigrations.length) ctx.out(`Before starting the server run: ${OPERATOR_COMMANDS.migrate}`);
+      if (r.summary.mfa === 'unreadable_accepted') ctx.out('Administrator MFA cannot be decrypted with this APP_SECRET: the server will refuse to start until every administrator is re-enrolled with account:reset-mfa.');
+      return 0;
+    } finally {
+      lock.release();
+      key.fill(0);
+    }
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function backupPrune(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    const a = parseArgs(args, { options: ['--keep'] });
+    const keep = Number(a.options.get('--keep'));
+    if (!a.options.has('--keep') || !Number.isSafeInteger(keep) || keep < 1 || keep > 1000) throw new UsageError('backup:prune --keep <n>  (n = 1..1000)');
+    const r = await pruneBackups(ctx.config.backupDir, keep);
+    ctx.out(JSON.stringify(r, null, 2));
+    if (!r.newestVerified) ctx.out('Warning: no verified backup exists. Run backup:verify on the newest backup.');
+    return 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+export async function backupStatusCommand(ctx: OperatorContext, args: readonly string[]): Promise<number> {
+  try {
+    parseArgs(args, {});
+    const s = await backupStatus({ backupDir: ctx.config.backupDir, dataDir: ctx.config.dataDir, databasePath: ctx.config.databasePath, now: (ctx.now ?? Date.now)() });
+    ctx.out(JSON.stringify({ ...s, managedBackups: listBackups(ctx.config.backupDir).map((b) => b.name) }, null, 2));
+    return s.warnings.length ? 3 : 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}

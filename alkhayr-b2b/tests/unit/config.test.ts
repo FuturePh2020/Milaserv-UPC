@@ -38,11 +38,12 @@ describe('loadConfig', () => {
     assert.equal(c.port, 3000);
   });
 
-  test('production requires https origin and both secrets', () => {
+  test('production requires https origin and APP_SECRET; the server does not need the backup key (stage 15)', () => {
     const issues = issuesOf(() => loadConfig({ NODE_ENV: 'production', APP_ORIGIN: 'http://shop.example.com' }, base));
     assert.ok(issues.includes('APP_ORIGIN must use https in production'));
     assert.ok(issues.includes('APP_SECRET is required in production'));
-    assert.ok(issues.includes('BACKUP_KEY is required in production'));
+    // Backups use a separate key file or hidden input, kept apart from APP_SECRET (stage 15, D-146).
+    assert.ok(!issues.some((i) => i.includes('BACKUP_KEY')));
   });
 
   test('production requires APP_ORIGIN explicitly', () => {

@@ -84,7 +84,7 @@ const PLACEHOLDER_PATTERN = /change[_-]?me|replace[_-]?me|placeholder|example|yo
 const MIN_SECRET_BYTES = 32;
 
 /** Decode and check a base64url secret. Returns an issue string or the bytes. */
-function parseSecret(name: string, raw: string): Buffer | string {
+export function parseSecret(name: string, raw: string): Buffer | string {
   if (PLACEHOLDER_PATTERN.test(raw)) return `${name} is a placeholder value; generate a real random secret`;
   if (!/^[A-Za-z0-9_-]+$/.test(raw)) return `${name} must be base64url (A-Z a-z 0-9 - _ only, no padding)`;
   const bytes = Buffer.from(raw, 'base64url');
@@ -144,7 +144,8 @@ export function loadConfig(env: NodeJS.ProcessEnv, options: LoadConfigOptions): 
   for (const name of ['APP_SECRET', 'BACKUP_KEY'] as const) {
     const raw = e[name];
     if (raw === undefined) {
-      if (isProduction) issues.push(`${name} is required in production`);
+      // Stage 15: the server no longer needs BACKUP_KEY (backups use a separate key file or hidden input).
+      if (isProduction && name === 'APP_SECRET') issues.push(`${name} is required in production`);
       continue;
     }
     const result = parseSecret(name, raw);

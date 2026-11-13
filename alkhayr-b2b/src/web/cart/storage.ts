@@ -31,9 +31,20 @@ export interface PendingSubmission {
   createdAt: number;
 }
 
+/**
+ * A pending submission saved by an OLDER release (without the reviewed terms required since stage 14)
+ * cannot be resent safely. Only this non-sensitive trace is kept so the trader is told that the order
+ * MAY already exist; the old key and payload are discarded and nothing is resubmitted.
+ */
+export interface LegacySubmissionNotice {
+  createdAt: number;
+  lines: number;
+}
+
 export interface Draft {
   cart: Cart;
   pending: PendingSubmission | null;
+  legacyNotice?: LegacySubmissionNotice | null;
 }
 
 /** The subset of the Web Storage API used here (typed locally so tests can run without the DOM lib). */
@@ -112,7 +123,31 @@ export function loadDraft(scope: DraftScope, now: number = Date.now()): Draft {
     .map(parseLine)
     .filter((l): l is CartLine => l !== null && !seen.has(l.productId) && Boolean(seen.add(l.productId)))
     .slice(0, MAX_LINES);
-  return { cart: { lines }, pending: parsePending(raw.pending) };
+  const pending = parsePending(raw.pending);
+  let legacyNotice = parseLegacyNotice(raw.legacyNotice);
+  if (!pending && raw.pending !== undefined && raw.pending !== null) {
+    const old = legacyPending(raw.pending);
+    if (old) legacyNotice = old;
+    // Rewrite immediately: the incompatible payload is never kept or trusted.
+    try {
+      s.setItem(key, JSON.stringify({ v: 1, savedAt: raw.savedAt, lines, pending: null, legacyNotice }));
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  return { cart: { lines }, pending, legacyNotice };
+}
+
+/** An older-release pending submission: the shape it had before `expectedTerms` existed. */
+function legacyPending(v: unknown): LegacySubmissionNotice | null {
+  if (!isObj(v) || !str(v.requestKey, 36) || !UUID.test(v.requestKey) || !int(v.createdAt, 1, Number.MAX_SAFE_INTEGER) || !isObj(v.payload)) return null;
+  const items = v.payload.items;
+  if (!Array.isArray(items) || items.length < 1 || items.length > MAX_LINES || v.payload.expectedTerms !== undefined) return null;
+  return { createdAt: v.createdAt, lines: items.length };
+}
+
+function parseLegacyNotice(v: unknown): LegacySubmissionNotice | null {
+  return isObj(v) && int(v.createdAt, 1, Number.MAX_SAFE_INTEGER) && int(v.lines, 1, MAX_LINES) ? { createdAt: v.createdAt, lines: v.lines } : null;
 }
 
 export function saveDraft(scope: DraftScope, draft: Draft, now: number = Date.now()): void {
@@ -120,8 +155,8 @@ export function saveDraft(scope: DraftScope, draft: Draft, now: number = Date.no
   if (!s) return;
   const key = draftKey(scope);
   try {
-    if (draft.cart.lines.length === 0 && !draft.pending) s.removeItem(key);
-    else s.setItem(key, JSON.stringify({ v: 1, savedAt: now, lines: draft.cart.lines, pending: draft.pending }));
+    if (draft.cart.lines.length === 0 && !draft.pending && !draft.legacyNotice) s.removeItem(key);
+    else s.setItem(key, JSON.stringify({ v: 1, savedAt: now, lines: draft.cart.lines, pending: draft.pending, ...(draft.legacyNotice ? { legacyNotice: draft.legacyNotice } : {}) }));
   } catch {
     // Quota exceeded or storage disabled: keep working in memory.
   }

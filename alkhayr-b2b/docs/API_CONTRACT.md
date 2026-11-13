@@ -398,3 +398,8 @@ written after re-checking the session, role and recent authentication, before th
 | GET `/api/v1/admin/imports?[mode][&limit][&cursor]` | D | committed batches newest first, signed keyset cursor bound to the administrator and filters: `{items:[{id, mode, recordCount, fileBytes, createdAt, actor}], nextCursor}` |
 | GET `/api/v1/admin/imports/:id` | D | `{import:{id, mode, recordCount, fileBytes, createdAt, actor, items:[{recordNo, line, productId, productName, ledgerId, productVersionAfter}]}}` |
 No operation keys, digests, content hashes, preview tokens or file content are returned. There is no "run again".
+
+## Stage 15 note
+No HTTP endpoint was added or changed. Backups, restores and account recovery are operator CLI commands on the
+server host only (see `BACKUP_RECOVERY_AR.md`). Login now also fails (generic `INVALID_CREDENTIALS`) when an operator
+changed the account's credentials while the request was in flight.

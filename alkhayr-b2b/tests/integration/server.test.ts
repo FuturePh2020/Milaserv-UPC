@@ -329,7 +329,7 @@ describe('production configuration fails closed', () => {
     const r = await runUntilExit(app, baseEnv({ NODE_ENV: 'production', APP_ORIGIN: 'https://portal.example.test', APP_SECRET: '', BACKUP_KEY: '' }));
     assert.equal(r.code, 1);
     assert.match(r.stderr, /APP_SECRET is required in production/);
-    assert.match(r.stderr, /BACKUP_KEY is required in production/);
+    assert.doesNotMatch(r.stderr, /BACKUP_KEY/, 'the server does not need the backup key (stage 15)');
   });
 
   test('placeholder or identical secrets -> exit 1', async () => {

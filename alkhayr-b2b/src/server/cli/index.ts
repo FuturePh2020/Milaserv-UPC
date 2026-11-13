@@ -8,7 +8,9 @@ import { acquireInstanceLock } from '../database/instance-lock.ts';
 import { applyMigrations, inspectSchema, loadMigrations, quickCheck, type Migration } from '../database/migrations.ts';
 import { OPERATOR_COMMANDS } from '../database/runtime.ts';
 import { createTerminalPrompter, NotInteractiveError, type Prompter } from './prompt.ts';
+import type { PasswordHasher } from '../auth/passwords.ts';
 import { setupAdmin } from './setup-admin.ts';
+import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
 
 /**
  * Trusted-operator command line. Runs on the server host only; nothing here is
@@ -31,6 +33,25 @@ Commands:
                                Requires an initialized database, APP_SECRET, a stopped server and
                                an interactive terminal. Takes no arguments; secrets are never
                                accepted on the command line.
+  admin:create                 Create an ADDITIONAL administrator (interactive; password + TOTP proof).
+  account:reset-password       Reset an account password (interactive; revokes its sessions).
+  account:reset-mfa            Replace an administrator authenticator (interactive; proof required).
+  account:revoke-sessions      Revoke all sessions of an account (interactive).
+                               Account commands need a stopped server, a confirmation of the target
+                               username and a reason; they are audited without any secret.
+  backup:keygen --out <file>   Create a NEW backup key file (0600) outside DATA_DIR and BACKUP_DIR.
+  backup:create [--key-file <file>] [--keep <n>]
+                               Consistent snapshot -> encrypt -> verify -> BACKUP_DIR (server may run).
+  backup:inspect <backup>      Show the (unverified) header metadata.
+  backup:verify <backup> [--key-file <file>]
+                               Decrypt into private staging and verify integrity, schema, invariants
+                               and APP_SECRET compatibility.
+  backup:restore <backup> [--key-file <file>] [--replace] [--accept-new-app-secret]
+                               Restore into DATA_DIR (server stopped). Refuses an existing database
+                               unless --replace (the old one is moved aside, never deleted).
+  backup:prune --keep <n>      Delete older managed backups; always keeps the newest verified one.
+  backup:status                Backup age, sizes, row counts and free space (exit 3 = warnings).
+                               Without --key-file the backup key is asked for with hidden input.
   help                         Show this help.
 
 Initialization sequence: db:init -> setup-admin -> start the server.
@@ -50,6 +71,8 @@ export interface CliContext {
   now?: () => number;
   /** Interactive input; defaults to the controlling terminal (refused when not a TTY). */
   createPrompter?: () => Prompter;
+  /** Password hasher override (tests use cheap parameters). */
+  hasher?: PasswordHasher;
 }
 
 function describePending(pending: readonly Migration[]): string {
@@ -154,6 +177,18 @@ function dbMigrate(ctx: CliContext, args: readonly string[]): number {
   }
 }
 
+function operatorCtx(ctx: CliContext): OperatorContext {
+  return {
+    config: ctx.config,
+    migrationsDir: ctx.migrationsDir,
+    out: ctx.io.out,
+    err: ctx.io.err,
+    prompter: ctx.createPrompter ?? (() => createTerminalPrompter()),
+    ...(ctx.hasher ? { hasher: ctx.hasher } : {}),
+    ...(ctx.now ? { now: ctx.now } : {}),
+  };
+}
+
 export async function runCli(argv: readonly string[], ctx: CliContext): Promise<number> {
   const [command, ...args] = argv;
   try {
@@ -175,6 +210,28 @@ export async function runCli(argv: readonly string[], ctx: CliContext): Promise<
         }
         return await setupAdmin({ config: ctx.config, migrationsDir: ctx.migrationsDir, prompter, err: ctx.io.err, ...(ctx.now ? { now: ctx.now } : {}) });
       }
+      case 'admin:create':
+        return await adminCreate(operatorCtx(ctx), args);
+      case 'account:reset-password':
+        return await accountResetPassword(operatorCtx(ctx), args);
+      case 'account:reset-mfa':
+        return await accountResetMfa(operatorCtx(ctx), args);
+      case 'account:revoke-sessions':
+        return await accountRevokeSessions(operatorCtx(ctx), args);
+      case 'backup:keygen':
+        return await backupKeygen(operatorCtx(ctx), args);
+      case 'backup:create':
+        return await backupCreate(operatorCtx(ctx), args);
+      case 'backup:inspect':
+        return await backupInspect(operatorCtx(ctx), args);
+      case 'backup:verify':
+        return await backupVerify(operatorCtx(ctx), args);
+      case 'backup:restore':
+        return await backupRestore(operatorCtx(ctx), args);
+      case 'backup:prune':
+        return await backupPrune(operatorCtx(ctx), args);
+      case 'backup:status':
+        return await backupStatusCommand(operatorCtx(ctx), args);
       case 'db:status':
         return dbStatus(ctx);
       case 'db:init':
@@ -193,6 +250,10 @@ export async function runCli(argv: readonly string[], ctx: CliContext): Promise<
   } catch (err) {
     if (err instanceof DatabaseError) {
       ctx.io.err(`Error [${err.code}]: ${err.message}`);
+      return 1;
+    }
+    if (err instanceof NotInteractiveError) {
+      ctx.io.err(`Error [NOT_INTERACTIVE]: ${err.message}`);
       return 1;
     }
     throw err;

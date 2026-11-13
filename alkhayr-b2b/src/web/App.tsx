@@ -24,6 +24,7 @@ import { PasswordChangePage } from './pages/auth/PasswordChange.tsx';
 import { RegisterPage } from './pages/auth/Register.tsx';
 import { CartPage } from './pages/cart/CartPage.tsx';
 import { CheckoutPage } from './pages/cart/Checkout.tsx';
+import { LegacySubmissionNotice } from './pages/cart/LegacySubmissionNotice.tsx';
 import { CatalogPage } from './pages/catalog/Catalog.tsx';
 import { ProductDetailPage } from './pages/catalog/ProductDetail.tsx';
 import { OrderDetailPage, OrdersPage } from './pages/orders/Orders.tsx';
@@ -117,7 +118,7 @@ function SignedInShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeRespon
   const r = route.path === '/' ? { ...route, path: '/catalog' } : route;
   const screen = r.path.startsWith('/admin') ? <ForbiddenView home={home} /> : (purchasingScreen(r, me, csrf, home) ?? <NotFoundView home={home} />);
   return (
-    <MerchantLayout kind="merchant" account={account} path={r.path} onLogout={onLogout} logoutBusy={logoutBusy} cartCount={cart.cart.lines.length}>
+    <MerchantLayout kind="merchant" account={account} path={r.path} onLogout={onLogout} logoutBusy={logoutBusy} cartCount={cart.cart.lines.length} banner={<LegacySubmissionNotice />}>
       {screen}
     </MerchantLayout>
   );

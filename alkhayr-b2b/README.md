@@ -2,7 +2,7 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 14 complete — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Stage 15 complete — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
 review/approval/suspension), product administration, the approved catalog, inventory
@@ -14,11 +14,12 @@ and the administration screens (merchant review, products, inventory and ledger,
 and safe CSV imports (create/update products, receive stock, set physical totals) with preview, all-or-nothing
 confirmation and durable idempotency (operator guide: [`docs/IMPORT_GUIDE_AR.md`](docs/IMPORT_GUIDE_AR.md)),
 and business settings, operational reports, spreadsheet-safe exports, pre-filled import templates and printable
-order summaries. See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
+order summaries, and encrypted backups with verified restore and operator account recovery
+(guide: [`docs/BACKUP_RECOVERY_AR.md`](docs/BACKUP_RECOVERY_AR.md)). See [`docs/PROJECT_STATE.md`](docs/PROJECT_STATE.md).
 
 ## Quick start (Node.js 24.22.1 required)
 ```sh
-cp .env.example .env      # local development; never commit .env; set APP_SECRET + BACKUP_KEY
+cp .env.example .env      # local development; never commit .env; set APP_SECRET
 npm ci
 npm run build
 npm run db:init           # 1. once: creates data/alkhayr.db (the server never creates or migrates it)
@@ -30,8 +31,8 @@ Health: `GET /healthz` (process alive) · `GET /readyz` (database ready).
 Component gallery (development builds only): `npm run dev`, then `http://localhost:3000/#/__gallery`.
 Operator procedures (database, administrator enrollment, upgrades): [`docs/MIGRATION.md`](docs/MIGRATION.md).
 
-Production requires `NODE_ENV=production`, an `https://` `APP_ORIGIN`, and independently generated
-`APP_SECRET` / `BACKUP_KEY` (see `.env.example`). Run one instance per data directory, on a local
+Production requires `NODE_ENV=production`, an `https://` `APP_ORIGIN` and a generated `APP_SECRET` (see
+`.env.example`); backups use a separate key file (`npm run cli -- backup:keygen --out <path>`). Run one instance per data directory, on a local
 disk, behind an HTTPS reverse proxy.
 
 ## Layout
@@ -45,6 +46,7 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/DATABASE.md` | Implemented schema, constraints, retention and migration policy |
 | `docs/MIGRATION.md` | Operator guide: init → admin enrollment → start, upgrades, startup refusals, recovery |
 | `docs/IMPORT_GUIDE_AR.md` | Operator guide (Arabic): CSV import modes, templates, rules, recovery |
+| `docs/BACKUP_RECOVERY_AR.md` | Operator guide (Arabic): backups, restore, account recovery cases A–F, retention, RPO/RTO |
 | `docs/API_CONTRACT.md` | `/api/v1` endpoints, errors, transitions |
 | `docs/DESIGN_SYSTEM.md` | Tokens, contrast, typography, components, shells, gallery |
 | `docs/FRONTEND_API.md` | Browser API client and identity rules |

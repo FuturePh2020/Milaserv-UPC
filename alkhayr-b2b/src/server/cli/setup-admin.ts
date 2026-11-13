@@ -113,7 +113,7 @@ export async function setupAdmin(ctx: SetupAdminContext): Promise<number> {
       }
       const profile = merchantProfileSchema.parse(raw);
 
-      p.say(`\nPassword: ${PASSWORD_POLICY.minChars.admin}–${PASSWORD_POLICY.maxChars} characters. Input is hidden; nothing is echoed.`);
+      p.say(`\nPassword rules: ${PASSWORD_POLICY.minChars.admin}–${PASSWORD_POLICY.maxChars} characters. Wait for the hidden prompt below; nothing is echoed.`);
       let password = '';
       for (let i = 0; ; i++) {
         if (i >= MAX_ATTEMPTS) throw new AttemptsExhaustedError('Too many invalid password attempts.');

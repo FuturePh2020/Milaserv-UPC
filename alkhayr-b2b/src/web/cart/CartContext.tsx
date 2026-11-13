@@ -1,11 +1,14 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { CatalogProduct } from '../api/contracts.ts';
 import { addProduct, EMPTY_CART, removeLine, setCartons, type Cart, type CartError } from './model.ts';
-import { loadDraft, purgeOtherDrafts, saveDraft, type DraftScope, type PendingSubmission } from './storage.ts';
+import { loadDraft, purgeOtherDrafts, saveDraft, type DraftScope, type LegacySubmissionNotice, type PendingSubmission } from './storage.ts';
 
 interface CartApi {
   cart: Cart;
   pending: PendingSubmission | null;
+  /** A submission from an older release whose outcome is unknown (stage 15 upgrade notice). */
+  legacyNotice: LegacySubmissionNotice | null;
+  dismissLegacyNotice: () => void;
   add: (product: CatalogProduct, cartons: number) => CartError | null;
   setQuantity: (productId: string, cartons: number) => void;
   remove: (productId: string) => void;
@@ -33,6 +36,8 @@ export function CartProvider({ scope, children }: { scope: DraftScope; children:
     () => ({
       cart: draft.cart,
       pending: draft.pending,
+      legacyNotice: draft.legacyNotice ?? null,
+      dismissLegacyNotice: () => setDraft((d) => ({ ...d, legacyNotice: null })),
       add: (product, cartons) => {
         const r = addProduct(draft.cart, product, cartons);
         if (!r.error) setDraft({ ...draft, cart: r.cart });
@@ -49,7 +54,7 @@ export function CartProvider({ scope, children }: { scope: DraftScope; children:
         setDraft(next);
       },
       complete: (clearCart) => {
-        const next = { cart: clearCart ? EMPTY_CART : draft.cart, pending: null };
+        const next = { ...draft, cart: clearCart ? EMPTY_CART : draft.cart, pending: null };
         saveDraft(scope, next);
         setDraft(next);
       },

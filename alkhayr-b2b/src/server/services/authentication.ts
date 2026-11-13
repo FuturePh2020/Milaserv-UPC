@@ -177,13 +177,15 @@ interface UserRow {
   role: Role;
   totp_ciphertext: string | null;
   last_otp_step: number | null;
+  /** Monotonic credential marker (migration 0007): +1 on every operator recovery action. */
+  credential_version: number;
   merchant_id: string | null;
   merchant_status: string | null;
   /** Monotonic authorization marker (migration 0002): +1 on every status change. */
   merchant_access_version: number | null;
 }
 
-const USER_BY_USERNAME = `SELECT u.id, u.username, u.password_hash, u.password_changed_at, u.role, u.totp_ciphertext, u.last_otp_step,
+const USER_BY_USERNAME = `SELECT u.id, u.username, u.password_hash, u.password_changed_at, u.role, u.totp_ciphertext, u.last_otp_step, u.credential_version,
                                  m.id AS merchant_id, m.status AS merchant_status, m.access_version AS merchant_access_version
                             FROM auth_users u LEFT JOIN merchants m ON m.user_id = u.id
                            WHERE u.username = ? COLLATE NOCASE`;
@@ -266,6 +268,11 @@ export async function login(ctx: RequestContext): Promise<void> {
     const t = now();
     const current = db.prepare(USER_BY_ID).get(user.id) as UserRow | undefined;
     if (!current || current.password_hash !== user.password_hash || current.role !== user.role || current.password_changed_at !== user.password_changed_at) {
+      return { ok: false as const, reason: 'stale_credentials' as const };
+    }
+    // Operator recovery (password reset, authenticator replacement, session revocation; stage 15) advances
+    // credential_version: a verification made with the old credentials or MFA secret is void.
+    if (current.credential_version !== user.credential_version || current.totp_ciphertext !== user.totp_ciphertext) {
       return { ok: false as const, reason: 'stale_credentials' as const };
     }
     if (!current.merchant_id || current.merchant_status === 'suspended') return { ok: false as const, reason: 'suspended' as const };
@@ -409,7 +416,7 @@ export async function changePassword(ctx: RequestContext): Promise<void> {
     const session = lookupSession(db, auth.token, t);
     if (session.kind !== 'valid' || session.identity.userId !== id.userId) return { ok: false as const, reason: 'session_ended', code: 'UNAUTHENTICATED' as const };
     const current = db.prepare(USER_BY_ID).get(id.userId) as UserRow | undefined;
-    if (!current || current.password_hash !== before.password_hash || current.password_changed_at !== before.password_changed_at) {
+    if (!current || current.password_hash !== before.password_hash || current.password_changed_at !== before.password_changed_at || current.credential_version !== before.credential_version) {
       return { ok: false as const, reason: 'stale_credentials', code: 'CREDENTIALS_CHANGED' as const };
     }
     if (acceptedStep !== null) {
