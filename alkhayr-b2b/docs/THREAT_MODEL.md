@@ -137,3 +137,10 @@ third-party content rendered by the browser only (never fetched server-side).
 | T84 | Stale spreadsheet overwrites stock or reservations | operator | required expectedVersion per record; set-total refused below reserved and for no-ops; reserved never changed | 13 ✅ |
 | T85 | Formula/HTML injection through imported text | malicious file author | text stored and rendered as text; no evaluation; spreadsheet-safe export deferred to stage 14 | 13 ✅ (export: 14) |
 | T86 | Barcode corruption by spreadsheet programs (leading zeros) | operator tooling | exact text kept; preview shows barcodes; documented warning (lost zeros cannot be recovered) | 13 (residual, documented) |
+| T112 | Direct access to the app port bypasses TLS/proxy limits | network neighbour / host process | internal network, no published port, `ACCEPT_ONLY_FROM_PROXY` drops non-proxy TCP | 17 ✅ (local stack) |
+| T113 | Client-forged X-Forwarded-For through the proxy evades per-source limits | external | Caddy overwrites the header; app trusts only the proxy address | 17 ✅ (6th spoofed attempt 429) |
+| T114 | Secrets leaked via image layers, env, args or the web container | packaging error | build-secret CA only for npm; secret files with mode checks; backup key/offsite creds only in `backup` | 17 ✅ (image inspected) |
+| T115 | Off-server copy assumed good without proof | operations | download + SHA-256 + decrypt + consistency before recording; status/alerts | 17 ✅ (local S3 test; real destination NOT RUN) |
+| T116 | Vulnerable OS packages in the runtime image | supply chain | distroless runtime, digest pins, Trivy scan in the release procedure | 17 (0 critical/high app image; Caddy 2 high assessed) |
+| T117 | Credentials or tokens in proxy access logs | operations | Caddy log filter deletes Cookie/Authorization/X-CSRF-Token/Set-Cookie and query strings; IP masking | 17 ✅ |
+| T118 | Restart loop or premature reopening driven by health checks | operations | liveness-only container health check; recovery reopen is an audited operator command | 17 ✅ |

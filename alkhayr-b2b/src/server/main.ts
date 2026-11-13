@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApp } from './app.ts';
+import { normalizeIp, trustedProxySet } from './http/client-ip.ts';
 import { cleanStale } from './backup/backup.ts';
 import { writeStatus } from './http/write-gate.ts';
 import { ConfigError, describeConfig, loadConfig } from './config.ts';
@@ -96,6 +97,17 @@ function main(): void {
     },
   );
   server.maxRequestsPerSocket = 1000;
+  // Stage 17: behind a reverse proxy, accept TCP connections only from the proxy (and loopback for the
+  // container health check). Other processes on the host network cannot bypass the proxy's TLS/limits.
+  if (config.acceptOnlyFromProxy) {
+    const allowed = trustedProxySet(config.trustProxy);
+    server.on('connection', (socket) => {
+      const peer = normalizeIp(socket.remoteAddress);
+      if (peer === '127.0.0.1' || peer === '::1' || (peer !== null && allowed.has(peer))) return;
+      log.warn('connection_refused', { reason: 'not_from_proxy' });
+      socket.destroy();
+    });
+  }
 
   let shuttingDown = false;
   const shutdown = (signal: string) => {

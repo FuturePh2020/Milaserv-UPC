@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statfsSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
 import type { AppConfig } from '../config.ts';
 import { deriveKey, encryptSecret, totpAad } from '../auth/encryption.ts';
 import { checkPasswordPolicy, PASSWORD_POLICY, PasswordHasher } from '../auth/passwords.ts';
 import { base32Encode, generateTotpSecret, otpauthUri, verifyTotp } from '../auth/totp.ts';
-import { appSecretId, backupStatus, BackupError, createBackup, decryptBackup, keyId, listBackups, openStaging, markVerified, parseBackupKey, pruneBackups, readHeader, readKeyFile, restoreBackup, verifyDatabaseFile, writeNewKeyFile } from '../backup/backup.ts';
+import { appSecretId, backupStatus, BackupError, filesystemError, createBackup, decryptBackup, keyId, listBackups, openStaging, markVerified, parseBackupKey, pruneBackups, readHeader, readKeyFile, restoreBackup, verifyDatabaseFile, writeNewKeyFile } from '../backup/backup.ts';
 import { openDatabase } from '../database/connection.ts';
+import { loadJobSettings, readJobStatus, runBackupJob, type JobContext, type JobSettings } from '../ops/backup-job.ts';
+import { nextRun } from '../ops/schedule.ts';
+import { S3Client, S3Error } from '../ops/s3.ts';
+import { readSecretFile } from '../config.ts';
 import { verifyConsistency } from '../database/consistency.ts';
 import { readSystemState } from '../http/write-gate.ts';
 import { RecoveryModeError, reopenWrites } from '../services/recovery-mode.ts';
@@ -209,6 +213,13 @@ function handleKnown(ctx: OperatorContext, err: unknown): number {
   if (err instanceof UsageError) {
     ctx.err(`Usage error: ${err.message}`);
     return 2;
+  }
+  // Stage 17: filesystem refusals anywhere in a command (e.g. a backup directory owned by another user)
+  // are reported with a generic code instead of a raw exception with paths.
+  const mapped = filesystemError(err, 'Nothing was changed.');
+  if (mapped instanceof BackupError) {
+    ctx.err(`Error [${mapped.code}]: ${mapped.message}`);
+    return 1;
   }
   throw err;
 }
@@ -628,6 +639,214 @@ export async function recoveryReopen(ctx: OperatorContext, args: readonly string
   } catch (err) {
     if (err instanceof RecoveryModeError) {
       ctx.err(`Error [${err.code}]: ${err.message}`);
+      return 1;
+    }
+    return handleKnown(ctx, err);
+  }
+}
+
+// ------------------------------------------------------------------ scheduled backups and monitoring (stage 17)
+
+function jobContext(ctx: OperatorContext, settings: JobSettings): JobContext {
+  return {
+    settings,
+    backupDir: ctx.config.backupDir,
+    dataDir: ctx.config.dataDir,
+    databasePath: ctx.config.databasePath,
+    appSecret: ctx.config.appSecret,
+    migrations: migrations(ctx),
+    now: ctx.now ?? Date.now,
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    // One JSON line per event (codes and names only; never secrets or contents).
+    log: (event, fields = {}) => ctx.out(JSON.stringify({ time: new Date().toISOString(), event, ...fields })),
+  };
+}
+
+/** `backup:run` — one scheduled-backup job now (for host schedulers such as a systemd timer). Exit 0/1. */
+export async function backupRun(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  try {
+    parseArgs(args, {});
+    const status = await runBackupJob(jobContext(ctx, loadJobSettings(env)));
+    return status.lastResult === 'failed' ? 1 : 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+/**
+ * `backup:schedule` — long-running scheduler for the backup container: runs `backup:run` at the configured
+ * local times (BACKUP_SCHEDULE in BACKUP_TZ). Never overlaps (job lock); SIGTERM/SIGINT stop it between jobs
+ * (a running job is allowed to finish within the container's stop grace period).
+ */
+export async function backupSchedule(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env, signals: NodeJS.EventEmitter = process): Promise<number> {
+  try {
+    parseArgs(args, {});
+    const settings = loadJobSettings(env);
+    const jc = jobContext(ctx, settings);
+    let stopping = false;
+    let wake: (() => void) | null = null;
+    let timer: NodeJS.Timeout | null = null;
+    const stop = () => {
+      stopping = true;
+      // Clear the pending sleep so the process exits at once (found in the stage-17 upgrade rehearsal:
+      // a pending 60 s timer kept the stopped scheduler alive for ~40 s).
+      if (timer) clearTimeout(timer);
+      wake?.();
+    };
+    signals.on('SIGTERM', stop);
+    signals.on('SIGINT', stop);
+    try {
+      jc.log('backup_scheduler_started', { schedule: settings.times.map((t) => `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`).join(','), timeZone: settings.timeZone, offsite: settings.offsite ? 'configured' : 'not_configured' });
+      while (!stopping) {
+        const at = nextRun(jc.now(), settings.times, settings.timeZone);
+        jc.log('backup_next_run', { at: new Date(at).toISOString() });
+        // Sleep in short slices so wall-clock jumps and stop signals are noticed.
+        while (!stopping && jc.now() < at) {
+          await new Promise<void>((r) => {
+            wake = r;
+            timer = setTimeout(r, Math.min(60_000, Math.max(0, at - jc.now())));
+          });
+          timer = null;
+        }
+        if (stopping) break;
+        await runBackupJob(jc);
+      }
+      jc.log('backup_scheduler_stopped');
+      return 0;
+    } finally {
+      signals.off('SIGTERM', stop);
+      signals.off('SIGINT', stop);
+    }
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+type Level = 'ok' | 'warn' | 'critical';
+interface Check {
+  name: string;
+  status: Level;
+  detail: string;
+}
+
+async function tlsDaysLeft(hostPort: string, caFile: string | undefined): Promise<{ daysLeft: number; error?: undefined } | { error: string }> {
+  const { connect } = await import('node:tls');
+  const [host, portRaw] = hostPort.split(':');
+  return new Promise((resolve) => {
+    const socket = connect({ host: host!, port: Number(portRaw ?? 443), servername: host!, ...(caFile ? { ca: readFileSync(caFile) } : {}), timeout: 10_000 }, () => {
+      const cert = socket.getPeerCertificate();
+      socket.end();
+      if (!socket.authorized) return resolve({ error: `certificate not trusted (${String(socket.authorizationError)})` });
+      resolve({ daysLeft: Math.floor((Date.parse(cert.valid_to) - Date.now()) / 86_400_000) });
+    });
+    socket.on('error', (e) => resolve({ error: (e as NodeJS.ErrnoException).code ?? 'tls_error' }));
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve({ error: 'timeout' });
+    });
+  });
+}
+
+/**
+ * `ops:status [--tls-host host[:port]] [--tls-ca file] [--skip-consistency]` — private operational status for
+ * monitoring (JSON on stdout; exit 0 ok, 3 warning, 1 critical). Separates "process alive" (not checked here;
+ * use /healthz) from "writes are safe" (recovery mode, consistency) and from data protection (backup ages,
+ * off-server copy, abandoned plaintext, free space) and certificate expiry. Thresholds: MONITOR_* variables.
+ */
+export async function opsStatus(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  try {
+    const a = parseArgs(args, { options: ['--tls-host', '--tls-ca'], flags: ['--skip-consistency'] });
+    const num = (k: string, d: number) => (env[k] && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
+    const now = (ctx.now ?? Date.now)();
+    const checks: Check[] = [];
+    const add = (name: string, status: Level, detail: string) => checks.push({ name, status, detail });
+    if (!existsSync(ctx.config.databasePath)) add('database', 'critical', 'database file missing');
+    else {
+      const db = openDatabase(ctx.config.databasePath, { mustExist: true });
+      try {
+        const st = readSystemState(db);
+        add('writes', st.writeMode === 'recovery' ? 'warn' : 'ok', st.writeMode === 'recovery' ? 'RECOVERY MODE: new business writes refused until recovery:reopen' : 'open');
+        if (!a.flags.has('--skip-consistency')) {
+          const rep = verifyConsistency(db, { maxSamples: 0 });
+          add('consistency', rep.ok ? (rep.warnings ? 'warn' : 'ok') : 'critical', rep.ok ? `${rep.warnings} warning(s), ${rep.durationMs} ms` : `errors: ${rep.issues.filter((i) => i.severity === 'error').map((i) => `${i.code}×${i.count}`).join(', ')}`);
+        }
+        const failures = Number((db.prepare("SELECT count(*) AS n FROM audit_logs WHERE action = 'auth.login_failed' AND created_at > ?").get(now - 3_600_000) as { n: number }).n);
+        const limit = num('MONITOR_LOGIN_FAILURES_PER_HOUR', 200);
+        add('login_failures_last_hour', failures > limit ? 'warn' : 'ok', String(failures));
+      } finally {
+        db.close();
+      }
+    }
+    const bs = await backupStatus({ backupDir: ctx.config.backupDir, dataDir: ctx.config.dataDir, databasePath: ctx.config.databasePath, now });
+    const maxAge = num('MONITOR_BACKUP_MAX_AGE_HOURS', 26) * 3600;
+    add('local_backup', !bs.newestVerified ? 'critical' : bs.newestVerified.ageSeconds! > maxAge ? 'warn' : 'ok', bs.newestVerified ? `newest verified ${Math.round(bs.newestVerified.ageSeconds! / 3600)} h ago` : 'no verified backup');
+    add('plaintext_staging', bs.staging.abandonedPlaintext.length ? 'warn' : 'ok', `${bs.staging.abandonedPlaintext.length} abandoned, ${bs.staging.active.length} active, ${bs.staging.refused.length} unexpected`);
+    const job = readJobStatus(ctx.config.backupDir);
+    add('backup_job', !job ? 'warn' : job.consecutiveFailures > 0 ? (job.consecutiveFailures > 1 ? 'critical' : 'warn') : 'ok', job ? `last ${job.lastResult} at ${new Date(job.lastAttemptAt).toISOString()}${job.lastErrorCode ? ` (${job.lastErrorCode})` : ''}; consecutive failures ${job.consecutiveFailures}` : 'scheduler has not run');
+    const offMax = num('MONITOR_OFFSITE_MAX_AGE_HOURS', 50) * 3_600_000;
+    if (!job?.offsite.configured) add('offsite_copy', 'warn', 'off-server copy NOT configured (blocker B-2)');
+    else add('offsite_copy', !job.offsite.verifiedAt ? 'critical' : now - job.offsite.verifiedAt > offMax ? 'warn' : 'ok', job.offsite.verifiedAt ? `verified ${Math.round((now - job.offsite.verifiedAt) / 3_600_000)} h ago (downloaded, decrypted, consistency-checked)` : 'never verified');
+    const minFree = num('MONITOR_MIN_FREE_PERCENT', 10);
+    for (const [name, dir] of [['disk_data', ctx.config.dataDir], ['disk_backups', ctx.config.backupDir]] as const) {
+      try {
+        const fs = statfsSync(dir);
+        const pct = (fs.bavail / fs.blocks) * 100;
+        add(name, pct < minFree / 2 ? 'critical' : pct < minFree ? 'warn' : 'ok', `${pct.toFixed(1)}% free (${Math.round((fs.bavail * fs.bsize) / 1048576)} MiB)`);
+      } catch {
+        add(name, 'warn', 'not measurable');
+      }
+    }
+    const tlsHost = a.options.get('--tls-host');
+    if (tlsHost) {
+      const t = await tlsDaysLeft(tlsHost, a.options.get('--tls-ca'));
+      const minDays = num('MONITOR_CERT_MIN_DAYS', 14);
+      if ('error' in t && t.error) add('tls_certificate', 'critical', t.error);
+      else if (!('error' in t)) add('tls_certificate', t.daysLeft < 3 ? 'critical' : t.daysLeft < minDays ? 'warn' : 'ok', `${t.daysLeft} day(s) left`);
+    }
+    const overall: Level = checks.some((c) => c.status === 'critical') ? 'critical' : checks.some((c) => c.status === 'warn') ? 'warn' : 'ok';
+    ctx.out(JSON.stringify({ time: new Date(now).toISOString(), overall, checks }, null, 2));
+    return overall === 'critical' ? 1 : overall === 'warn' ? 3 : 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+/**
+ * `backup:offsite-get <backup-file-name>` — disaster recovery: downloads one backup object from the configured
+ * off-server storage into BACKUP_DIR (exclusive create, 0600). It does NOT trust the copy: run backup:verify
+ * (decrypt + consistency) and backup:restore next. Credentials come from the OFFSITE_*_FILE secret files.
+ */
+export async function backupOffsiteGet(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  try {
+    const a = parseArgs(args, { positionals: 1 });
+    const name = a.positionals[0]!;
+    if (!/^alkhayr-\d{8}-\d{6}-[0-9a-f]{8}\.akbk$/.test(name)) throw new UsageError('Give the backup file NAME (alkhayr-YYYYMMDD-HHMMSS-xxxxxxxx.akbk), not a path.');
+    const settings = loadJobSettings(env);
+    if (!settings.offsite) throw new BackupError('CONFIG_INVALID', 'Off-server storage is not configured (OFFSITE_* settings).');
+    const o = settings.offsite;
+    const access = readSecretFile('OFFSITE_S3_ACCESS_KEY_FILE', o.accessKeyFile);
+    const secret = readSecretFile('OFFSITE_S3_SECRET_KEY_FILE', o.secretKeyFile);
+    if (!access.ok || !secret.ok) throw new BackupError('CONFIG_INVALID', 'Off-server credentials cannot be read.');
+    const s3 = new S3Client({ endpoint: o.endpoint, region: o.region, bucket: o.bucket, prefix: o.prefix, pathStyle: o.pathStyle, accessKeyId: access.value, secretAccessKey: secret.value });
+    mkdirSync(ctx.config.backupDir, { recursive: true, mode: 0o700 });
+    const target = path.join(ctx.config.backupDir, name);
+    if (existsSync(target)) throw new BackupError('TARGET_EXISTS', 'A backup with this name already exists locally; nothing was downloaded.');
+    const partial = path.join(ctx.config.backupDir, `.${name}.partial`);
+    rmSync(partial, { force: true });
+    try {
+      const head = await s3.head(s3.key(name));
+      const got = await s3.getToFile(s3.key(name), partial);
+      if (got.bytes !== head.bytes) throw new BackupError('OFFSITE_MISMATCH', 'Downloaded size differs from the stored object.');
+      if (head.sha256Base64 && Buffer.from(got.hex, 'hex').toString('base64') !== head.sha256Base64) throw new BackupError('OFFSITE_MISMATCH', 'Downloaded checksum differs from the stored object.');
+      renameSync(partial, target);
+      ctx.out(`Downloaded ${name} (${got.bytes} bytes, sha256 ${got.hex}). NOT yet trusted: run backup:verify, then backup:restore.`);
+      return 0;
+    } finally {
+      rmSync(partial, { force: true });
+    }
+  } catch (err) {
+    if (err instanceof S3Error) {
+      ctx.err(`Error [OFFSITE_HTTP_${err.status}${err.s3Code ? `_${err.s3Code}` : ''}]: ${err.message}`);
       return 1;
     }
     return handleKnown(ctx, err);

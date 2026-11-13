@@ -1,0 +1,69 @@
+# ALKHAYR B2B — Caddy reverse proxy (stage 17).
+# TLS_MODE=acme     → publicly trusted certificate via ACME (Let's Encrypt/ZeroSSL; needs public DNS + ports 80/443)
+# TLS_MODE=internal → Caddy's LOCAL CA (local staging/testing only; NOT publicly trusted)
+{
+	admin off
+	servers {
+		timeouts {
+			read_header 15s
+			read_body 2m
+			write 5m
+			idle 2m
+		}
+		# No trusted_proxies: Caddy is the edge; client-supplied X-Forwarded-* are never trusted.
+		# The Host header must match the TLS SNI name (domain-fronting / host confusion → 421).
+		strict_sni_host on
+	}
+}
+
+(tls-acme) {
+	# ACME account e-mail (required in acme mode; an empty value makes the configuration invalid).
+	tls {$ACME_EMAIL}
+}
+(tls-internal) {
+	tls internal
+}
+
+{$PUBLIC_HOST} {
+	import tls-{$TLS_MODE}
+
+	# Bodies: imports are ≤ 2 MiB JSON (base64 CSV); everything else is small.
+	request_body {
+		max_size 3MB
+	}
+
+	# Security headers (CSP, HSTS in production, nosniff, frame, referrer…) come from the application —
+	# not duplicated here. Only the proxy's own identifying header is removed.
+	header -Server
+
+	reverse_proxy {$APP_UPSTREAM} {
+		# Overwrite (never append) forwarding headers with what Caddy itself observed.
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto https
+		header_up -Forwarded
+		header_up -X-Real-IP
+		header_up -X-Forwarded-Host
+		transport http {
+			dial_timeout 5s
+			response_header_timeout 5m
+		}
+	}
+
+	# Access log without credentials, CSRF tokens, cookies or query strings.
+	log {
+		output stdout
+		format filter {
+			request>headers>Cookie delete
+			request>headers>Authorization delete
+			request>headers>X-Csrf-Token delete
+			request>headers>X-Forwarded-For delete
+			request>headers>X-Real-Ip delete
+			request>headers>Forwarded delete
+			resp_headers>Set-Cookie delete
+			request>uri regexp \?.*$ ?[query-removed]
+			request>remote_ip ip_mask 24 48
+			request>client_ip ip_mask 24 48
+			wrap json
+		}
+	}
+}

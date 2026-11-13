@@ -25,5 +25,6 @@ export function applySecurityHeaders(res: ServerResponse, isProduction: boolean)
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
-  if (isProduction) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  // Stage 17: no includeSubDomains/preload — other subdomains of the business domain are not ours to force.
+  if (isProduction) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
 }

@@ -1,0 +1,150 @@
+# ALKHAYR B2B — production-like deployment (stage 17). One application instance, SQLite on a persistent local
+# volume, Caddy for HTTPS, a separate backup scheduler. Read docs/DEPLOYMENT_AR.md before using it.
+#
+#   docker compose --env-file .env -f compose.yaml up -d proxy app backup      # after the one-time bootstrap
+#   docker compose --env-file .env -f compose.yaml run --rm cli <command>      # operator commands
+#
+# Never scale `app` beyond one replica; never put the data volume on NFS/SMB; never mount the source tree.
+name: alkhayr
+
+x-app-image: &app-image
+  image: alkhayr-b2b:${ALKHAYR_VERSION:?set ALKHAYR_VERSION}
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:size=16m,mode=1777"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "5" }
+
+services:
+  app:
+    <<: [*app-image, *hardening]
+    user: "1000:1000"
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: https://${PUBLIC_HOST:?set PUBLIC_HOST}
+      APP_SECRET_FILE: /run/secrets/app_secret
+      # Only the proxy's fixed address on the private network is trusted for X-Forwarded-For.
+      TRUST_PROXY: ${PROXY_IP:-172.30.10.2}
+      # …and connections from anything else (e.g. other processes on the host bridge) are dropped.
+      ACCEPT_ONLY_FROM_PROXY: "1"
+      HOST: 0.0.0.0
+      PORT: "3000"
+      LOG_LEVEL: info
+      SHUTDOWN_GRACE_MS: "15000"
+    secrets: [app_secret]
+    volumes:
+      - alkhayr-data:/data
+    networks:
+      app_net: { ipv4_address: "${APP_IP:-172.30.10.3}" }
+    # No `ports:` — the application port is reachable only from the proxy on the internal network.
+    stop_grace_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 1024M, pids: 256 }
+
+  proxy:
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=16m"]
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      TLS_MODE: ${TLS_MODE:-acme}
+      APP_UPSTREAM: "${APP_IP:-172.30.10.3}:3000"
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      app_net: { ipv4_address: "${PROXY_IP:-172.30.10.2}" }
+      edge: {}
+    depends_on: [app]
+    stop_grace_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 256M, pids: 128 }
+
+  backup:
+    <<: [*app-image, *hardening]
+    user: "1000:1000"
+    entrypoint: ["/nodejs/bin/node", "dist/server/cli.js", "backup:schedule"]
+    healthcheck: { disable: true }
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: https://${PUBLIC_HOST:?set PUBLIC_HOST}
+      APP_SECRET_FILE: /run/secrets/app_secret
+      BACKUP_KEY_FILE: /run/secrets/backup_key
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-02:17}
+      BACKUP_TZ: ${BACKUP_TZ:-Africa/Cairo}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      BACKUP_RETRIES: ${BACKUP_RETRIES:-2}
+      OFFSITE_S3_ENDPOINT: ${OFFSITE_S3_ENDPOINT:-}
+      OFFSITE_S3_REGION: ${OFFSITE_S3_REGION:-}
+      OFFSITE_S3_BUCKET: ${OFFSITE_S3_BUCKET:-}
+      OFFSITE_S3_PREFIX: ${OFFSITE_S3_PREFIX:-}
+      OFFSITE_S3_PATH_STYLE: ${OFFSITE_S3_PATH_STYLE:-false}
+      OFFSITE_S3_ACCESS_KEY_FILE: ${OFFSITE_S3_ACCESS_KEY_FILE:-}
+      OFFSITE_S3_SECRET_KEY_FILE: ${OFFSITE_S3_SECRET_KEY_FILE:-}
+    # The backup key and storage credentials exist ONLY in this service (never in `app`).
+    secrets: [app_secret, backup_key, offsite_access_key, offsite_secret_key]
+    volumes:
+      - alkhayr-data:/data
+      - alkhayr-backups:/backups
+    networks: [backup_net]
+    stop_grace_period: 10m
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M, pids: 128 }
+
+  # Operator commands (profile "ops"): no network at all; interactive commands need `-it` via `run`.
+  cli:
+    <<: [*app-image, *hardening]
+    profiles: ["ops"]
+    user: "1000:1000"
+    entrypoint: ["/nodejs/bin/node", "dist/server/cli.js"]
+    healthcheck: { disable: true }
+    network_mode: none
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: https://${PUBLIC_HOST:?set PUBLIC_HOST}
+      APP_SECRET_FILE: /run/secrets/app_secret
+    secrets: [app_secret]
+    volumes:
+      - alkhayr-data:/data
+      - alkhayr-backups:/backups
+
+networks:
+  # Private application network: no route to the outside; only the proxy and the app are attached.
+  app_net:
+    internal: true
+    ipam:
+      config: [{ subnet: "${APP_NET_SUBNET:-172.30.10.0/24}" }]
+  edge: {}
+  backup_net: {}
+
+volumes:
+  alkhayr-data: {}
+  alkhayr-backups: {}
+  caddy-data: {}
+  caddy-config: {}
+
+secrets:
+  app_secret: { file: "${SECRETS_DIR:-./secrets}/app_secret" }
+  backup_key: { file: "${SECRETS_DIR:-./secrets}/backup.key" }
+  offsite_access_key: { file: "${SECRETS_DIR:-./secrets}/offsite_access_key" }
+  offsite_secret_key: { file: "${SECRETS_DIR:-./secrets}/offsite_secret_key" }

@@ -422,6 +422,39 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 - **Product images:** `Referrer-Policy: no-referrer` plus `referrerPolicy="no-referrer"` on `<img>`. External
   image hosts still see each viewer's IP address, user agent and request time (no image proxy, by decision).
 
+## 7m. Deployment packaging (stage 17; docs/DEPLOYMENT_AR.md)
+- **Image:**
+  - multi-stage; `npm ci` from the lockfile in the build stage only;
+  - runtime = distroless Node 24.22.3 (Debian 13), pinned by digest; no shell, package manager, sources, tests,
+    source maps or secrets;
+  - uid 1000; read-only root filesystem; `cap_drop: ALL`; `no-new-privileges`; resource limits;
+  - writable only `/data`, `/backups` (0700) and a 16 MB `/tmp`.
+- **Secrets:**
+  - `APP_SECRET_FILE` (exclusive with `APP_SECRET`); the file must be a regular file owned by root or the
+    service user, with no group/other write and no other-read;
+  - the backup key and off-server credentials are mounted ONLY into the backup service, never into `app`.
+- **Network:**
+  - `app` is reachable only on an internal network (no egress) and drops TCP connections not coming from the
+    proxy's fixed address (`ACCEPT_ONLY_FROM_PROXY`; loopback allowed for the health check);
+  - `TRUST_PROXY` is exactly that address.
+- **Caddy:**
+  - overwrites X-Forwarded-For (client values never trusted — verified with spoofed headers through the proxy);
+  - `strict_sni_host` (Host must match SNI, else 421); 3 MB request bodies; timeouts; `-Server`;
+  - no duplicate security headers (the app sets CSP/HSTS/…);
+  - access logs without Cookie/Authorization/X-CSRF-Token/Set-Cookie/query strings, and with masked client IPs.
+- **HSTS** is now `max-age=31536000` without `includeSubDomains` (other subdomains are not ours to force).
+- **Scheduled backups:**
+  - same verified format; non-overlapping; bounded retries; status file;
+  - the off-server copy counts only after download + SHA-256 + decryption + consistency verification.
+- **Monitoring:** `ops:status` (private JSON, exit 0/3/1). Liveness (`/healthz`) is the only container health
+  check, so recovery mode or an integrity hold never triggers a restart loop.
+- **Image scan** (Trivy 0.76.2, DB 2026-11-13):
+  - app image 0 critical / 0 high (39 medium, 12 low; Debian 13.7 base, Node packages clean);
+  - Caddy 2.11.9: 2 high in bundled Go modules (go-jose JWK DoS; x/net/html DoS), assessed as not reachable in
+    this configuration (no JWK input, no HTML templating) — tracked, not suppressed;
+  - the earlier slim base had 1 critical / 34 high (unused OS packages), which is why the runtime switched to
+    distroless.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),
@@ -472,6 +505,9 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
 | Post-restore recovery mode + recovery epoch for all mutation families | ✅ | ✅ 16 (in-process families + real-process drill + Chromium journey) |
 | Consistency verifier, integrity hold, scoped write guards | ✅ | ✅ 16 (valid histories accepted; raw-SQL gaps detected; 0008 trigger) |
 | Route × role permission matrix (42 routes × 6 roles) | ✅ | ✅ 16 |
+| Production packaging: non-root, read-only, no caps, distroless, digest-pinned | ✅ | ✅ 17 (local Docker; image inspected; permission cases as uid 1000) |
+| HTTPS via Caddy; __Host- cookies; HSTS; no app-port bypass; spoofed XFF ignored | ✅ | ✅ 17 (local CA, real Chromium; public ACME NOT RUN) |
+| Scheduled backup + off-server copy verified by download/decrypt/consistency | ✅ | ✅ 17 against a LOCAL S3-compatible server (real off-server destination NOT RUN, B-2) |
 | DB, WAL, SHM, lock files not fetchable over HTTP | ✅ | ✅ 02 (canary inside the real DB) |
 | scrypt hashing, allow-listed params, bounded concurrency, dummy verification | ✅ | ✅ 03 (unit; mutation-checked) |
 | Password policy without trimming/truncation | ✅ | ✅ 03 |

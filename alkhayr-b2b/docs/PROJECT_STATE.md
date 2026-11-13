@@ -3,8 +3,8 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-13 |
-| Current stage | **16 — Adversarial security review, consistency enforcement and release gates: COMPLETE** |
-| Next stage | **17** (awaiting owner prompt; see release blockers B-1…B-5 in docs/SECURITY_REVIEW_16.md) |
+| Current stage | **17 — Production deployment packaging, HTTPS staging (LOCAL) and operations: COMPLETE** — not deployed, not launched |
+| Next stage | **18** (awaiting owner prompt; owner decisions DR-1…DR-5 in docs/RELEASE_DECISIONS_17.md) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
@@ -31,10 +31,108 @@
 | 13 | ✅ Done (CSV imports) | Commit `9f9149e` — 513/513 tests ×3 clean-copy runs, 44/44 import lifecycle + 125/125 + 87/87 regression journeys, axe 0 violations, 30 mutants (final 27 caught / 3 survived; see stage-14 reconciliation) |
 | 14 | ✅ Done (settings, reports, exports, printing) | Commit `051fd43` — 541/541 tests ×3 clean-copy runs, 67/67 browser run + 87/87, 125/125, 44/44 regressions, axe 0 violations, 24 mutants — below |
 | 15 | ✅ Done (backup, restore, account recovery) | Commit `9097aac` — 571/571 tests ×3 clean-copy runs, real-process restore drill + real-PTY run, 24 mutants — below |
-| 16 | ✅ Done (adversarial review, consistency, recovery gate) | 610/610 tests ×3 clean-copy runs, 19/19 + 87/87 + 125/125 + 44/44 + 67/67 browser checks, 21/21 mutants caught (after fixes to the tests) — below |
-| 17–18 | ⏳ Not started | — |
+| 16 | ✅ Done (adversarial review, consistency, recovery gate) | Commit `6389115` — 610/610 tests ×3 clean-copy runs, 19/19 + 87/87 + 125/125 + 44/44 + 67/67 browser checks, 21/21 mutants caught (after fixes to the tests) — below |
+| 17 | ✅ Done (packaging + local production-like verification) | 617/617 tests, 3 clean copies 617/617 each, HTTPS browser runs 87+125+44+67+19+19 via Caddy, restore drill 23/23, upgrade + load rehearsals — below |
+| 18 | ⏳ Not started | — |
 
-## Stage 16 — remaining weaknesses and release blockers first
+## Stage 17 — what this stage did and did NOT prove (first)
+
+| Level | Status |
+|---|---|
+| Deployment artifacts prepared | ✅ `Dockerfile`, `deploy/compose.yaml`, `deploy/caddy/Caddyfile`, `deploy/env.example`, `deploy/secrets/README.md`, `docs/DEPLOYMENT_AR.md`, `docs/RELEASE_DECISIONS_17.md` |
+| Locally tested production-like stack | ✅ Docker 29.9.2 in this container; Caddy with its **LOCAL CA** (`staging.alkhayr.test`, not publicly trusted); synthetic data only |
+| Actual remotely hosted staging | ❌ **NOT RUN.** No hosting access, domain or DNS was provided; nothing was bought or configured |
+| Production deployment | ❌ **NOT performed** |
+| Public business launch | ❌ **NOT approved** (B-1, B-4, B-5 need owner decisions; B-2, B-3 need owner-provided resources) |
+
+## Stage 17 — open blockers and missing inputs
+- **B-1 stock inference.** Owner decision required (RELEASE_DECISIONS_17 DR-1). Not accepted on the owner's behalf.
+- **B-2 off-server copy.** Automation and verification are implemented and tested against a LOCAL S3-compatible
+  server (SeaweedFS, real SigV4). **Still open.** It needs an authorized destination: provider, bucket in another
+  region/provider, a scoped access key, and a versioning/Object Lock choice (DR-4). Immutability/versioning are not
+  claimed.
+- **B-3 public TLS.** Every check passes locally with the local CA. **Still open** for a real host, public DNS and
+  ACME issuance and renewal (DR-5).
+- **B-4 RPO/RTO.** Measured synthetic evidence is presented (DR-2); the 24 h / 2 h targets remain provisional and
+  unapproved.
+- **B-5 distributed authentication DoS.** Residual documented; deployment-layer options listed (DR-3). Not accepted
+  on the owner's behalf.
+- **Caddy 2.11.9** (latest) carries 2 HIGH findings in bundled Go modules (go-jose JWK DoS, x/net/html DoS),
+  assessed as not reachable in this configuration (reasoning, not proof). Upgrade when a fixed Caddy release ships.
+- **Not covered by the local evidence:**
+  - the Docker host itself (kernel, firewall, OS updates, disk encryption);
+  - the real provider network;
+  - real certificate renewal;
+  - a notification channel.
+
+## Stage 17 — findings fixed during the rehearsals
+- **App port reachable from host-local processes** through the internal bridge (with the right Host header).
+  → `ACCEPT_ONLY_FROM_PROXY` drops non-proxy TCP (verified: connection reset; proxy path and health check
+  still work).
+- **Spoofed Host with a mismatching SNI** got Caddy's empty default 200. → `strict_sni_host` (421).
+- **Client-supplied forwarding headers appeared in access logs** (never trusted). → Removed from the logs.
+- **Data directory owned by another user / read-only mount** gave a raw SQLite error. → `DATA_DIR_NOT_WRITABLE`
+  with actionable text.
+- **Backups directory not writable** gave a raw EACCES. → Mapped in the CLI to `WRITE_FAILED`.
+- **The backup scheduler took 14–40 s to stop** (a pending 60 s timer), stretching the upgrade window. → Timer
+  cleared on SIGTERM. The regression test fails without the fix. Now 0.27 s.
+- **Slim Debian runtime: 1 critical / 34 high** (unused OS packages). → Distroless runtime: 0 critical / 0 high.
+- **HSTS `includeSubDomains`** would force unrelated subdomains. → Removed.
+
+## Stage 17 — what was built
+- **Code:**
+  - `APP_SECRET_FILE` (strict checks; exclusive with `APP_SECRET`);
+  - `ACCEPT_ONLY_FROM_PROXY`; `DATA_DIR_NOT_WRITABLE`; filesystem error mapping in the CLI;
+  - `src/server/ops/{s3,schedule,backup-job}.ts`;
+  - commands `backup:run`, `backup:schedule`, `backup:offsite-get` and `ops:status`.
+- **Packaging:**
+  - multi-stage `Dockerfile`: `npm ci` with an optional CA build secret; distroless runtime pinned by digest;
+    uid 1000; no shell or npm;
+  - Compose with `app`, `proxy`, `backup` and `cli`: read-only, `cap_drop ALL`, `no-new-privileges`, limits,
+    bounded logs, internal app network, fixed proxy IP, file secrets (backup key and off-server credentials
+    only in `backup`);
+  - Caddyfile in ACME and local-CA modes.
+- **Docs:**
+  - `DEPLOYMENT_AR.md` (new); `RELEASE_DECISIONS_17.md` (new);
+  - SECURITY §7m + table; THREAT_MODEL T112–T118; DECISIONS D-164–D-172; blocker register updated;
+  - MIGRATION; README.
+
+## Checks run in stage 17 (2026-11-13 UTC; this container: 4 vCPU Xeon 2.1 GHz, 16 GB; Docker 29.9.2; root host, uid 1000 in containers)
+| Check | Result |
+|---|---|
+| `npm run check` (typecheck, build, all tests) | ✅ 617/617 |
+| Clean copies ×3 | PASS — npm ci + typecheck + 617/617 tests in each of 3 fresh copies |
+| New tests | `ops.test.ts` 7/7 (secret files, DST schedule, job ok/overlap/fatal/rotation, off-server verified by download, unavailable/503/403/corrupt/wrong size, ops:status, scheduler stops without a lingering timer) |
+| Image build | `alkhayr-b2b:17.0.0-rc8`, runtime `gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb36…` (Node v24.22.3), build `node:24.22.3-bookworm-slim@sha256:dc26ae92…`; content inspected: no shell/npm/sources/maps/CA; `/app` not writable; `/data`, `/backups` 0700 uid 1000 |
+| Compose / Caddy validation | `docker compose config --quiet` ✅; `caddy validate` ✅ (internal + acme); acme without e-mail refused ✅ |
+| Bootstrap in containers | app refuses before init (`DATABASE_MISSING`) ✅; `db:init` ✅; `setup-admin` in a real PTY through `docker compose run -it` (password not echoed) ✅ |
+| Non-root permission cases (stage-16 NOT RUN, now run as uid 1000) | data dir owned by root → `DATA_DIR_NOT_WRITABLE` ✅; 0755 dir tightened to 0700 ✅; read-only data → `DATA_DIR_NOT_WRITABLE` ✅; backups read-only/root-owned → `WRITE_FAILED` ✅; key owned by root → `KEY_FILE_INSECURE` ✅; key 0644 → refused ✅; APP_SECRET file 0644 → refused ✅; both secret sources → refused ✅; full backups disk → `DISK_FULL`, nothing left ✅ |
+| Locks across containers | second app on the same volume → `INSTANCE_LOCKED` ✅; `db:migrate` while running → `INSTANCE_LOCKED` ✅; online backup while running ✅ |
+| Proxy / TLS (local CA) | TLS 1.3 verified with the local root ✅; without it refused ✅; HTTP → 308 HTTPS ✅; HSTS `max-age=31536000` ✅; exactly one CSP ✅; Host≠SNI → 421 ✅; spoofed X-Forwarded-For / X-Real-IP / Forwarded ×7 → treated as ONE source (6th = 429) ✅; logs: no Cookie/CSRF/Set-Cookie/passwords/query ✅; app port: from the host → reset ✅, from the edge/backup networks → unreachable ✅; app egress → none ✅ |
+| Browser over HTTPS (Chromium trusting ONLY the local CA via NSS; no verification bypass) | merchant 87/87, admin 125/125*, import 44/44, business 67/67**, recovery (stage-16 journey) 19/19, secure cookies 19/19 (__Host-, Secure, HttpOnly, SameSite=Strict, Path=/, no Domain, logout deletion, CSRF/Origin refusals, no-store, account switch, admin TOTP, stale cookie rejected, no CSP/mixed-content issues) |
+| Off-server adapter vs a LOCAL S3-compatible server (SeaweedFS, real SigV4) | upload → HEAD → download → SHA-256 → decrypt → consistency ✅; wrong secret → `OFFSITE_HTTP_403_SignatureDoesNotMatch` (no retry) ✅; destination down → 2 bounded retries, failure recorded, local backup still verified ✅; ops:status critical on job failures ✅ |
+| Restore drill on the deployment architecture | ✅ 23/23 — see DEPLOYMENT_AR §10 / RELEASE_DECISIONS DR-2 (6.3 s to serving in recovery mode for a 61 MB DB; excludes human reconciliation, provisioning, DNS/TLS, secret retrieval); original DB hash unchanged |
+| Upgrade rehearsal rc7 → rc8 | app stop → new release ready 1.9 s; 1 failed probe (502); clean shutdown exit 0; `db:migrate` no-op; `db:check` ok |
+| Daemon restart (reboot stand-in) | services restarted automatically (`unless-stopped`); data intact (20 002 orders, 52 users); clean shutdown logged |
+| Synthetic load (standalone image, 2 CPU / 1 GB, 50 virtual traders, 60 s) | 177 req/s; p95 10–12 ms, p99 23–32 ms; login burst: 45/50 within 11.8 s (503 queue / 429 limits refused the rest); peak CPU 195 %, memory 227 MiB. **Not a capacity promise** |
+| Image scan (Trivy 0.76.2, DB updated 2026-11-13 12:56 UTC) | app rc5+ (distroless): 0 critical, 0 high, 39 medium, 12 low; Node packages: none. Caddy 2.11.9: 1 medium (Alpine) + Go modules 2 high, 3 medium, 2 unknown (assessed, not suppressed). Slim-runtime rc4 for comparison: 1 critical (zlib CVE-2023-45853 minizip, will_not_fix), 34 high |
+| `npm audit` | PASS — 0 vulnerabilities (2026-11-13) |
+| NOT RUN | public DNS/ACME and renewal; a hosted staging; a real off-server destination; notification delivery; host firewall/kernel hardening; production-size data; non-Chromium browsers; independent penetration test |
+
+\* Admin journey over HTTPS: the external test image host (`img.example`) is unresolvable without the sandbox proxy, so
+the image check accepts "requested as `<img>`, placeholder after the load error" (documented in the run).
+\*\* The business journey's history check raced the list load in 2 of 3 earlier HTTPS runs; the check now waits for
+the list. The final run passed.
+
+## How to continue
+Next: send **PROMPT 18**. Before any launch: answer DR-1…DR-3 and provide DR-4/DR-5 (destination, host, DNS).
+Then repeat §3–§10 of DEPLOYMENT_AR on the real host and record PASS/FAIL there.
+
+---
+
+## Stage 16 record (retained)
+
+### Stage 16 — remaining weaknesses and release blockers first
 Full report, including the release-blocker register: [`docs/SECURITY_REVIEW_16.md`](SECURITY_REVIEW_16.md).
 - **B-1 stock inference (business decision needed).** Traders never receive quantities, but bisection over
   quotes recovered the exact available stock in **17 requests**. The rate limit is 60 per 10 min, which slows
@@ -61,14 +159,14 @@ Full report, including the release-blocker register: [`docs/SECURITY_REVIEW_16.m
 - **Readiness for stage 17: READY**, with no confirmed critical or high technical issue left unaddressed.
   B-1 requires an explicit business decision; B-2 and B-3 are deployment work.
 
-## Stage 16 — findings fixed
+### Stage 16 — findings fixed
 F-01 username lockout (High) · F-02 post-restore silent re-execution (High) · F-03 consistency gaps undetected
 (Medium) · F-04 age-based plaintext staging cleanup (Medium) · F-05 pre-0008 restore reopening writes (Medium) ·
 F-06 password change parsed body before auth (Low) · F-07 raw ENOSPC (Low) · F-12 invisible refusal on empty
 cart (Low, found in Chromium). Verified without change: lost-APP_SECRET path, ownership, CSRF, recent auth,
 parsing, stored text, image referrer, backup crypto (trust-model limitation documented).
 
-## Stage 16 — what was built
+### Stage 16 — what was built
 - **Throttling** (`auth/rate-limit.ts`, `auth/admission.ts`, `services/authentication.ts`):
   - per source 20/15 min; per (source, username) 5/15 min; per username 30/15 min (not reset by success);
   - ≤ 2 concurrent credential jobs per source.
@@ -100,7 +198,7 @@ parsing, stored text, image referrer, backup crypto (trust-model limitation docu
   - DECISIONS D-156–D-163; API_CONTRACT; FRONTEND_API; MIGRATION; README;
   - recovery guide (recovery mode; provisional RPO/RTO).
 
-## Checks run in stage 16 (2026-11-13 UTC, this container: 4 vCPU, 16 GB, Node 24.22.1, root)
+### Checks run in stage 16 (2026-11-13 UTC, this container: 4 vCPU, 16 GB, Node 24.22.1, root)
 | Check | Result |
 |---|---|
 | `npm run check` (typecheck server + web, production build, all tests) | ✅ 610/610 |
@@ -115,7 +213,7 @@ parsing, stored text, image referrer, backup crypto (trust-model limitation docu
 | Mutations | 21 mutants (`mut16.py`). First run: 20 caught, 1 survived. N17 (disk-full mapping) had only a manual tmpfs measurement; after adding a unit-level mapping test it is caught. N04 (no per-source admission) first HUNG the harness behind the paused hasher; the test now fails fast in 3 s. Final: **21/21 caught**. Layers: N01–N04 throttling tests; N05–N09 recovery-gate / backup tests; N10–N11 caught by the `CONSISTENCY_HOLD` assertion (the 0005 transition trigger would probably still refuse the lone-event order with another error code; not separately verified); N12 verifier tests; N13 the 0008 trigger test (the verifier still DETECTS the orphan: defence in depth); N14 the migration seeding test; N15–N17 staging/filesystem tests; N18–N20 web unit tests; N21 the permission matrix (only the error code and order of refusal change; nothing is written either way). |
 | `npm audit` | "found 0 vulnerabilities" (2026-11-13; registry advisories for declared dependencies only — not a security assessment; no dependency changes this stage) |
 
-## Files changed in stage 16 (all under `alkhayr-b2b/`)
+### Files changed in stage 16 (all under `alkhayr-b2b/`)
 - **New:**
   - `migrations/0008_system_state.sql`;
   - `src/server/auth/admission.ts`, `src/server/database/consistency.ts`, `src/server/http/write-gate.ts`,
@@ -132,7 +230,7 @@ parsing, stored text, image referrer, backup crypto (trust-model limitation docu
   - tests: helpers/app, plus the existing suites listed above;
   - docs.
 
-## How to continue
+### How to continue
 Next: send **PROMPT 17**. Existing installations need `db:migrate --confirm-backup` for 0008. Before production,
 close B-1 (business decision) and B-2/B-3 (deployment).
 

@@ -27,3 +27,10 @@ tests/fixtures/private
 .vscode
 .idea
 .DS_Store
+# Stage 17: the image needs only sources to build; tests, docs and deployment secrets stay out
+tests
+docs
+deploy/secrets
+deploy/.env
+*.akbk
+*.verified

@@ -186,6 +186,17 @@ New installations get it through `db:init`. New commands: `db:check` (read-only;
 new business writes stay refused until `db:check` is clean and the server is restarted. Nothing is repaired
 automatically.
 
+### Stage 17 note: container deployment (no migration)
+No database change. The supported production layout is now the Docker Compose stack in `deploy/` (see
+[`DEPLOYMENT_AR.md`](DEPLOYMENT_AR.md)). For an existing bare-metal installation:
+1. Take a verified backup.
+2. Initialize the new stack with an EMPTY data volume.
+3. Restore that backup into the new volume with `backup:restore`.
+4. Reconcile, then run `recovery:reopen`.
+
+Never copy a live database file. New startup refusal: `DATA_DIR_NOT_WRITABLE` (wrong owner or read-only mount; the
+container runs as uid 1000).
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|

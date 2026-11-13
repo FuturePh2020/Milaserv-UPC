@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, statfsSync, statSync } from 'node:fs';
+import { accessSync, chmodSync, closeSync, constants as fsConstants, existsSync, mkdirSync, openSync, statfsSync, statSync, unlinkSync } from 'node:fs';
 import path from 'node:path';
 import { constants as sqlite, DatabaseSync } from 'node:sqlite';
 import { DatabaseError } from './errors.ts';
@@ -52,6 +52,32 @@ export function ensurePrivateDirectory(dir: string, create: boolean): void {
   }
   if (!statSync(dir).isDirectory()) throw new DatabaseError('DATA_DIR_INVALID', 'The data directory path is not a directory.');
   tightenMode(dir, 0o700);
+  // Stage 17: a directory the service user cannot write (wrong owner, read-only mount) is reported clearly
+  // instead of surfacing later as a raw SQLite "unable to open database file".
+  try {
+    accessSync(dir, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    throw new DatabaseError(
+      'DATA_DIR_NOT_WRITABLE',
+      code === 'EROFS'
+        ? 'The data directory is on a read-only filesystem. Mount it read-write.'
+        : 'The data directory is not readable and writable by the service user. Fix its ownership (the service runs as uid 1000 in the container) and mode 0700.',
+    );
+  }
+  if (!canWrite(dir)) throw new DatabaseError('DATA_DIR_NOT_WRITABLE', 'The data directory is on a read-only filesystem. Mount it read-write.');
+}
+
+/** access(W_OK) does not detect read-only bind mounts reliably; probe with a real exclusive create. */
+function canWrite(dir: string): boolean {
+  const probe = path.join(dir, `.write-probe-${process.pid}-${Date.now()}`);
+  try {
+    closeSync(openSync(probe, 'wx', 0o600));
+    unlinkSync(probe);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'EROFS' && (err as NodeJS.ErrnoException).code !== 'EACCES';
+  }
 }
 
 function tightenMode(p: string, mode: number): void {

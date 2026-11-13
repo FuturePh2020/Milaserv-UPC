@@ -113,11 +113,11 @@
 
 | ID | Blocker | Severity | Owner | Required action |
 |---|---|---|---|---|
-| B-1 | Stock inference by bisection (F-08) | Business | Business owner | Accept the limitation in writing, OR decide a different stock-disclosure policy (a separate stage) |
-| B-2 | Off-server backup copies not automated or verified | High (operational) | Operator / stage 17 | Configure and verify an off-host copy; store the key and APP_SECRET separately |
-| B-3 | Production TLS / proxy / cookie checks NOT RUN | High (deployment) | Stage 17 | Execute the checks in §8 |
-| B-4 | RTO/RPO are provisional targets (24 h / 2 h), not approved or measured on real data | Medium | Business owner + operator | Approve targets; run a timed drill on a real-size copy |
-| B-5 | Distributed login DoS residual | Medium (accepted residual) | Operator / stage 17 | Monitoring and alerting on `rate_limited` / 503 rates |
+| B-1 | Stock inference by bisection (F-08) | Business | Business owner | **Open.** Accept in writing, OR commission a reviewed change (RELEASE_DECISIONS_17 DR-1) |
+| B-2 | Off-server backup copies not automated or verified | High (operational) | Owner (destination) + operator | **Stage 17:** automated and verified end-to-end against a LOCAL S3-compatible test server; still **OPEN** until an authorized real destination is configured and a download-verified copy is observed |
+| B-3 | Production TLS / proxy / cookie checks NOT RUN | High (deployment) | Owner (host/DNS) + operator | **Stage 17:** all checks PASS on the local production-like stack with Caddy's LOCAL CA; still **OPEN** for public DNS/ACME on an authorized host |
+| B-4 | RTO/RPO are provisional targets (24 h / 2 h), not approved or measured on real data | Medium | Business owner + operator | **Open.** Stage-17 measured drill (synthetic 20 000 orders) in RELEASE_DECISIONS_17 DR-2; owner choice requested |
+| B-5 | Distributed login DoS residual | Medium | Business owner + operator | **Open (not accepted on the owner's behalf).** Monitoring hook prepared (`ops:status` login-failure threshold); options in RELEASE_DECISIONS_17 DR-3 |
 
 **No confirmed critical or high technical vulnerability remains unaddressed** in the reviewed code. B-1 needs an
 explicit business decision, and B-2/B-3 belong to deployment (stage 17).

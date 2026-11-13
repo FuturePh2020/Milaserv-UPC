@@ -2,7 +2,7 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Stage 16 complete — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Stage 17 complete (deployment packaging + local production-like verification; NOT deployed, NOT launched) — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
 review/approval/suspension), product administration, the approved catalog, inventory
@@ -32,6 +32,9 @@ npm run check             # typecheck + build + tests
 Health: `GET /healthz` (process alive) · `GET /readyz` (database ready).
 Component gallery (development builds only): `npm run dev`, then `http://localhost:3000/#/__gallery`.
 Operator procedures (database, administrator enrollment, upgrades): [`docs/MIGRATION.md`](docs/MIGRATION.md).
+Production deployment (Docker Compose + Caddy HTTPS + scheduled verified backups):
+[`docs/DEPLOYMENT_AR.md`](docs/DEPLOYMENT_AR.md); owner decisions still required before launch:
+[`docs/RELEASE_DECISIONS_17.md`](docs/RELEASE_DECISIONS_17.md).
 
 Production requires `NODE_ENV=production`, an `https://` `APP_ORIGIN` and a generated `APP_SECRET` (see
 `.env.example`); backups use a separate key file (`npm run cli -- backup:keygen --out <path>`). Run one instance per data directory, on a local
@@ -53,6 +56,8 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/DESIGN_SYSTEM.md` | Tokens, contrast, typography, components, shells, gallery |
 | `docs/FRONTEND_API.md` | Browser API client and identity rules |
 | `docs/SECURITY.md` | Security policy and verification status |
+| `docs/DEPLOYMENT_AR.md` | Deployment/operations guide (Arabic): architecture, secrets, commands, backups, monitoring, upgrades, incidents |
+| `docs/RELEASE_DECISIONS_17.md` | Owner decisions required before launch (B-1, B-4, B-5) and missing deployment inputs |
 | `docs/SECURITY_REVIEW_16.md` | Stage-16 adversarial review: findings, fixes, residual risks, NOT RUN checks, release blockers |
 | `docs/THREAT_MODEL.md` | Threats and controls |
 | `docs/DECISIONS.md` | Decision log |

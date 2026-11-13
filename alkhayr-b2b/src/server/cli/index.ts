@@ -10,7 +10,7 @@ import { OPERATOR_COMMANDS } from '../database/runtime.ts';
 import { createTerminalPrompter, NotInteractiveError, type Prompter } from './prompt.ts';
 import type { PasswordHasher } from '../auth/passwords.ts';
 import { setupAdmin } from './setup-admin.ts';
-import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, dbCheck, recoveryReopen, recoveryStatus, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
+import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, backupOffsiteGet, backupRun, backupSchedule, opsStatus, dbCheck, recoveryReopen, recoveryStatus, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
 
 /**
  * Trusted-operator command line. Runs on the server host only; nothing here is
@@ -56,6 +56,14 @@ Commands:
                                imports (safe while the server runs). Exit 0 ok, 1 errors, 3 warnings only.
   recovery:status              Show whether business writes are open or in post-restore recovery mode (exit 3).
   recovery:reopen              After reconciliation: reopen business writes (interactive; reason; audited).
+  backup:run                   One scheduled-backup job: verified encrypted backup, rotation and (if configured)
+                               off-server copy verified by download + decrypt + consistency check (exit 0/1).
+                               Key and storage credentials come from protected files (BACKUP_KEY_FILE, OFFSITE_*_FILE).
+  backup:offsite-get <name>    Disaster recovery: download one backup from off-server storage into BACKUP_DIR
+                               (not trusted until backup:verify).
+  backup:schedule              Long-running scheduler for backup:run (BACKUP_SCHEDULE "HH:MM,…" in BACKUP_TZ).
+  ops:status [--tls-host h[:p]] [--tls-ca f] [--skip-consistency]
+                               Private monitoring status as JSON (exit 0 ok, 3 warning, 1 critical).
   help                         Show this help.
 
 Initialization sequence: db:init -> setup-admin -> start the server.
@@ -240,6 +248,14 @@ export async function runCli(argv: readonly string[], ctx: CliContext): Promise<
         return dbStatus(ctx);
       case 'db:check':
         return await dbCheck(operatorCtx(ctx), args);
+      case 'backup:run':
+        return await backupRun(operatorCtx(ctx), args);
+      case 'backup:offsite-get':
+        return await backupOffsiteGet(operatorCtx(ctx), args);
+      case 'backup:schedule':
+        return await backupSchedule(operatorCtx(ctx), args);
+      case 'ops:status':
+        return await opsStatus(operatorCtx(ctx), args);
       case 'recovery:status':
         return await recoveryStatus(operatorCtx(ctx), args);
       case 'recovery:reopen':
