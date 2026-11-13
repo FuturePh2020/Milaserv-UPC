@@ -33,7 +33,7 @@
 | 15 | ✅ Done (backup, restore, account recovery) | Commit `9097aac` — 571/571 tests ×3 clean-copy runs, real-process restore drill + real-PTY run, 24 mutants — below |
 | 16 | ✅ Done (adversarial review, consistency, recovery gate) | Commit `6389115` — 610/610 tests ×3 clean-copy runs, 19/19 + 87/87 + 125/125 + 44/44 + 67/67 browser checks, 21/21 mutants caught (after fixes to the tests) — below |
 | 17 | ✅ Done (packaging + local production-like verification) | 617/617 tests, 3 clean copies 617/617 each, HTTPS browser runs 87+125+44+67+19+19 via Caddy, restore drill 23/23, upgrade + load rehearsals — below |
-| 18 | ✅ Done (final acceptance, local package only) | Stage-18 commit ("Stage 18: final acceptance…"): 618/618 tests, CLEAN18, `accept18` 123/123, `upgrade18` UPG18, HTTPS browser 87+126+44+67+19+COOK18, load + consistency — below |
+| 18 | ✅ Done (final acceptance, local package only) | Stage-18 commit ("Stage 18: final acceptance…"): 618/618 tests, 3 clean copies 618/618 each, `accept18` 123/123, `upgrade18` 36/36, HTTPS browser 87+126+44+67+19+19, load + consistency — below |
 
 ## Stage 18 — final status (first)
 
@@ -75,13 +75,13 @@
 | Check | Result |
 |---|---|
 | `npm run check` | ✅ 618/618 (new: capacity-refund regression) |
-| Clean copies ×3 + `npm audit` | CLEAN18_DETAIL |
-| Image `alkhayr-b2b:1.0.0-rc.1` | Id `sha256:e8cf6ad9…a562da`; hashes in RELEASE_NOTES |
+| Clean copies ×3 + `npm audit` | ✅ `npm ci` + typecheck + 618/618 in each of 3 fresh copies; `npm audit` 0 vulnerabilities |
+| Image `alkhayr-b2b:1.0.0-rc.1` | Tested Id `sha256:e8cf6ad9…a562da`. A no-cache rebuild gives an identical `/app/dist` manifest; the image Id is not reproducible (timestamps). Hashes in RELEASE_NOTES |
 | Trivy 0.76.2 (DB 2026-11-13 12:56 UTC) | App: 0 C / 0 H. Caddy: 2 H, 4 M, 2 U — analysed in FINAL_ACCEPTANCE §3 |
 | govulncheck 1.9.0, binary mode, Caddy | 5 advisories with symbols present; the one reachable path mitigated |
 | `accept18` (clean install, real terminal, HTTPS API, restore) | ✅ 123/123 on the final image |
-| `upgrade18` (stage-15 schema 7 → 1.0.0-rc.1, rollback) | UPG18_DETAIL |
-| HTTPS browser suites on the final image | merchant 87/87, admin 126/126, import 44/44, business 67/67, recovery 19/19, cookies COOK18 |
+| `upgrade18` (stage-15 schema 7 → 1.0.0-rc.1, rollback) | ✅ 36/36 on the final image (historical rows identical; rollback 0.8–0.9 s; old release refuses schema 8) |
+| HTTPS browser suites on the final image | merchant 87/87, admin 126/126, import 44/44, business 67/67, recovery 19/19, cookies 19/19 |
 | `load18` (bounded mixed load + backup + import) | 70/70 logins in 13.1 s; browse 196 req/s, p95 11–12 ms; mixed 170 req/s, 0 errors, p95 about 114 ms; 360 orders exactly once; `db:check` ok |
 
 ### How to continue

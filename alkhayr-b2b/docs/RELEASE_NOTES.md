@@ -12,7 +12,7 @@
 |---|---|
 | Version | `1.0.0-rc.1` (`package.json`) |
 | Source | Branch `ccr-b8f31a52-xk6wqg`, the stage-18 commit ("Stage 18: final acceptance…"); parent `cebed8c` (stage 17) |
-| Application image | `alkhayr-b2b:1.0.0-rc.1`, local image Id `sha256:e8cf6ad9100efda3433053d755b069fc636ce436e7193ce872819ed939a562da` (built 2026-11-13 21:24 UTC on Docker 29.9.2; not pushed to any registry) |
+| Application image | `alkhayr-b2b:1.0.0-rc.1`, **not pushed to any registry**. Tested build: Id `sha256:e8cf6ad9100efda3433053d755b069fc636ce436e7193ce872819ed939a562da` (2026-11-13 21:24 UTC, Docker 29.9.2). Current local rebuild of the same source: `sha256:b8a647ab15ba896d19bf96c2cb71488e1c5557cde5d2bf6e6885aa9395165346` (21:39 UTC). The tested build was replaced when the tag moved. |
 | Build base | `node:24.22.3-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54` |
 | Runtime base | `gcr.io/distroless/nodejs24-debian13:nonroot@sha256:6abfcb367ebc291572c774c1592a986be2ab26a2486f73093401327495a5962a` (Node v24.22.3) |
 | Proxy | `caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0` |
@@ -45,7 +45,8 @@
   docker cp $cid:/app/dist ./dist && docker rm $cid
   (cd dist && find . -type f | sort | xargs sha256sum) | sha256sum
   ```
-- The image Id itself includes build timestamps and is not expected to match a rebuild. FINAL_REPRO
+- The image Id itself includes build timestamps and is not expected to match a rebuild.
+  - **Verified:** a `--no-cache` rebuild produced the identical `/app/dist` manifest (`a4b35fdb…`) and identical migrations.
 - **Hashes identify artifacts; they do not prove who published them.** There is no signature or independent
   publisher attestation.
 

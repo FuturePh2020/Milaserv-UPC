@@ -94,18 +94,22 @@ Debian 13 base packages, and none in Node packages. `npm audit` reports 0 vulner
 
 ## 4. Final verification evidence
 
-Image `alkhayr-b2b:1.0.0-rc.1`, Id `sha256:e8cf6ad9100efda3433053d755b069fc636ce436e7193ce872819ed939a562da`.
+**Tested image:** `alkhayr-b2b:1.0.0-rc.1`, Id `sha256:e8cf6ad9100efda3433053d755b069fc636ce436e7193ce872819ed939a562da`. All results in this section ran on it.
+
+**Rebuild check:**
+- A later rebuild from the same source produced Id `sha256:b8a647ab…5346`, which now holds the local tag; the tested image was removed when the tag moved.
+- Image Ids include build timestamps. The shipped `/app/dist` manifest (`a4b35fdb…`) and the migrations are byte-identical in the tested image, a no-cache rebuild and the current tag.
 
 | Check | Tool / version | Environment | Result |
 |---|---|---|---|
 | Typecheck + build + all tests | Node 24.22.1, `npm run check` | UNIT | **618/618** (617 + the new capacity-refund test) |
-| Clean copies (fresh `npm ci` + typecheck + tests) | npm 11 | UNIT | FINAL_CLEAN |
-| `npm audit` | npm | — | FINAL_AUDIT |
+| Clean copies (fresh `npm ci` + typecheck + tests) | npm 11 | UNIT | **3/3 PASS**: `npm ci` + typecheck + 618/618 in each |
+| `npm audit` | npm | — | **0 vulnerabilities** |
 | Production image build | Docker 29.9.2 BuildKit; base digests pinned | STACK | built; runtime distroless Node 24.22.3, uid 1000 |
 | Image scans | Trivy 0.76.2 (DB 2026-11-13 12:56 UTC); govulncheck 1.9.0 (Caddy) | — | App 0 C / 0 H; Caddy see §3 |
 | Clean-install business acceptance (`accept18`) | Node client, real terminal driver, HTTPS via Caddy local CA, verification on | STACK | **123/123** on the final image |
-| Upgrade acceptance from the stage-15 release (`upgrade18`) | stage-15 worktree `9097aac` + release image | PROC + STACK | FINAL_UPGRADE |
-| Browser regressions over HTTPS (Chromium; only the local CA trusted) | Playwright + Chromium | STACK | FINAL_JOURNEYS |
+| Upgrade acceptance from the stage-15 release (`upgrade18`) | stage-15 worktree `9097aac` + release image | PROC + STACK | **36/36** on the final image |
+| Browser regressions over HTTPS (Chromium; only the local CA trusted) | Playwright + Chromium | STACK | merchant **87/87**, administration **126/126**, import **44/44**, business **67/67**, recovery **19/19**, secure cookies **19/19** (final image) |
 | Consistency verification | `db:check` | STACK | Clean after acceptance, upgrade, restore, load |
 | Backup / restore acceptance | `backup:run`, `backup:verify`, `backup:restore`, `recovery:reopen` | STACK | PASS (in `accept18`) |
 | Bounded mixed load (`load18`) | Node HTTP client; `docker stats` | STACK (no proxy) | §5 |
@@ -271,11 +275,11 @@ passed, grouped as follows:
 - **Operations:**
   - a second instance → `INSTANCE_LOCKED`;
   - uid 1000, read-only root, `CapDrop [ALL]`, data 0700 / DB 0600;
-  - SIGTERM → `shutdown_complete`, exit 0 in 187 ms;
+  - SIGTERM → `shutdown_complete`, exit 0 in 187–245 ms (two runs);
   - data intact after `compose down` / `up`.
 - **Rollback:**
-  - App-only rollback to the previous image with the same schema (17.0.0-rc8): ready 0.8 s after the switch, and
-    forward again in 0.8 s.
+  - App-only rollback to the previous image with the same schema (17.0.0-rc8): ready 0.8–0.9 s after the switch,
+    and forward again in 0.8 s.
   - The old release **refuses** the migrated schema (`SCHEMA_TOO_NEW`).
   - The documented downgrade path restores the pre-migration backup **into a separate directory** and contains
     exactly the pre-migration rows (plus the restore's own audit entry). Writes made after the upgrade are **not**
