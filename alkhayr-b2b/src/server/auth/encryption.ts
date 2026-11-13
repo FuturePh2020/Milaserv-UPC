@@ -18,7 +18,7 @@ import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:cr
  *   AUTH_FAILED          wrong key, wrong AAD, or modified data
  */
 
-export const KEY_PURPOSES = ['totp', 'csrf', 'cursor', 'ip', 'rate_limit'] as const;
+export const KEY_PURPOSES = ['totp', 'csrf', 'cursor', 'ip', 'rate_limit', 'import_preview'] as const;
 export type KeyPurpose = (typeof KEY_PURPOSES)[number];
 
 const KDF_SALT = Buffer.from('alkhayr/kdf/v1', 'utf8');

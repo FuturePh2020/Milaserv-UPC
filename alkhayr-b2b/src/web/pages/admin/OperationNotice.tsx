@@ -15,6 +15,7 @@ export function OperationNotice<P extends { operationKey: string }, R>({
   onDiscard,
   onReauthenticated,
   historyHint,
+  label = null,
 }: {
   state: OperationState<P, R>;
   onRetry: () => void;
@@ -23,6 +24,8 @@ export function OperationNotice<P extends { operationKey: string }, R>({
   onReauthenticated: () => void;
   /** Where to check whether an unclear operation was applied (e.g. "سجل الحركات"). */
   historyHint: string;
+  /** The intended action as recorded when it was sent (the form may be empty after navigation). */
+  label?: string | null;
 }) {
   if (state.status === 'sending') {
     return (
@@ -34,6 +37,11 @@ export function OperationNotice<P extends { operationKey: string }, R>({
   if (state.status === 'unknown') {
     return (
       <Notice tone="warning" title="لم تتأكد نتيجة العملية">
+        {label ? (
+          <p>
+            العملية: <strong>{label}</strong>
+          </p>
+        ) : null}
         <p>انقطع الاتصال أو حدث خطأ قبل وصول الرد. قد تكون العملية نُفذت أو لم تُنفذ.</p>
         <p>
           «إعادة إرسال نفس العملية» ترسلها <strong>بنفس المفتاح ونفس البيانات</strong>: إن كانت قد نُفذت فسيعيد الخادم نتيجتها الأصلية ولن تتكرر. لا يمكن تعديل
@@ -50,6 +58,10 @@ export function OperationNotice<P extends { operationKey: string }, R>({
             تجاهل (بعد التحقق من {historyHint})
           </Button>
         </div>
+        <p className="muted">
+          تبقى هذه العملية محفوظة أثناء التنقل بين شاشات الإدارة فقط. تحديث الصفحة أو إغلاقها أو انتهاء الجلسة أو تسجيل الخروج يفقدها من الذاكرة (قد يعرض
+          المتصفح تحذيرًا، وهذا غير مضمون). عندها راجع {historyHint} قبل تكرار العملية.
+        </p>
         <RequestRef requestId={state.failure.requestId} />
       </Notice>
     );

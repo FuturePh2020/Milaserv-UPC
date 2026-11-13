@@ -136,3 +136,12 @@ the CSSOM, which the CSP permits. No style exception was required.
 - Snapshot vs current: order lines show the ordered name/price/packaging, and a separate "الآن" column with the
   current product state, packaging changes and availability; buyer data at order time is separate from the
   merchant's current account.
+
+## 12. Stage 13 additions (imports)
+- Navigation: «استيراد CSV» under الكتالوج والمخزون (upload icon). New icons `upload`, `download` (inline SVG).
+- Import page: four mode cards (native radio group, arrow keys), the mode's effect in a notice (warning tone for
+  «ضبط الرصيد الفعلي»), collapsible column reference with the template download, native file input, preview card
+  (summary, error list readable on phones, contained table), confirmation dialog, result card with links.
+- Shell-wide warning banner for unresolved administrator operations with a link back to the owning screen.
+- `fieldset { min-width: 0 }`: fieldsets otherwise widen the page to their content (found at 360–768 px).
+- Product and inventory pages show the product id (LTR, monospace) next to the version for use in import files.

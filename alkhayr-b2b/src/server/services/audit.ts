@@ -27,6 +27,8 @@ const METADATA_ALLOW_LIST: Readonly<Record<string, readonly string[]>> = {
   'order.created': ['display_number', 'lines', 'total_cents', 'is_demo'],
   /** The event row holds the reason; ledger rows hold the per-line movements. */
   'order.transitioned': ['from', 'to', 'version', 'event_id', 'movement', 'lines_moved'],
+  /** One per committed CSV batch; per-record effects have their own product/inventory events. Never file content. */
+  'import.committed': ['import_id', 'mode', 'records', 'file_bytes'],
 };
 
 export type AuditAction = keyof typeof METADATA_ALLOW_LIST;

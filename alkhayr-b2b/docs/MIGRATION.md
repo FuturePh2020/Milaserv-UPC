@@ -141,6 +141,13 @@ activate the product. Products of an inactive category are no longer shown to tr
 cannot be created from the portal or with `setup-admin` (it refuses once an administrator exists); keep the
 first administrator's authenticator safe.
 
+### Stage 13 note: migration 0006 and CSV imports
+This release adds `0006_import_operations.sql` (committed import batches). Existing installations: stop the server,
+back up, run `db:migrate --confirm-backup`, start the server (it refuses to start with a pending migration). New
+installations get it through `db:init`. Administrators can then import products and stock from CSV files: see
+[`IMPORT_GUIDE_AR.md`](IMPORT_GUIDE_AR.md). Imported products are created inactive with zero stock. Keep the original
+files: the server stores only their hash, size and record count.
+
 ## 3. Startup refusals and what to do
 | Code | Meaning | Action |
 |---|---|---|

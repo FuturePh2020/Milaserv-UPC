@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { requireAdmin, requireApproved, requireRecentAdminAuth, requireSession, requireSessionCsrf, revalidateAtCommit } from '../auth/authorization.ts';
 import { hmacHex } from '../auth/keys.ts';
@@ -110,14 +111,14 @@ const text = (min: number, max: number, message: string) =>
 /** Integers only: z.number().int() rejects strings, booleans, NaN, ±Infinity, fractions and unsafe integers. */
 const int = (min: number, max: number, message: string) => z.number({ error: message }).int(message).min(min, message).max(max, message);
 
-const nameField = text(2, 160, 'اسم المنتج من 2 إلى 160 حرفًا.');
-const brandField = text(1, 80, 'اسم البراند من 1 إلى 80 حرفًا.');
-const categoryField = z.string({ error: 'القسم مطلوب.' }).regex(/^[a-z][a-z0-9_]{1,39}$/, 'القسم غير معروف.');
+export const nameField = text(2, 160, 'اسم المنتج من 2 إلى 160 حرفًا.');
+export const brandField = text(1, 80, 'اسم البراند من 1 إلى 80 حرفًا.');
+export const categoryField = z.string({ error: 'القسم مطلوب.' }).regex(/^[a-z][a-z0-9_]{1,39}$/, 'القسم غير معروف.');
 /** No barcode = null. "" is invalid. Exact text: case and leading zeros are kept; no trimming. */
-const barcodeField = z.union([z.null(), z.string().regex(/^[0-9A-Za-z-]{1,32}$/, 'الباركود من 1 إلى 32 حرفًا (أرقام أو حروف لاتينية أو -)، أو null بدون باركود.')]);
-const priceField = int(1, LIMITS.maxCartonPriceCents, `سعر الكرتونة بالقروش عدد صحيح من 1 إلى ${LIMITS.maxCartonPriceCents}.`);
-const packField = int(1, 10_000, 'عدد القطع في الكرتونة عدد صحيح من 1 إلى 10000.');
-const minimumField = int(1, LIMITS.maxCartonsPerLine, `الحد الأدنى عدد صحيح من 1 إلى ${LIMITS.maxCartonsPerLine} كرتونة.`);
+export const barcodeField = z.union([z.null(), z.string().regex(/^[0-9A-Za-z-]{1,32}$/, 'الباركود من 1 إلى 32 حرفًا (أرقام أو حروف لاتينية أو -)، أو null بدون باركود.')]);
+export const priceField = int(1, LIMITS.maxCartonPriceCents, `سعر الكرتونة بالقروش عدد صحيح من 1 إلى ${LIMITS.maxCartonPriceCents}.`);
+export const packField = int(1, 10_000, 'عدد القطع في الكرتونة عدد صحيح من 1 إلى 10000.');
+export const minimumField = int(1, LIMITS.maxCartonsPerLine, `الحد الأدنى عدد صحيح من 1 إلى ${LIMITS.maxCartonsPerLine} كرتونة.`);
 
 /**
  * Image: absolute https URL without credentials, stored in canonical form.
@@ -139,7 +140,7 @@ export function canonicalImageUrl(raw: string): string | null {
   return href.length <= 2048 && href.startsWith('https://') ? href : null;
 }
 
-const imageField = z.union([
+export const imageField = z.union([
   z.null(),
   z
     .string()
@@ -187,7 +188,7 @@ const updateSchema = z
   .refine((b) => Object.keys(b).some((k) => k !== 'expectedVersion'), { message: 'لا توجد حقول للتعديل.' });
 
 /** Fixed API field → column map; column names never come from the request. */
-const UPDATE_COLUMNS = {
+export const UPDATE_COLUMNS = {
   name: 'name',
   brand: 'brand',
   category: 'category',
@@ -198,19 +199,33 @@ const UPDATE_COLUMNS = {
   minimumCartons: 'minimum_cartons',
   active: 'active',
 } as const;
-type UpdatableField = keyof typeof UPDATE_COLUMNS;
+export type UpdatableField = keyof typeof UPDATE_COLUMNS;
 
 // ------------------------------------------------------------------ shared helpers
 
-export function assertCategory(ctx: RequestContext, id: string): void {
-  const row = ctx.services.db.prepare('SELECT active FROM product_categories WHERE id = ?').get(id) as { active: number } | undefined;
-  if (!row || row.active !== 1) throw new AppError('VALIDATION_FAILED', { fields: [{ path: 'category', message: 'القسم غير معروف أو غير مفعّل.' }] });
+export function isCategoryActive(db: DatabaseSync, id: string): boolean {
+  const row = db.prepare('SELECT active FROM product_categories WHERE id = ?').get(id) as { active: number } | undefined;
+  return row?.active === 1;
 }
 
-function assertBarcodeFree(ctx: RequestContext, barcode: string | null | undefined, exceptId?: string): void {
+export function assertCategory(ctx: RequestContext, id: string): void {
+  assertCategoryDb(ctx.services.db, id);
+}
+
+function assertCategoryDb(db: DatabaseSync, id: string): void {
+  if (!isCategoryActive(db, id)) throw new AppError('VALIDATION_FAILED', { fields: [{ path: 'category', message: 'القسم غير معروف أو غير مفعّل.' }] });
+}
+
+/** Id of the product currently holding this barcode, or null. */
+export function barcodeOwner(db: DatabaseSync, barcode: string): string | null {
+  const row = db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode) as { id: string } | undefined;
+  return row?.id ?? null;
+}
+
+function assertBarcodeFree(db: DatabaseSync, barcode: string | null | undefined, exceptId?: string): void {
   if (barcode === null || barcode === undefined) return;
-  const row = ctx.services.db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode) as { id: string } | undefined;
-  if (row && row.id !== exceptId) throw new AppError('DUPLICATE', { fields: [{ path: 'barcode', message: 'هذا الباركود مستخدم لمنتج آخر.' }] });
+  const owner = barcodeOwner(db, barcode);
+  if (owner && owner !== exceptId) throw new AppError('DUPLICATE', { fields: [{ path: 'barcode', message: 'هذا الباركود مستخدم لمنتج آخر.' }] });
 }
 
 /** Database UNIQUE violation on the barcode index (defence in depth for the pre-check). */
@@ -222,8 +237,12 @@ function mapBarcodeConflict(err: unknown): never {
 }
 
 export function loadProduct(ctx: RequestContext, id: string | undefined, where = ''): ProductRow {
+  return loadProductDb(ctx.services.db, id, where);
+}
+
+export function loadProductDb(db: DatabaseSync, id: string | undefined, where = ''): ProductRow {
   if (!id || !UUID.test(id)) throw new AppError('NOT_FOUND');
-  const row = ctx.services.db.prepare(`${SELECT_PRODUCT} WHERE p.id = ?${where}`).get(id) as unknown as ProductRow | undefined;
+  const row = db.prepare(`${SELECT_PRODUCT} WHERE p.id = ?${where}`).get(id) as unknown as ProductRow | undefined;
   if (!row) throw new AppError('NOT_FOUND');
   return row;
 }
@@ -401,30 +420,12 @@ export async function createProduct(ctx: RequestContext): Promise<void> {
   const product = writeTransaction(db, () => {
     const actor = revalidateAtCommit(ctx, auth, { admin: 'recent' });
     // Counted inside the serialized (BEGIN IMMEDIATE) transaction: concurrent creates cannot exceed the cap.
-    const total = (db.prepare('SELECT count(*) AS n FROM products').get() as { n: number }).n;
-    if (total >= LIMITS.maxProducts) throw new AppError('CATALOG_LIMIT');
-    assertCategory(ctx, body.category);
-    assertBarcodeFree(ctx, body.barcode);
-    const id = randomUUID();
-    const t = now();
-    try {
-      db.prepare(
-        `INSERT INTO products (id, name, brand, category, barcode, image_url, price_cents, on_hand, reserved, pack_size, minimum_cartons, active, is_demo, version, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, 0, ?, 1, ?, ?)`,
-      ).run(id, body.name, body.brand, body.category, body.barcode ?? null, body.imageUrl ?? null, body.cartonPriceCents, body.packSize, body.minimumCartons, body.isDemo ? 1 : 0, t, t);
-    } catch (err) {
-      mapBarcodeConflict(err);
-    }
-    writeAudit(db, {
-      actorUserId: actor.userId,
-      action: 'product.created',
-      targetType: 'product',
-      targetId: id,
-      metadata: { version: 1, category: body.category, price_to: body.cartonPriceCents, active_to: false, is_demo: body.isDemo === true },
-      ipHmac: hmacHex(ctx.services.keys.ip, ctx.clientIp),
-      requestId: ctx.requestId,
-      now: t,
-    });
+    assertCatalogCapacity(db, 1);
+    const id = insertProductRecord(
+      db,
+      { name: body.name, brand: body.brand, category: body.category, barcode: body.barcode ?? null, imageUrl: body.imageUrl ?? null, cartonPriceCents: body.cartonPriceCents, packSize: body.packSize, minimumCartons: body.minimumCartons, isDemo: body.isDemo === true },
+      { actorUserId: actor.userId, ipHmac: hmacHex(ctx.services.keys.ip, ctx.clientIp), requestId: ctx.requestId, now: now() },
+    );
     return db.prepare(`${SELECT_PRODUCT} WHERE p.id = ?`).get(id) as unknown as ProductRow;
   });
   sendJson(ctx.res, 201, { product: adminProduct(product) });
@@ -444,59 +445,153 @@ export async function updateProduct(ctx: RequestContext): Promise<void> {
     const current = loadProduct(ctx, id);
     if (current.version !== body.expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(current) } });
 
-    const before: Record<UpdatableField, unknown> = {
-      name: current.name,
-      brand: current.brand,
-      category: current.category,
-      barcode: current.barcode,
-      imageUrl: current.image_url,
-      cartonPriceCents: current.price_cents,
-      packSize: current.pack_size,
-      minimumCartons: current.minimum_cartons,
-      active: current.active === 1,
-    };
-    const changed = (Object.keys(UPDATE_COLUMNS) as UpdatableField[]).filter((k) => body[k] !== undefined && body[k] !== before[k]);
-    if (changed.length === 0) return current; // nothing differs: no version bump, no audit
-    if (changed.includes('category')) assertCategory(ctx, body.category as string);
-    if (changed.includes('barcode')) assertBarcodeFree(ctx, body.barcode, current.id);
-    // Pieces-per-carton is the physical meaning of a stocked carton: it may change only while the
-    // product holds no stock and no reservations (also enforced by migration 0005).
-    if (changed.includes('packSize') && (current.on_hand !== 0 || current.reserved !== 0)) {
-      throw new AppError('PACKAGING_LOCKED', { current: { product: adminProduct(current) } });
-    }
-
-    const t = Math.max(now(), current.updated_at);
-    const values = changed.map((k) => (k === 'active' ? (body.active ? 1 : 0) : (body[k] as string | number | null)));
-    try {
-      const result = db
-        .prepare(`UPDATE products SET ${changed.map((k) => `${UPDATE_COLUMNS[k]} = ?`).join(', ')}, version = version + 1, updated_at = ? WHERE id = ? AND version = ?`)
-        // Bound to the CLIENT's expectedVersion: an independent second check besides the pre-check above.
-        .run(...values, t, current.id, body.expectedVersion);
-      if (result.changes !== 1) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(current) } });
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      mapBarcodeConflict(err);
-    }
-    const meta: Record<string, string | number | boolean> = { fields: changed.join(','), version: current.version + 1 };
-    if (changed.includes('cartonPriceCents')) {
-      meta.price_from = current.price_cents;
-      meta.price_to = body.cartonPriceCents as number;
-    }
-    if (changed.includes('active')) {
-      meta.active_from = current.active === 1;
-      meta.active_to = body.active as boolean;
-    }
-    writeAudit(db, {
+    const { expectedVersion: _v, ...changes } = body;
+    return applyProductUpdate(db, current, body.expectedVersion, changes, {
       actorUserId: actor.userId,
-      action: 'product.updated',
-      targetType: 'product',
-      targetId: current.id,
-      metadata: meta,
       ipHmac: hmacHex(ctx.services.keys.ip, ctx.clientIp),
       requestId: ctx.requestId,
-      now: t,
+      now: now(),
     });
-    return loadProduct(ctx, current.id);
   });
   sendJson(ctx.res, 200, { product: adminProduct(product) });
+}
+
+// ------------------------------------------------------------------ write cores (shared with CSV import, stage 13)
+// Each core runs INSIDE the caller's write transaction and applies the full set of product rules,
+// so the HTTP endpoints and the import batch cannot diverge.
+
+export interface WriteMeta {
+  actorUserId: string;
+  ipHmac: string | null;
+  requestId: string;
+  now: number;
+}
+
+export interface NewProduct {
+  name: string;
+  brand: string;
+  category: string;
+  barcode: string | null;
+  imageUrl: string | null;
+  cartonPriceCents: number;
+  packSize: number;
+  minimumCartons: number;
+  isDemo: boolean;
+}
+
+export type ProductChanges = {
+  name?: string | undefined;
+  brand?: string | undefined;
+  category?: string | undefined;
+  barcode?: string | null | undefined;
+  imageUrl?: string | null | undefined;
+  cartonPriceCents?: number | undefined;
+  packSize?: number | undefined;
+  minimumCartons?: number | undefined;
+  active?: boolean | undefined;
+};
+
+export function productCount(db: DatabaseSync): number {
+  return (db.prepare('SELECT count(*) AS n FROM products').get() as { n: number }).n;
+}
+
+/** The catalog cap (LIMITS.maxProducts) for `adding` new products, checked inside the write transaction. */
+export function assertCatalogCapacity(db: DatabaseSync, adding: number): void {
+  if (productCount(db) + adding > LIMITS.maxProducts) throw new AppError('CATALOG_LIMIT');
+}
+
+/** Inserts one product inactive with zero stock (also database-enforced, 0003) and audits it. */
+export function insertProductRecord(db: DatabaseSync, p: NewProduct, meta: WriteMeta): string {
+  assertCategoryDb(db, p.category);
+  assertBarcodeFree(db, p.barcode);
+  const id = randomUUID();
+  try {
+    db.prepare(
+      `INSERT INTO products (id, name, brand, category, barcode, image_url, price_cents, on_hand, reserved, pack_size, minimum_cartons, active, is_demo, version, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, 0, ?, 1, ?, ?)`,
+    ).run(id, p.name, p.brand, p.category, p.barcode, p.imageUrl, p.cartonPriceCents, p.packSize, p.minimumCartons, p.isDemo ? 1 : 0, meta.now, meta.now);
+  } catch (err) {
+    mapBarcodeConflict(err);
+  }
+  writeAudit(db, {
+    actorUserId: meta.actorUserId,
+    action: 'product.created',
+    targetType: 'product',
+    targetId: id,
+    metadata: { version: 1, category: p.category, price_to: p.cartonPriceCents, active_to: false, is_demo: p.isDemo },
+    ipHmac: meta.ipHmac,
+    requestId: meta.requestId,
+    now: meta.now,
+  });
+  return id;
+}
+
+function snapshot(current: ProductRow): Record<UpdatableField, unknown> {
+  return {
+    name: current.name,
+    brand: current.brand,
+    category: current.category,
+    barcode: current.barcode,
+    imageUrl: current.image_url,
+    cartonPriceCents: current.price_cents,
+    packSize: current.pack_size,
+    minimumCartons: current.minimum_cartons,
+    active: current.active === 1,
+  };
+}
+
+/** Fields of `changes` whose value differs from the current record. */
+export function changedFields(current: ProductRow, changes: ProductChanges): UpdatableField[] {
+  const before = snapshot(current);
+  return (Object.keys(UPDATE_COLUMNS) as UpdatableField[]).filter((k) => changes[k] !== undefined && changes[k] !== before[k]);
+}
+
+/**
+ * Applies metadata/price/activation changes with optimistic concurrency, category and barcode
+ * rules and the packaging lock; audits the changed field names. Returns the current record
+ * unchanged (no version bump, no audit) when nothing differs.
+ */
+export function applyProductUpdate(db: DatabaseSync, current: ProductRow, expectedVersion: number, changes: ProductChanges, meta: WriteMeta): ProductRow {
+  if (current.version !== expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(current) } });
+  const changed = changedFields(current, changes);
+  if (changed.length === 0) return current;
+  if (changed.includes('category')) assertCategoryDb(db, changes.category as string);
+  if (changed.includes('barcode')) assertBarcodeFree(db, changes.barcode, current.id);
+  // Pieces-per-carton is the physical meaning of a stocked carton: it may change only while the
+  // product holds no stock and no reservations (also enforced by migration 0005).
+  if (changed.includes('packSize') && (current.on_hand !== 0 || current.reserved !== 0)) {
+    throw new AppError('PACKAGING_LOCKED', { current: { product: adminProduct(current) } });
+  }
+  const t = Math.max(meta.now, current.updated_at);
+  const values = changed.map((k) => (k === 'active' ? (changes.active ? 1 : 0) : (changes[k] as string | number | null)));
+  try {
+    const result = db
+      .prepare(`UPDATE products SET ${changed.map((k) => `${UPDATE_COLUMNS[k]} = ?`).join(', ')}, version = version + 1, updated_at = ? WHERE id = ? AND version = ?`)
+      // Bound to the CLIENT's expectedVersion: an independent second check besides the pre-check above.
+      .run(...values, t, current.id, expectedVersion);
+    if (result.changes !== 1) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(current) } });
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    mapBarcodeConflict(err);
+  }
+  const meta2: Record<string, string | number | boolean> = { fields: changed.join(','), version: current.version + 1 };
+  if (changed.includes('cartonPriceCents')) {
+    meta2.price_from = current.price_cents;
+    meta2.price_to = changes.cartonPriceCents as number;
+  }
+  if (changed.includes('active')) {
+    meta2.active_from = current.active === 1;
+    meta2.active_to = changes.active as boolean;
+  }
+  writeAudit(db, {
+    actorUserId: meta.actorUserId,
+    action: 'product.updated',
+    targetType: 'product',
+    targetId: current.id,
+    metadata: meta2,
+    ipHmac: meta.ipHmac,
+    requestId: meta.requestId,
+    now: t,
+  });
+  return loadProductDb(db, current.id);
 }

@@ -34,6 +34,9 @@ export const ERROR_CATALOG = {
   CONFIRM_PACKAGING_CHANGED: { status: 409, messageAr: 'تغيّر عدد القطع في كرتونة بعض المنتجات منذ إنشاء الطلب. ألغِ الطلب واطلب من التاجر إنشاء طلب جديد.' },
   CONFIRM_STOCK_INSUFFICIENT: { status: 409, messageAr: 'الرصيد المتاح لا يكفي لتأكيد كل أصناف الطلب. لم يُحجز أي صنف.' },
   ORDER_RESERVATION_MISMATCH: { status: 409, messageAr: 'حجوزات الطلب لا تطابق حالته؛ لم يُنفَّذ أي تغيير. راجع سجل الطلب.' },
+  IMPORT_PREVIEW_INVALID: { status: 409, messageAr: 'المعاينة لا تطابق هذا الملف أو هذا النوع من الاستيراد أو هذا الحساب. أعد المعاينة قبل التأكيد.' },
+  IMPORT_PREVIEW_EXPIRED: { status: 409, messageAr: 'انتهت صلاحية المعاينة قبل التأكيد ولم يُستورد شيء. أعد المعاينة ثم أكّد من جديد.' },
+  IMPORT_PREVIEW_STALE: { status: 409, messageAr: 'تغيّرت المنتجات منذ المعاينة؛ لم يُستورد أي سجل. راجع المعاينة الجديدة.' },
   PAYLOAD_TOO_LARGE: { status: 413, messageAr: 'حجم البيانات المرسلة أكبر من المسموح.' },
   URI_TOO_LONG: { status: 414, messageAr: 'عنوان الطلب أطول من المسموح.' },
   UNSUPPORTED_MEDIA_TYPE: { status: 415, messageAr: 'نوع البيانات المرسلة غير مدعوم.' },
@@ -47,10 +50,12 @@ export const ERROR_CATALOG = {
   INVENTORY_BELOW_RESERVED: { status: 422, messageAr: 'لا يمكن أن يقل الرصيد الإجمالي عن الكمية المحجوزة لطلبات مؤكدة.' },
   INVENTORY_LIMIT: { status: 422, messageAr: 'الرصيد الناتج أكبر من الحد المسموح.' },
   CATALOG_LIMIT: { status: 422, messageAr: 'تم بلوغ الحد الأقصى لعدد المنتجات في الكتالوج (5000 منتج).' },
+  IMPORT_REJECTED: { status: 422, messageAr: 'لم يُستورد أي سجل: الملف يحتوي على أخطاء. صحّحها ثم أعد المعاينة.' },
   RECENT_AUTH_REQUIRED: { status: 428, messageAr: 'لأمان العملية، يلزم تسجيل الدخول مرة أخرى بكلمة المرور ورمز التحقق.' },
   RATE_LIMITED: { status: 429, messageAr: 'عدد المحاولات كبير. حاول مرة أخرى لاحقًا.' },
   INTERNAL: { status: 500, messageAr: 'حدث خطأ غير متوقع في الخادم. حاول مرة أخرى لاحقًا.' },
   UNAVAILABLE: { status: 503, messageAr: 'الخدمة غير متاحة مؤقتًا. حاول مرة أخرى بعد قليل.' },
+  IMPORT_BUSY: { status: 503, messageAr: 'عمليات استيراد أخرى قيد المعالجة الآن. حاول بعد لحظات.' },
   NOT_READY: { status: 503, messageAr: 'الخدمة غير جاهزة لاستقبال الطلبات حاليًا.' },
 } as const satisfies Record<string, { status: number; messageAr: string }>;
 

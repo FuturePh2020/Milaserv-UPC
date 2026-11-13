@@ -246,3 +246,76 @@ export function transitionOrder(csrf: SessionCsrfToken, orderId: string, payload
     validate: (v): v is TransitionResult => isObject(v) && typeof v.replayed === 'boolean' && isObject(v.operation) && isOrderState(v.operation.toState) && isAdminOrder(v.order),
   });
 }
+
+// ------------------------------------------------------------------ CSV imports (stage 13)
+
+export const IMPORT_MODES = ['create_products', 'update_products', 'receive_stock', 'set_stock_total'] as const;
+export type ImportMode = (typeof IMPORT_MODES)[number];
+
+export interface ImportIssue {
+  field: string | null;
+  message: string;
+}
+export interface ImportRowReport {
+  recordNo: number;
+  line: number;
+  status: 'ok' | 'error';
+  productId: string | null;
+  productName: string | null;
+  errors: ImportIssue[];
+  warnings: string[];
+  change: Record<string, unknown> | null;
+}
+export interface ImportPreview {
+  mode: ImportMode;
+  file: { bytes: number; sha256: string };
+  summary: { records: number; valid: number; invalid: number };
+  fileErrors: ImportIssue[];
+  rows: ImportRowReport[];
+  previewToken: string | null;
+  expiresAt: number | null;
+}
+export interface ImportCommitPayload {
+  mode: ImportMode;
+  /** The exact file bytes, base64 (identical to the previewed file). */
+  file: string;
+  operationKey: string;
+  previewToken: string;
+}
+export interface ImportResult {
+  replayed: boolean;
+  import: {
+    id: string;
+    mode: ImportMode;
+    status: 'committed';
+    recordCount: number;
+    fileBytes: number;
+    contentSha256: string;
+    createdAt: number;
+    items: Array<{ recordNo: number; line: number; productId: string; productName: string; ledgerId: number | null; productVersionAfter: number }>;
+  };
+}
+
+const isImportMode = (v: unknown): v is ImportMode => typeof v === 'string' && (IMPORT_MODES as readonly string[]).includes(v);
+const isIssue = (v: unknown): v is ImportIssue => isObject(v) && (v.field === null || isString(v.field)) && isString(v.message);
+const isRowReport = (v: unknown): v is ImportRowReport =>
+  isObject(v) && isInt(v.recordNo) && isInt(v.line) && (v.status === 'ok' || v.status === 'error') && Array.isArray(v.errors) && v.errors.every(isIssue) && Array.isArray(v.warnings) && v.warnings.every(isString);
+const isPreview = (v: unknown): v is ImportPreview =>
+  isObject(v) && isImportMode(v.mode) && isObject(v.summary) && Array.isArray(v.fileErrors) && v.fileErrors.every(isIssue) && Array.isArray(v.rows) && v.rows.every(isRowReport) && (v.previewToken === null || isString(v.previewToken));
+const isImportResult = (v: unknown): v is ImportResult =>
+  isObject(v) && typeof v.replayed === 'boolean' && isObject(v.import) && isString(v.import.id) && isImportMode(v.import.mode) && v.import.status === 'committed' && isInt(v.import.recordCount) && Array.isArray(v.import.items);
+export const isImportRowReport = isRowReport;
+
+export function importTemplateUrl(mode: ImportMode): string {
+  return `/api/v1/admin/imports/templates/${mode}.csv`;
+}
+
+/** Validation only: writes nothing on the server. */
+export function previewImport(csrf: SessionCsrfToken, mode: ImportMode, file: string): Promise<ApiResult<ImportPreview>> {
+  return apiMutate({ method: 'POST', path: '/api/v1/admin/imports/preview', csrf, body: { mode, file }, validate: isPreview });
+}
+
+/** All-or-nothing; idempotent per (administrator, operationKey): a same-key retry returns the original batch. */
+export function commitImport(csrf: SessionCsrfToken, payload: ImportCommitPayload): Promise<ApiResult<ImportResult>> {
+  return apiMutate({ method: 'POST', path: '/api/v1/admin/imports/commit', csrf, body: payload, validate: isImportResult });
+}

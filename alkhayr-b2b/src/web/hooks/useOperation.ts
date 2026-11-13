@@ -1,82 +1,48 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import type { ApiFailure, ApiResult } from '../api/client.ts';
-import { classifyFailure } from '../checkout/submission.ts';
-import { useIdentity } from '../session/identity.tsx';
-import { trackUnresolved } from '../admin/unresolved.ts';
+import { useOperations } from '../admin/operations.tsx';
 
 /**
- * One idempotent administrator operation (inventory adjustment or order transition) whose payload
- * carries its own operation key. Kept IN MEMORY only (never browser storage).
+ * One idempotent administrator operation whose payload carries its own operation key, held by the
+ * shell's account-scoped coordinator (admin/coordinator.ts) under `slot`, so it survives navigation
+ * between administration screens. In memory only (never browser storage).
  *
- * - sending:  request in flight (buttons disabled — a convenience, not the guarantee).
- * - unknown:  no answer / 5xx / malformed answer. The operation MAY have been applied. The same key
- *             and exact payload are kept for an explicit retry; the form is locked meanwhile.
- * - reauth:   428 — nothing was executed. The operator re-authenticates; the form values stay as an
- *             unsent draft and a NEW confirmation (with a new key) is required. Nothing auto-runs.
- * - rejected: a definite refusal (409/422/400/403/429…) — nothing was applied; the key is released.
+ * - sending:  request in flight; a second run in the slot is refused.
+ * - unknown:  no answer / 5xx / malformed answer. It MAY have been applied. The same key and exact
+ *             payload are kept; the form is locked; only a same-key retry or an explicit discard.
+ * - reauth:   428 — nothing was executed; the draft stays unsent and needs a NEW confirmation.
+ * - rejected: a definite refusal — nothing applied; the key is released.
  * - done:     result returned (possibly a replay of the original operation).
- * While sending/unknown, leaving or reloading the page asks for confirmation (beforeunload).
  */
 export type OperationState<P, R> =
   | { status: 'idle' }
   | { status: 'sending'; payload: P }
   | { status: 'unknown'; payload: P; failure: ApiFailure }
-  | { status: 'reauth'; failure: ApiFailure }
-  | { status: 'rejected'; failure: ApiFailure }
-  | { status: 'done'; result: R; payload: P };
+  | { status: 'reauth'; failure: ApiFailure; payload: P }
+  | { status: 'rejected'; failure: ApiFailure; handled: boolean }
+  | { status: 'done'; result: R; payload: P; handled: boolean };
 
-export function useOperation<P, R>(send: (payload: P) => Promise<ApiResult<R>>) {
-  const { handleAuthFailure } = useIdentity();
-  const [state, setState] = useState<OperationState<P, R>>({ status: 'idle' });
-  const inFlight = useRef(false);
+export function useOperation<P, R>(slot: string, meta: { label: string; href: string }, send: (payload: P) => Promise<ApiResult<R>>) {
+  const c = useOperations();
   const sendRef = useRef(send);
-  sendRef.current = send;
-
-  const unresolved = state.status === 'sending' || state.status === 'unknown';
-  useEffect(() => {
-    if (!unresolved) return;
-    const release = trackUnresolved();
-    const warn = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', warn);
-    return () => {
-      release();
-      window.removeEventListener('beforeunload', warn);
-    };
-  }, [unresolved]);
-
-  const run = useCallback(
-    async (payload: P) => {
-      if (inFlight.current) return; // repeated taps: at most one request at a time
-      inFlight.current = true;
-      setState({ status: 'sending', payload });
-      const r = await sendRef.current(payload);
-      inFlight.current = false;
-      if (r.ok) {
-        setState({ status: 'done', result: r.data, payload });
-        return;
-      }
-      if (r.kind === 'reauth_required') {
-        setState({ status: 'reauth', failure: r });
-        return;
-      }
-      const outcome = classifyFailure(r);
-      if (outcome === 'unknown') setState({ status: 'unknown', payload, failure: r });
-      else {
-        handleAuthFailure(r);
-        setState({ status: 'rejected', failure: r });
-      }
-    },
-    [handleAuthFailure],
-  );
-
-  /** Same key, exact same payload. Only available for an unknown outcome. */
-  const retry = useCallback(() => {
-    if (state.status === 'unknown') void run(state.payload);
-  }, [state, run]);
-
-  const reset = useCallback(() => setState({ status: 'idle' }), []);
-  return { state, run, retry, reset, unresolved };
+  sendRef.current = send; // a retry after re-authentication uses the CURRENT session/CSRF token
+  const e = c.get(slot);
+  const state: OperationState<P, R> = !e
+    ? { status: 'idle' }
+    : e.status === 'sending'
+      ? { status: 'sending', payload: e.payload as P }
+      : e.status === 'unknown'
+        ? { status: 'unknown', payload: e.payload as P, failure: e.failure! }
+        : e.status === 'reauth'
+          ? { status: 'reauth', failure: e.failure!, payload: e.payload as P }
+          : e.status === 'rejected'
+            ? { status: 'rejected', failure: e.failure!, handled: e.handled }
+            : { status: 'done', result: e.result as R, payload: e.payload as P, handled: e.handled };
+  const sender = (p: unknown) => sendRef.current(p as P) as Promise<ApiResult<unknown>>;
+  /** `label` describes this specific intention (shown in the global unresolved-operation notice). */
+  const run = useCallback((payload: P, label: string = meta.label) => c.run(slot, { label, href: meta.href }, payload, sender), [c, slot, meta.label, meta.href]); // eslint-disable-line react-hooks/exhaustive-deps
+  const retry = useCallback(() => c.retry(slot, sender), [c, slot]); // eslint-disable-line react-hooks/exhaustive-deps
+  const reset = useCallback(() => c.discard(slot), [c, slot]);
+  const markHandled = useCallback(() => c.markHandled(slot), [c, slot]);
+  return { state, label: e?.label ?? null, run, retry, reset, markHandled, unresolved: state.status === 'sending' || state.status === 'unknown' };
 }

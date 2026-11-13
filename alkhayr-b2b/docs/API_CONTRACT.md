@@ -242,3 +242,91 @@ products (detail answers the same 404 as a missing product; `?category=<inactive
 `VALIDATION_FAILED`). Administrator product and inventory views still include them. Order snapshots,
 reservations and fulfillment are unchanged (confirmation of an order containing such a product is still
 refused with `CONFIRM_PRODUCT_UNAVAILABLE`). Covered by `tests/integration/products.test.ts` ("inactive categories").
+
+## 6. CSV imports (stage 13)
+Administrator only. Four separate modes; a mode is never inferred from which columns are filled. Product
+changes and stock movements are never mixed in one file.
+
+| Route | Auth | Contract |
+|---|---|---|
+| GET `/api/v1/admin/imports/templates/{mode}.csv` | D (live admin session) | Header-only template: UTF-8 with BOM, CRLF, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment`, `Cache-Control: no-store`. No example rows (they would be imported by mistake). Unknown names → 404 |
+| POST `/api/v1/admin/imports/preview` | D + session CSRF + exact Origin; `import_preview_account` 30/10 min | Strict JSON ≤ 2 MiB: `{mode, file}` (`file` = the exact file bytes, base64, ≤ 1 MiB decoded; more → 413). **Writes nothing** (no product, ledger, audit or import row). → 200 `{mode, file:{bytes, sha256}, summary:{records, valid, invalid}, fileErrors:[{field,message}], rows:[RowReport], previewToken, expiresAt}`. `previewToken`/`expiresAt` are null unless there are no errors at all |
+| POST `/api/v1/admin/imports/commit` | R (recent admin) + session CSRF + exact Origin; `import_commit_account` 20/10 min | Strict JSON ≤ 2 MiB: `{mode, file, previewToken, operationKey}` (UUID v4). → 201 `{replayed:false, import}` or 200 `{replayed:true, import}` (identical retry). `import = {id, mode, status:'committed', recordCount, fileBytes, contentSha256, createdAt, items:[{recordNo, line, productId, productName, ledgerId, productVersionAfter}]}` |
+
+At most two uploads are decoded/parsed/evaluated at once per process; a third gets 503 `IMPORT_BUSY`
+(`Retry-After: 5`). No database transaction is open while a body is read or parsed.
+
+**RowReport**: `{recordNo, line, status:'ok'|'error', productId, productName, errors:[{field, message}], warnings:[…], change}`.
+`line` is the physical line where the record starts (multiline records keep their first line). `productName` is the
+CURRENT name from the database (update/stock modes) — informational, never an identifier. `change`:
+create `{product:{…, cartonPriceCents, category:{id,labelAr}}, active:false, onHand:0}`; update
+`{version, changes:[{field, from, to}]}`; stock `{version, onHandBefore, delta, onHandAfter, reserved, availableAfter}`.
+
+### 6a. Header contract (exact, case-sensitive; order free; no other columns)
+| Mode | Required columns | Optional columns |
+|---|---|---|
+| `create_products` | `name, brand, category, cartonPriceEgp, packSize, minimumCartons` | `barcode, imageUrl` |
+| `update_products` | `productId, expectedVersion` (+ at least one changeable column) | `currentName, name, brand, category, cartonPriceEgp, packSize, minimumCartons, barcode, imageUrl` |
+| `receive_stock` | `productId, expectedVersion, quantity, reason` | `currentName, reference` |
+| `set_stock_total` | `productId, expectedVersion, total, reason` | `currentName, reference` |
+
+There are no stock, reserved, active, demo, version-to-set, actor or role columns: any such header is an
+unknown header (file error). Field names are the API's except `cartonPriceEgp` (decimal pounds, see below) and
+`quantity`/`total` (the adjustment amounts).
+
+- `category`: the stable category id (e.g. `chocolate`), never the Arabic label; must exist and be active. No
+  fuzzy matching of categories or brands.
+- `productId`: the product UUID; products are never matched by name. A product id may appear once per file.
+- `expectedVersion`: the product's current version. A different version is a record error ("changed since").
+- `currentName` (optional): if non-empty and different from the current name, the record gets a WARNING only.
+- **Update convention:** an empty cell = unchanged; the exact token `__CLEAR__` clears an optional field
+  (`barcode`, `imageUrl`) to null; `__CLEAR__` in a required field is an error. A row that changes nothing is an
+  error. `packSize` cannot change while the product has stock or reservations (`PACKAGING_LOCKED` rule). Demo
+  classification and activation cannot be changed by import.
+- `barcode`: kept exactly (case, leading zeros); empty (create) = null; same rules as the API (1–32 of `0-9A-Za-z-`).
+  Unique in the file and in the database (a barcode currently held by another product is refused even if that
+  product changes it in the same file).
+- Create: products are created **inactive with zero stock**, not demo, with all API validation and the 5,000
+  catalog cap (counted inside the commit transaction).
+- `receive_stock`: `quantity` whole cartons ≥ 1. `set_stock_total`: `total` whole cartons ≥ 0 that REPLACES the
+  physical total; refused if below reserved or equal to the current total; reserved never changes. `reason` 3–300
+  characters, `reference` optional 1–100.
+
+### 6b. Parsing conventions
+UTF-8 only (one leading BOM allowed and removed); invalid UTF-8 and NUL bytes are rejected, never replaced. LF or
+CRLF record ends; a bare CR is an error. RFC-4180 quoting: a quoted field starts with `"`, `""` is a literal quote,
+quoted fields may contain commas and line breaks; a quote inside an unquoted field, text after a closing quote
+and an unterminated quote are errors. Completely empty lines (anywhere, including trailing) are ignored; a line of
+commas is a record (and an "empty row" error). Cells are kept exactly (no trimming of barcodes; text fields are
+normalized like the API: NFC + trim). Limits: 1 MiB file, 1,000 data rows, 4,096 characters per cell; every
+record must have exactly as many cells as the header.
+Numbers: whole numbers `^(0|[1-9][0-9]{0,9})$` (ASCII digits only — no sign, spaces, separators, decimals,
+exponents, leading zeros, Arabic-Indic digits, `Infinity`/`NaN`). Money `cartonPriceEgp`: decimal Egyptian pounds
+`^(0|[1-9][0-9]{0,6})(\.[0-9]{1,2})?$`, converted to integer piastres with integer arithmetic; a third decimal,
+thousands separators or a decimal comma are refused, never rounded or reinterpreted. Leading zeros already removed
+by a spreadsheet program cannot be recovered.
+
+### 6c. Confirmation, all-or-nothing and idempotency
+The preview token is an HMAC (key derived from `APP_SECRET`, purpose `import_preview`) over
+`{administrator, mode, SHA-256 of the exact file bytes, digest of the target products' versions seen, expiry}`;
+it is valid 20 minutes. A checksum alone is not trusted: the confirmation re-sends the exact file, the server
+re-parses it and checks the token's signature, administrator, mode, content digest and expiry.
+
+Commit order (one `BEGIN IMMEDIATE` transaction): re-validate session, administrator role and recent
+authentication → **idempotency** (`import_operations` by administrator + key: same request digest → the original
+committed result, 200 `replayed:true`, even after the preview expired or versions moved on; different digest →
+409 `IDEMPOTENCY_KEY_REUSED`) → preview binding (`IMPORT_PREVIEW_INVALID` 409 / `IMPORT_PREVIEW_EXPIRED` 409) → full
+re-evaluation against the current data (any error → 422 `IMPORT_REJECTED` with `details.current = {fileErrors,
+rows}` of the failing records; nothing written) → version digest (409 `IMPORT_PREVIEW_STALE`) → catalog cap → apply
+every record with the SAME product/inventory cores as the single-record endpoints (product audit events per record;
+one ledger row per stock record, with the administrator, reason, reference and resulting version; reserved never
+changed) → import record and items → `import.committed` audit event. Any failure rolls everything back and does not
+consume the key. The request digest is `SHA-256(["import.commit.v1", mode, fileSha256])`; the token is not part of it.
+
+| Situation | Response |
+|---|---|
+| Preview expired, never confirmed | 409 `IMPORT_PREVIEW_EXPIRED` — nothing written; preview again |
+| Confirmation definitely refused | 4xx (`IMPORT_REJECTED`, `IMPORT_PREVIEW_*`, `RECENT_AUTH_REQUIRED`, `VALIDATION_FAILED`, `RATE_LIMITED`…) — nothing written, key not consumed |
+| Outcome unknown (no response, 5xx, malformed) | the client keeps key + exact body for a same-key retry; never retried automatically |
+| Committed | 201 `replayed:false` |
+| Identical committed retry | 200 `replayed:true` with the original result |

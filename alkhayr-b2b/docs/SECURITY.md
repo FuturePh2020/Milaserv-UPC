@@ -314,6 +314,29 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   credentials (the server re-validates and never fetches them). All text is rendered through React escaping.
 - Unchanged open risks: username lockout (T40) and slow stock inference (T57/T73).
 
+## 7i. CSV imports (implemented stage 13)
+- Administrator only, enforced by the server on every route (templates: live admin session; preview: live admin
+  session + session CSRF + exact Origin; commit: recent authentication + CSRF + Origin, re-checked inside the write
+  transaction together with the session and role). Traders get 403 and the UI never requests these routes.
+- Bounded input: JSON body ≤ 2 MiB (streamed limit), decoded file ≤ 1 MiB, ≤ 1 000 rows, ≤ 4 096 characters per
+  cell; strict UTF-8 (no replacement), NUL refused; at most two concurrent import jobs per process (503
+  `IMPORT_BUSY`); per-administrator limits 30 previews and 20 commits per 10 minutes. No write transaction is held
+  while reading or parsing; the commit transaction contains database work only.
+- Exact, strict grammars for numbers and money (no `parseInt`/`parseFloat`, no locale reinterpretation, no
+  rounding). Cells are data: never evaluated as formulas or code; all values reach SQL as bound parameters; the UI
+  renders them as text (hostile HTML/formula text verified in the browser). Valid business text is not altered to
+  defend spreadsheets; safe CSV export is stage 14.
+- Preview writes nothing and is not a lock. The confirmation re-sends the exact bytes and an HMAC-signed binding
+  (administrator, mode, content SHA-256, target versions, 20-minute expiry; key derived from `APP_SECRET`, purpose
+  `import_preview`); edited preview JSON is never accepted as a plan — the server re-parses and re-evaluates.
+- All-or-nothing: one transaction for products/ledger rows/audit events/import record; failure injection (middle
+  record, final audit) proves rollback. Same product/inventory cores as the single-record endpoints (one rule set).
+- Durable idempotency per administrator + operation key (`import_operations`), checked before the binding and the
+  version checks; different content under a key → 409; recovery works after a restart; a failed transaction does
+  not consume the key. Only hashes, sizes, counts and links are stored: no file bodies, credentials or tokens.
+  Responses contain no raw database errors or paths (500 `INTERNAL` with a request id).
+- Open risks unchanged: username lockout (T40), stock inference (T57/T73), stage-09 consistency gaps (stage 16).
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),

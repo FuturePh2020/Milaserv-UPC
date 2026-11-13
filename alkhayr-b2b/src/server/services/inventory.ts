@@ -12,7 +12,8 @@ import type { RequestContext } from '../http/router.ts';
 import { likePattern } from '../http/search.ts';
 import { STOCK_STATUS_LABEL_AR, stockStatus } from '../../shared/stock-status.ts';
 import { writeAudit } from './audit.ts';
-import { adminProduct, assertCategory, loadProduct, lowStockThreshold, SELECT_PRODUCT, type ProductRow } from './products.ts';
+import { adminProduct, assertCategory, loadProduct, lowStockThreshold, SELECT_PRODUCT, type ProductRow, type WriteMeta } from './products.ts';
+import type { DatabaseSync } from 'node:sqlite';
 
 /**
  * Inventory (stage 07): administrator reads and manual adjustments of on_hand.
@@ -288,46 +289,15 @@ export async function createAdjustment(ctx: RequestContext): Promise<void> {
       return { replayed: true as const, ledgerId: previous.id };
     }
 
-    // 3. Authoritative state and the client's version.
+    // 3. Authoritative state, the client's version, the ledger row and the linked product update.
     const product = loadProduct(ctx, productId);
-    if (product.version !== a.expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(product) } });
-
-    // 4. Delta and resulting balances (reserved is never changed by manual adjustments).
-    const delta = a.type === 'receipt' ? a.quantity : a.type === 'correction_delta' ? a.delta : a.total - product.on_hand;
-    const current = { product: adminProduct(product) };
-    if (delta === 0) throw new AppError('NO_CHANGE', { current });
-    const onHandAfter = product.on_hand + delta;
-    if (onHandAfter < 0) throw new AppError('INVENTORY_NEGATIVE', { current });
-    if (onHandAfter < product.reserved) throw new AppError('INVENTORY_BELOW_RESERVED', { current });
-    if (onHandAfter > MAX_ON_HAND) throw new AppError('INVENTORY_LIMIT', { current });
-
-    // 5. Ledger row first, then the product update linked to it (database-enforced pairing, 0003).
-    const t = Math.max(now(), product.updated_at);
-    const versionAfter = product.version + 1;
-    const ledger = db
-      .prepare(
-        `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, adjustment_type, on_hand_delta, reserved_delta, on_hand_after, reserved_after,
-                                       reason, external_ref, order_id, operation_key, operation_digest, product_version_after, created_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
-      )
-      .run(product.id, actor.userId, a.type === 'receipt' ? 'receipt' : 'correction', a.type, delta, onHandAfter, product.reserved, a.reason, a.reference ?? null, a.operationKey, digest, versionAfter, t);
-    const ledgerId = Number(ledger.lastInsertRowid);
-    const updated = db
-      .prepare('UPDATE products SET on_hand = ?, version = version + 1, updated_at = ?, last_ledger_id = ? WHERE id = ? AND version = ?')
-      .run(onHandAfter, t, ledgerId, product.id, a.expectedVersion);
-    if (updated.changes !== 1) throw new AppError('VERSION_CONFLICT', { current });
-
-    // 6. Minimal audit event (no free text beyond the ledger reference).
-    writeAudit(db, {
-      actorUserId: actor.userId,
-      action: 'inventory.adjusted',
-      targetType: 'product',
-      targetId: product.id,
-      metadata: { type: a.type, on_hand_delta: delta, on_hand_after: onHandAfter, version: versionAfter, ledger_id: ledgerId },
-      ipHmac: hmacHex(ctx.services.keys.ip, ctx.clientIp),
-      requestId: ctx.requestId,
-      now: t,
-    });
+    const amount = a.type === 'receipt' ? a.quantity : a.type === 'correction_delta' ? a.delta : a.total;
+    const { ledgerId } = applyStockAdjustment(
+      db,
+      product,
+      { type: a.type, amount, expectedVersion: a.expectedVersion, reason: a.reason, reference: a.reference ?? null, operationKey: a.operationKey, digest },
+      { actorUserId: actor.userId, ipHmac: hmacHex(ctx.services.keys.ip, ctx.clientIp), requestId: ctx.requestId, now: now() },
+    );
     return { replayed: false as const, ledgerId };
   });
 
@@ -338,4 +308,68 @@ export async function createAdjustment(ctx: RequestContext): Promise<void> {
     operation: ledgerEntry(entry),
     product: inventoryItem(product, lowStockThreshold(ctx)),
   });
+}
+
+// ------------------------------------------------------------------ adjustment core (shared with CSV import, stage 13)
+
+export interface StockAdjustment {
+  type: 'receipt' | 'correction_delta' | 'set_total';
+  /** receipt: quantity (> 0); correction_delta: signed delta (≠ 0); set_total: new physical total (≥ 0). */
+  amount: number;
+  expectedVersion: number;
+  reason: string;
+  reference: string | null;
+  /** Per-request idempotency (manual adjustments). Import movements carry none: the batch record links them. */
+  operationKey: string | null;
+  digest: string | null;
+}
+
+/** Resulting delta and balances, or the refusal code. Pure: used by previews and by the write core. */
+export function planStockAdjustment(product: { on_hand: number; reserved: number }, type: StockAdjustment['type'], amount: number) {
+  const delta = type === 'set_total' ? amount - product.on_hand : amount;
+  const onHandAfter = product.on_hand + delta;
+  const refusal =
+    delta === 0 ? ('NO_CHANGE' as const)
+    : onHandAfter < 0 ? ('INVENTORY_NEGATIVE' as const)
+    : onHandAfter < product.reserved ? ('INVENTORY_BELOW_RESERVED' as const)
+    : onHandAfter > MAX_ON_HAND ? ('INVENTORY_LIMIT' as const)
+    : null;
+  return { delta, onHandAfter, reserved: product.reserved, availableAfter: onHandAfter - product.reserved, refusal };
+}
+
+/**
+ * One manual stock movement INSIDE the caller's write transaction: version check, refusal rules,
+ * ledger row first, then the product update linked to it (database-enforced pairing, 0003),
+ * then the minimal audit event. Reserved stock is never changed here.
+ */
+export function applyStockAdjustment(db: DatabaseSync, product: ProductRow, a: StockAdjustment, meta: WriteMeta): { ledgerId: number; versionAfter: number; onHandAfter: number } {
+  if (product.version !== a.expectedVersion) throw new AppError('VERSION_CONFLICT', { current: { product: adminProduct(product) } });
+  const plan = planStockAdjustment(product, a.type, a.amount);
+  const current = { product: adminProduct(product) };
+  if (plan.refusal) throw new AppError(plan.refusal, { current });
+  const t = Math.max(meta.now, product.updated_at);
+  const versionAfter = product.version + 1;
+  const ledger = db
+    .prepare(
+      `INSERT INTO inventory_ledger (product_id, actor_user_id, kind, adjustment_type, on_hand_delta, reserved_delta, on_hand_after, reserved_after,
+                                     reason, external_ref, order_id, operation_key, operation_digest, product_version_after, created_at)
+       VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+    )
+    .run(product.id, meta.actorUserId, a.type === 'receipt' ? 'receipt' : 'correction', a.type, plan.delta, plan.onHandAfter, product.reserved, a.reason, a.reference, a.operationKey, a.digest, versionAfter, t);
+  const ledgerId = Number(ledger.lastInsertRowid);
+  const updated = db
+    .prepare('UPDATE products SET on_hand = ?, version = version + 1, updated_at = ?, last_ledger_id = ? WHERE id = ? AND version = ?')
+    .run(plan.onHandAfter, t, ledgerId, product.id, a.expectedVersion);
+  if (updated.changes !== 1) throw new AppError('VERSION_CONFLICT', { current });
+  writeAudit(db, {
+    actorUserId: meta.actorUserId,
+    action: 'inventory.adjusted',
+    targetType: 'product',
+    targetId: product.id,
+    metadata: { type: a.type, on_hand_delta: plan.delta, on_hand_after: plan.onHandAfter, version: versionAfter, ledger_id: ledgerId },
+    ipHmac: meta.ipHmac,
+    requestId: meta.requestId,
+    now: t,
+  });
+  return { ledgerId, versionAfter, onHandAfter: plan.onHandAfter };
 }

@@ -32,6 +32,10 @@ export const DEFAULT_RATE_LIMITS = {
   order_create_account: { limit: 30, windowMs: 10 * 60_000 },
   /** Checkout previews per merchant (read-only, but each evaluates up to 100 lines). */
   order_quote_account: { limit: 60, windowMs: 10 * 60_000 },
+  /** CSV import previews per administrator (each parses and evaluates up to 1 000 records). */
+  import_preview_account: { limit: 30, windowMs: 10 * 60_000 },
+  /** CSV import confirmations (including same-key retries) per administrator. */
+  import_commit_account: { limit: 20, windowMs: 10 * 60_000 },
   /** All /api requests per client IP. */
   api_ip: { limit: 300, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimitRule>;

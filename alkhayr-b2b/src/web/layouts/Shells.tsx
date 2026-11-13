@@ -38,6 +38,7 @@ export const ADMIN_NAV: ReadonlyArray<{ heading: string; items: readonly NavItem
     items: [
       { href: '#/admin/products', label: 'المنتجات', icon: 'box' },
       { href: '#/admin/inventory', label: 'المخزون', icon: 'inventory' },
+      { href: '#/admin/imports', label: 'استيراد CSV', icon: 'upload' },
     ],
   },
   { heading: 'الحسابات', items: [{ href: '#/admin/merchants', label: 'التجار', icon: 'users' }] },

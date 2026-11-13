@@ -27,6 +27,8 @@ const PATHS = {
   chevron: 'M10 6l6 6-6 6',
   refresh: 'M20 11a8 8 0 0 0-14.6-4.5L4 8m0-4v4h4M4 13a8 8 0 0 0 14.6 4.5L20 16m0 4v-4h-4',
   shield: 'M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z',
+  upload: 'M12 16V4m-5 5l5-5 5 5M4 16v4h16v-4',
+  download: 'M12 4v12m-5-5l5 5 5-5M4 16v4h16v-4',
 } as const;
 
 export type IconName = keyof typeof PATHS;

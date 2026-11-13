@@ -200,7 +200,9 @@ function LedgerMore({ id, cursor }: { id: string; cursor: string | null }) {
 
 function AdjustmentForm({ item, csrf, reload }: { item: InventoryItem; csrf: SessionCsrfToken; reload: () => void }) {
   const toast = useToast();
-  const op = useOperation<AdjustmentPayload, AdjustmentResult>((p) => adjustInventory(csrf, item.product.id, p));
+  const op = useOperation<AdjustmentPayload, AdjustmentResult>(`inventory:${item.product.id}`, { label: `حركة مخزون على «${item.product.name}»`, href: `/admin/inventory/${item.product.id}` }, (p) =>
+    adjustInventory(csrf, item.product.id, p),
+  );
   const [type, setType] = useState<AdjustmentType>('receipt');
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
@@ -213,17 +215,25 @@ function AdjustmentForm({ item, csrf, reload }: { item: InventoryItem; csrf: Ses
   const [reconfirm, setReconfirm] = useState(false);
   const locked = op.unresolved;
 
-  // A committed operation (or its replay) refreshes the record and ledger once.
-  const doneId = op.state.status === 'done' ? op.state.result.operation.id : null;
+  // A committed operation (or its replay) is handled ONCE, even if it finished while the operator
+  // was on another screen: refresh the record and ledger, announce it, clear the form.
+  const doneId = op.state.status === 'done' && !op.state.handled ? op.state.result.operation.id : null;
   useEffect(() => {
-    if (doneId === null) return;
+    if (doneId === null || op.state.status !== 'done') return;
+    op.markHandled();
     reload();
+    toast(op.state.result.replayed ? 'هذه العملية سُجلت من قبل؛ لم تتكرر.' : 'سُجلت حركة المخزون.', 'success');
+    setAmount('');
+    setReason('');
+    setReference('');
   }, [doneId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // A definite refusal that depends on the current record (stale version, reserved changed) re-reads it.
-  const rejectedCode = op.state.status === 'rejected' ? op.state.failure.code : null;
+  // A definite refusal that depends on the current record (stale version, reserved changed) re-reads it once.
+  const rejectedCode = op.state.status === 'rejected' && !op.state.handled ? op.state.failure.code : null;
   useEffect(() => {
+    if (rejectedCode === null) return;
+    op.markHandled();
     if (rejectedCode === 'VERSION_CONFLICT' || rejectedCode === 'INVENTORY_BELOW_RESERVED' || rejectedCode === 'INVENTORY_NEGATIVE') reload();
-  }, [rejectedCode, op.state]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rejectedCode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const edit = (fn: () => void) => {
     if (locked) return;
@@ -269,16 +279,9 @@ function AdjustmentForm({ item, csrf, reload }: { item: InventoryItem; csrf: Ses
     const payload = { ...pending, operationKey } as AdjustmentPayload;
     setPending(null);
     setReconfirm(false);
-    void op.run(payload);
+    const amountText = payload.type === 'receipt' ? `استلام ${payload.quantity}` : payload.type === 'correction_delta' ? `تسوية ${signed(payload.delta)}` : `ضبط الإجمالي إلى ${payload.total}`;
+    op.run(payload, `${amountText} كرتونة على «${item.product.name}»`);
   };
-
-  useEffect(() => {
-    if (op.state.status !== 'done') return;
-    toast(op.state.result.replayed ? 'هذه العملية سُجلت من قبل؛ لم تتكرر.' : 'سُجلت حركة المخزون.', 'success');
-    setAmount('');
-    setReason('');
-    setReference('');
-  }, [doneId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pendingPreview = pending ? adjustmentPreview({ onHand: item.onHand, reserved: item.reserved }, pending.type, pending.type === 'receipt' ? pending.quantity : pending.type === 'correction_delta' ? pending.delta : pending.total) : null;
 
@@ -292,6 +295,7 @@ function AdjustmentForm({ item, csrf, reload }: { item: InventoryItem; csrf: Ses
       {randomError ? <Notice tone="danger">{SECURE_RANDOM_MESSAGE}</Notice> : null}
       <OperationNotice
         state={op.state}
+        label={op.label}
         onRetry={op.retry}
         onDiscard={() => {
           op.reset();
@@ -392,7 +396,7 @@ export function InventoryDetailPage({ id, csrf }: { id: string; csrf: SessionCsr
         <div>
           <h1 id="invd-title">{item.product.name}</h1>
           <p className="c-page-header__desc">
-            {item.product.brand} · {item.product.active ? 'مفعّل' : 'غير مفعّل'} · الإصدار {item.version}
+            {item.product.brand} · {item.product.active ? 'مفعّل' : 'غير مفعّل'} · المعرّف <Ltr mono>{item.product.id}</Ltr> · الإصدار {item.version}
           </p>
         </div>
         <div className="cluster">

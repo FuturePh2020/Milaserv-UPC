@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { ADJUSTMENT_ERROR, adjustmentPreview, barcodeValue, MAX_ON_HAND, MERCHANT_TRANSITIONS, moneyInputText, parseImageUrl, parseMoneyInput, parseWhole } from '../../src/web/admin/logic.ts';
-import { hasUnresolved, trackUnresolved } from '../../src/web/admin/unresolved.ts';
+import { OperationCoordinator } from '../../src/web/admin/coordinator.ts';
+import { hasUnresolved } from '../../src/web/admin/unresolved.ts';
 import { loadWebModules } from '../helpers/web.ts';
 
 describe('administrator money input (exact pounds -> piastres)', () => {
@@ -83,17 +84,65 @@ describe('product field values', () => {
   });
 });
 
-describe('unresolved administrator operations (sign-out guard)', () => {
-  it('counts tracked operations and releases each exactly once', () => {
+describe('unresolved-operation coordinator (survives navigation; never silently replaced)', () => {
+  type R = { ok: true; status: number; data: unknown; requestId: null } | { ok: false; kind: string; status: number; code: string | null; message: string; requestId: string | null; fields: []; current: null; retryAfterSeconds: null };
+  const lost: R = { ok: false, kind: 'network', status: 0, code: null, message: 'x', requestId: null, fields: [], current: null, retryAfterSeconds: null };
+  const okResult = (data: unknown): R => ({ ok: true, status: 201, data, requestId: null });
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  it('keeps key + exact payload after a lost response; a different run in the slot is refused; retry resends the SAME payload', async () => {
+    const sent: unknown[] = [];
+    const replies: R[] = [lost, okResult({ replayed: true }), okResult({})];
+    const send = async (p: unknown) => {
+      sent.push(p);
+      return replies.shift()! as never;
+    };
+    const c = new OperationCoordinator();
+    const payload = { operationKey: 'k-1', quantity: 5 };
+    assert.equal(c.run('inventory:p1', { label: 'استلام 5', href: '/admin/inventory/p1' }, payload, send), true);
+    assert.equal(hasUnresolved(), true, 'sending counts as unresolved');
+    await tick();
+    assert.equal(c.get('inventory:p1')!.status, 'unknown');
+    assert.deepEqual(c.unresolved().map((e) => [e.slot, e.label, e.href]), [['inventory:p1', 'استلام 5', '/admin/inventory/p1']]);
+    // A navigation away and back reads the same entry (the coordinator outlives the screen component).
+    assert.equal(c.run('inventory:p1', { label: 'أخرى', href: '/x' }, { operationKey: 'k-2', quantity: 9 }, send), false, 'no silent replacement');
+    assert.equal(c.retry('inventory:p1', send), true);
+    await tick();
+    assert.deepEqual(sent, [payload, payload], 'retry used the identical payload object (same key)');
+    assert.equal(sent[1], payload);
+    assert.equal(c.get('inventory:p1')!.status, 'done');
     assert.equal(hasUnresolved(), false);
-    const a = trackUnresolved();
-    const b = trackUnresolved();
+    // A finished entry can be replaced by a NEW intention.
+    assert.equal(c.run('inventory:p1', { label: 'جديد', href: '/x' }, { operationKey: 'k-3' }, send), true);
+    await tick();
+  });
+
+  it('a discarded operation is not resurrected by a late response; clear() empties everything (identity change)', async () => {
+    let release: (r: R) => void = () => undefined;
+    const send = () => new Promise<R>((r) => (release = r)) as never;
+    const c = new OperationCoordinator();
+    c.run('order:o1', { label: 'شحن', href: '/admin/orders/o1' }, { operationKey: 'k' }, send);
+    c.discard('order:o1');
+    release(okResult({}));
+    await tick();
+    assert.equal(c.get('order:o1'), undefined);
+    c.run('order:o2', { label: 'شحن', href: '/admin/orders/o2' }, { operationKey: 'k2' }, async () => lost as never);
+    await tick();
     assert.equal(hasUnresolved(), true);
-    a();
-    a(); // a double release must not hide b
-    assert.equal(hasUnresolved(), true);
-    b();
+    c.clear();
+    assert.equal(c.unresolved().length, 0);
     assert.equal(hasUnresolved(), false);
+  });
+
+  it('definite refusals release the slot and are reported to the identity handler', async () => {
+    const seen: unknown[] = [];
+    const c = new OperationCoordinator((f) => seen.push(f.code));
+    const refusal = { ...lost, kind: 'conflict', status: 409, code: 'VERSION_CONFLICT' } as R;
+    c.run('s', { label: 'x', href: '/x' }, { operationKey: 'k' }, async () => refusal as never);
+    await tick();
+    assert.equal(c.get('s')!.status, 'rejected');
+    assert.deepEqual(seen, ['VERSION_CONFLICT']);
+    assert.equal(c.run('s', { label: 'x', href: '/x' }, { operationKey: 'k2' }, async () => okResult({}) as never), true);
   });
 });
 

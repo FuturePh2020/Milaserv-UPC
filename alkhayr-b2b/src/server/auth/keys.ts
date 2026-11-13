@@ -8,6 +8,8 @@ export interface ServerKeys {
   readonly rateLimit: Buffer;
   readonly ip: Buffer;
   readonly cursor: Buffer;
+  /** Signs import previews (binding of administrator, mode, content and target versions; stage 13). */
+  readonly importPreview: Buffer;
 }
 
 export function deriveServerKeys(appSecret: Buffer | null): ServerKeys {
@@ -18,6 +20,7 @@ export function deriveServerKeys(appSecret: Buffer | null): ServerKeys {
     rateLimit: deriveKey(appSecret, 'rate_limit'),
     ip: deriveKey(appSecret, 'ip'),
     cursor: deriveKey(appSecret, 'cursor'),
+    importPreview: deriveKey(appSecret, 'import_preview'),
   });
 }
 

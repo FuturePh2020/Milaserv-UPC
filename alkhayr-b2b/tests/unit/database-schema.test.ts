@@ -42,7 +42,7 @@ function trader() {
 describe('initial configuration (owner decisions)', () => {
   test('every table is STRICT', () => {
     const rows = db.prepare("SELECT name, strict FROM pragma_table_list WHERE schema = 'main' AND type = 'table' AND name NOT LIKE 'sqlite_%'").all() as Array<{ name: string; strict: number }>;
-    assert.equal(rows.length, 14); // 13 from 0001 + order_allocations (0005)
+    assert.equal(rows.length, 16); // 13 from 0001 + order_allocations (0005) + import_operations, import_operation_items (0006)
     for (const r of rows) assert.equal(r.strict, 1, `${r.name} must be STRICT`);
   });
 
@@ -586,5 +586,68 @@ describe('inventory ledger and audit log', () => {
     const old = Number(audit(now() - 400 * 24 * 3600 * 1000, null).lastInsertRowid);
     db.prepare('DELETE FROM audit_logs WHERE id = ?').run(old);
     assert.equal(scalar('SELECT count(*) FROM audit_logs WHERE id = ?', old), 0);
+  });
+});
+
+describe('committed import records (migration 0006)', () => {
+  function op(mode: string, actor: string) {
+    const id = randomUUID();
+    db.prepare(
+      "INSERT INTO import_operations (id, actor_user_id, operation_key, request_digest, mode, content_sha256, file_bytes, record_count, created_at) VALUES (?, ?, ?, ?, ?, ?, 10, 1, ?)",
+    ).run(id, actor, randomUUID(), 'a'.repeat(64), mode, 'b'.repeat(64), now());
+    return id;
+  }
+  function receipt(productId: string, actor: string | null) {
+    const p = db.prepare('SELECT on_hand, reserved, version FROM products WHERE id = ?').get(productId) as { on_hand: number; reserved: number; version: number };
+    const l = db
+      .prepare(
+        "INSERT INTO inventory_ledger (product_id, actor_user_id, kind, adjustment_type, on_hand_delta, reserved_delta, on_hand_after, reserved_after, reason, product_version_after, created_at) VALUES (?, ?, 'receipt', 'receipt', 5, 0, ?, ?, 'استلام', ?, ?)",
+      )
+      .run(productId, actor, p.on_hand + 5, p.reserved, p.version + 1, now());
+    db.prepare('UPDATE products SET on_hand = on_hand + 5, version = version + 1, last_ledger_id = ? WHERE id = ?').run(l.lastInsertRowid, productId);
+    return { ledgerId: Number(l.lastInsertRowid), version: p.version + 1 };
+  }
+  const item = (importId: string, productId: string, ledgerId: number | null, version: number, recordNo = 1) =>
+    db.prepare('INSERT INTO import_operation_items (import_id, record_no, line_no, product_id, ledger_id, product_version_after) VALUES (?, ?, 2, ?, ?, ?)').run(importId, recordNo, productId, ledgerId, version);
+
+  test('one batch per (administrator, operation key); records are append-only', () => {
+    const admin = insertUser(db, { role: 'admin' });
+    const key = randomUUID();
+    const ins = () =>
+      db.prepare("INSERT INTO import_operations (id, actor_user_id, operation_key, request_digest, mode, content_sha256, file_bytes, record_count, created_at) VALUES (?, ?, ?, ?, 'create_products', ?, 1, 1, ?)").run(randomUUID(), admin, key, 'c'.repeat(64), 'd'.repeat(64), now());
+    ins();
+    assert.equal(sqliteFailure(ins).errcode, SQLITE.CONSTRAINT_UNIQUE);
+    const id = op('create_products', admin);
+    assert.match(sqliteFailure(() => db.prepare('UPDATE import_operations SET record_count = 2 WHERE id = ?').run(id)).message, /append-only/);
+    assert.match(sqliteFailure(() => db.prepare('DELETE FROM import_operations WHERE id = ?').run(id)).message, /append-only/);
+    const bad = { mode: 'create_products', file_bytes: 1, record_count: 1 };
+    for (const [col, value] of [['mode', 'upsert'], ['file_bytes', 1048577], ['file_bytes', 0], ['record_count', 1001], ['record_count', 0]] as const) {
+      const v = { ...bad, [col]: value };
+      const f = sqliteFailure(() =>
+        db
+          .prepare('INSERT INTO import_operations (id, actor_user_id, operation_key, request_digest, mode, content_sha256, file_bytes, record_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(randomUUID(), admin, randomUUID(), 'a'.repeat(64), v.mode, 'b'.repeat(64), v.file_bytes, v.record_count, now()),
+      );
+      assert.equal(f.errcode, SQLITE.CONSTRAINT_CHECK, `${col}=${value}`);
+    }
+  });
+
+  test('items must match their mode and their own ledger row (product, actor, adjustment type, version)', () => {
+    const admin = insertUser(db, { role: 'admin' });
+    const otherAdmin = insertUser(db, { role: 'admin' });
+    const product = insertProduct(db, { onHand: 0, active: false });
+    const create = op('create_products', admin);
+    item(create, product, null, 1);
+    assert.match(sqliteFailure(() => db.prepare('UPDATE import_operation_items SET line_no = 3 WHERE import_id = ?').run(create)).message, /append-only/);
+    const stock = op('receive_stock', admin);
+    assert.match(sqliteFailure(() => item(stock, product, null, 2)).message, /must match/, 'stock item without ledger row');
+    const foreign = receipt(product, otherAdmin);
+    assert.match(sqliteFailure(() => item(stock, product, foreign.ledgerId, foreign.version)).message, /must match/, 'ledger row of another administrator');
+    const mine = receipt(product, admin);
+    assert.match(sqliteFailure(() => item(stock, product, mine.ledgerId, mine.version + 1)).message, /must match/, 'wrong version');
+    const setTotal = op('set_stock_total', admin);
+    assert.match(sqliteFailure(() => item(setTotal, product, mine.ledgerId, mine.version)).message, /must match/, 'receipt row under set_stock_total');
+    item(stock, product, mine.ledgerId, mine.version);
+    assert.match(sqliteFailure(() => item(create, product, mine.ledgerId, mine.version, 2)).message, /must match/, 'product modes link no ledger row');
   });
 });

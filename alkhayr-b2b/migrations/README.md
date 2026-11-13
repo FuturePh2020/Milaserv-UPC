@@ -15,6 +15,9 @@ Versioned, checksum-verified SQL migrations: `NNNN_name.sql`, contiguous from `0
 - `0005_order_fulfillment.sql` — per-order reservations (`order_allocations`) tied to reserve/release/ship
   ledger rows; transition events with operation keys; state changes require their event, matching
   allocations and an approved buyer for forward steps; pack size locked while stocked (stage 09).
+- `0006_import_operations.sql` — committed CSV import batches (`import_operations`, per administrator +
+  operation key: durable idempotency) and their per-record links to products and ledger rows
+  (`import_operation_items`), append-only, with a mode/ledger consistency trigger (stage 13).
 
 Rules (enforced by `src/server/database/migrations.ts`, see `docs/DATABASE.md` §5 and `docs/MIGRATION.md`):
 - **Never edit an applied migration.** Its SHA-256 is verified on every startup; changes go into a new file.

@@ -161,7 +161,7 @@ function StockShortage({ failure, order }: { failure: ApiFailure; order: AdminOr
 
 function TransitionPanel({ order, csrf, reload }: { order: AdminOrder; csrf: SessionCsrfToken; reload: () => void }) {
   const toast = useToast();
-  const op = useOperation<TransitionPayload, TransitionResult>((p) => transitionOrder(csrf, order.id, p));
+  const op = useOperation<TransitionPayload, TransitionResult>(`order:${order.id}`, { label: `إجراء على الطلب ${order.displayNumber}`, href: `/admin/orders/${order.id}` }, (p) => transitionOrder(csrf, order.id, p));
   const [draft, setDraft] = useState<{ to: Target; reason: string } | null>(null);
   const [dialog, setDialog] = useState(false);
   const [reasonError, setReasonError] = useState<string | null>(null);
@@ -172,17 +172,21 @@ function TransitionPanel({ order, csrf, reload }: { order: AdminOrder; csrf: Ses
   const buyerBlocked = order.merchant.currentStatus !== 'approved';
   const locked = op.unresolved;
 
-  const doneEvent = op.state.status === 'done' ? op.state.result.operation.eventId : null;
+  // Handled once, even if it finished while the operator was on another screen.
+  const doneEvent = op.state.status === 'done' && !op.state.handled ? op.state.result.operation.eventId : null;
   useEffect(() => {
-    if (op.state.status !== 'done') return;
+    if (doneEvent === null || op.state.status !== 'done') return;
+    op.markHandled();
     toast(op.state.result.replayed ? 'هذه العملية نُفذت من قبل؛ لم تتكرر.' : `تم: ${ORDER_STATE_LABEL[op.state.result.operation.toState]}.`, 'success');
     setDraft(null);
     reload();
   }, [doneEvent]); // eslint-disable-line react-hooks/exhaustive-deps
   // A definite refusal: nothing changed; re-read the order so the operator decides on current data.
-  const rejected = op.state.status === 'rejected' ? op.state.failure : null;
+  const rejected = op.state.status === 'rejected' && !op.state.handled ? op.state.failure : null;
   useEffect(() => {
-    if (rejected) reload();
+    if (!rejected) return;
+    op.markHandled();
+    reload();
   }, [rejected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const choose = (to: Target) => {
@@ -213,7 +217,7 @@ function TransitionPanel({ order, csrf, reload }: { order: AdminOrder; csrf: Ses
     setDialog(false);
     setReconfirm(false);
     if (op.state.status === 'reauth') op.reset();
-    void op.run({ to: draft.to, expectedVersion: order.version, operationKey, ...(reason ? { reason } : {}) });
+    op.run({ to: draft.to, expectedVersion: order.version, operationKey, ...(reason ? { reason } : {}) }, `${ACTION_LABEL[draft.to]} — الطلب ${order.displayNumber}`);
   };
 
   if (allowed.length === 0 && op.state.status === 'idle') {
@@ -236,6 +240,7 @@ function TransitionPanel({ order, csrf, reload }: { order: AdminOrder; csrf: Ses
       ) : null}
       <OperationNotice
         state={op.state}
+        label={op.label}
         onRetry={op.retry}
         onDiscard={() => {
           op.reset();

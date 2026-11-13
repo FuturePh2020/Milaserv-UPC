@@ -2,14 +2,14 @@
 
 | Field | Value |
 |---|---|
-| Last updated | 2026-11-12 |
-| Current stage | **12 — Complete Arabic RTL administration experience: COMPLETE** |
-| Next stage | **13** (awaiting owner prompt) |
+| Last updated | 2026-11-13 |
+| Current stage | **13 — Safe CSV product and inventory imports: COMPLETE** |
+| Next stage | **14** (awaiting owner prompt) |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
 | Runtime | Node.js 24.22.1 (`/opt/node24/bin` here; Node 22 refused) — SQLite 3.53.4 via `node:sqlite` |
-| Schema | Migrations 0001–0004 + **0005** (fulfillment, per-order reservations) |
-| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, the complete merchant experience in the browser, **and the administration screens (merchant review, products, inventory and ledger, order fulfillment) with safe re-authentication and idempotent retries**. |
+| Schema | Migrations 0001–0005 + **0006** (committed import batches) |
+| Application | Foundation, database, security primitives, admin enrollment, authentication, merchant lifecycle, products and catalog, inventory adjustments and ledger, pending-order creation and own-order reads, administrator order fulfillment with per-order reservations, Arabic RTL design system and shells, the complete merchant experience in the browser, **and the administration screens (merchant review, products, inventory and ledger, order fulfillment) with safe re-authentication and idempotent retries, and CSV imports (four modes, preview, all-or-nothing confirmation, durable idempotency)**. |
 
 ## Stage log
 
@@ -27,10 +27,116 @@
 | 09 | ✅ Done (fulfillment + allocations) | Commit `6b5f592` |
 | 10 | ✅ Done (design system + shells) | Commit `e8a7ce8` |
 | 11 | ✅ Done (merchant experience) | Commit `8be8fbe` — 458/458 tests ×3 clean-copy runs, 87/87 end-to-end Chromium checks, axe 7 pages 0 violations, 19 mutants (21 runs) — below |
-| 12 | ✅ Done (administration experience) | 473/473 tests ×3 clean-copy runs, 125/125 administration lifecycle checks + 87/87 merchant journey, axe 21 states 0 violations, 16 mutants — below |
-| 13–18 | ⏳ Not started | — |
+| 12 | ✅ Done (administration experience) | Commit `562b9f5` — 473/473 tests ×3 clean-copy runs, 125/125 administration lifecycle checks + 87/87 merchant journey, axe 21 states 0 violations, 16 mutants — below |
+| 13 | ✅ Done (CSV imports) | 513/513 tests ×3 clean-copy runs, 44/44 import lifecycle + 125/125 + 87/87 regression journeys, axe 0 violations, 30 mutants — below |
+| 14–18 | ⏳ Not started | — |
 
-## Stage 12 — known weaknesses first
+## Stage 13 — known weaknesses first
+- **Username-lockout availability risk is still open** (SECURITY §7, T40); **stock inference** (T57, T73) is slowed,
+  not eliminated; **stage-09 consistency gaps** remain service-enforced only. All three are carried to stage 16.
+- **An unresolved administrator operation (import, adjustment, transition) lives in memory only.** It now survives
+  navigation between administration screens, but a refresh, closing the tab, a session that expires or sign-out loses
+  the key and payload. `beforeunload` is requested but browsers do not guarantee the prompt. The operator must then
+  check the product list / ledger / order history before repeating.
+- **Correction of the stage-12 report:** `expectedVersion` refuses a duplicate sent *with the old version*; it does
+  **not** stop an operator from deliberately repeating the same business action (e.g. importing the same receipt file
+  again with a new key after the product version moved on). Only the same-key retry is protected against that.
+- A deliberate re-import of the same file with a NEW key after a lost response creates the effect twice (new products,
+  a second receipt) if the first one committed; the UI warns, the server cannot know the intent.
+- Leading zeros already removed from barcodes by a spreadsheet program cannot be recovered (documented, warned).
+- No prefilled update/stock templates (product ids and versions must be copied from the product/inventory pages);
+  safe spreadsheet export is stage 14.
+- Import records (`import_operations`, items) are retained indefinitely like the ledger (bounded by the commit rate
+  limit); no purge policy yet.
+- The 2-concurrent-job bound is per process (one process per SQLite file is already the deployment model).
+- Browser verification: Chromium only, plain HTTP test origin, automated axe rules only; no screen reader, other
+  browsers, HTTPS, hosting or load test.
+
+## Stage 13 — supported modes and columns
+| Mode | Required | Optional | Effect |
+|---|---|---|---|
+| `create_products` | `name, brand, category, cartonPriceEgp, packSize, minimumCartons` | `barcode, imageUrl` | new products, inactive, zero stock, not demo |
+| `update_products` | `productId, expectedVersion` + ≥ 1 changeable column | `currentName, name, brand, category, cartonPriceEgp, packSize, minimumCartons, barcode, imageUrl` | empty = unchanged, `__CLEAR__` clears barcode/image; packaging lock; no stock/activation/demo change |
+| `receive_stock` | `productId, expectedVersion, quantity, reason` | `currentName, reference` | one receipt ledger row per record |
+| `set_stock_total` | `productId, expectedVersion, total, reason` | `currentName, reference` | one set-total ledger row per record; replaces the physical total; never below reserved; no no-ops |
+Exact contract and grammar: API_CONTRACT §6; operator guide in Arabic: `docs/IMPORT_GUIDE_AR.md`.
+
+## Stage 13 — server and schema changes
+| Area | Files | Summary |
+|---|---|---|
+| Migration 0006 | `migrations/0006_import_operations.sql` | `import_operations` (per admin + key unique; hash/size/count, no file body), `import_operation_items` (links to products and ledger rows), append-only, consistency trigger |
+| Parser | `src/server/import/csv.ts` | strict bounded RFC-4180 parser (UTF-8 fatal, BOM, LF/CRLF, quotes, multiline, record line numbers), whole-number and EGP grammars; no dependency |
+| Import service | `src/server/services/imports.ts`, `routes/admin-imports.ts` | templates, preview (no writes, signed binding), commit (re-validate → idempotency → binding → re-evaluate → apply → record → audit) |
+| Shared cores | `services/products.ts`, `services/inventory.ts` | `insertProductRecord`, `applyProductUpdate`, `assertCatalogCapacity`, `planStockAdjustment`, `applyStockAdjustment` used by the endpoints AND imports |
+| Security plumbing | `auth/keys.ts`, `auth/encryption.ts`, `auth/rate-limit.ts`, `services/audit.ts`, `shared/errors.ts` | `import_preview` key purpose; `import_preview_account` 30/10 min, `import_commit_account` 20/10 min; `import.committed` audit; `IMPORT_*` error codes |
+| Browser | `admin/coordinator.ts`, `admin/operations.tsx`, `hooks/useOperation.ts`, `pages/admin/{Imports,UnresolvedBanner,OperationNotice,Inventory,AdminOrders,Products}.tsx`, `App.tsx`, `layouts/Shells.tsx`, `api/admin.ts`, CSS, icons | account-scoped unresolved-operation coordinator surviving navigation; shell banner; import page |
+
+## Checks run in stage 13 (2026-11-13 UTC, this container, Node 24.22.1)
+| Check | Command | Result |
+|---|---|---|
+| Type check | `npm run typecheck` | ✅ 0 errors |
+| Production build | `npm run build` | ✅ |
+| Full suite | `npm run check` | ✅ **513 tests, 513 pass, 0 fail** (+40: CSV parser 14, import HTTP 21 incl. failure injection, restart recovery 1, migration 0006 2, coordinator 3; minus 1 obsolete counter test) |
+| Clean reproduction ×3 | tracked + new files → `npm ci` → typecheck + `npm test` ×3 | ✅ 513/513 each run |
+| Dependency audit | `npm audit` | ✅ 0 vulnerabilities; no dependency added; package files and migrations 0001–0005 unchanged |
+| **Import lifecycle (browser)** | Chromium, production build, real server process, disposable database, administrator from the real `setup-admin` (PTY), real trader session | ✅ **44/44**: template download (BOM, attachment); invalid Arabic file reviewed (extra decimals, unknown category) with no confirm button; hostile `<img onerror>` / `=HYPERLINK(...)` text rendered as text with no effect; preview writes nothing; fixed file (BOM, CRLF, quoted comma/quotes) → 3 products exactly (12550/29 piastres, `000123`, `AbC-09`, NULL), inactive, zero stock; receipt import → one ledger row per record with actor/reason/reference; reservation → set-total below reserved refused; stale confirmation (price edited after preview) → whole batch refused, errors shown, nothing applied; **committed confirmation with the response cut** → "outcome unknown", file/mode locked → navigate to products → shell banner → back → same-key retry → "already recorded — not repeated", stock applied once; inventory adjustment also kept across navigation and replayed once; expired re-authentication → dedicated sign-in → preview re-validated, nothing executed → explicit re-confirmation; trader forbidden view and server 403, no admin request from the trader UI; 360/375/768/1366 px without page-wide horizontal scroll; arrow keys move between modes; file input focusable |
+| Regression journeys | same harness | ✅ stage-12 administration lifecycle 125/125; stage-11 merchant journey 87/87 |
+| Automated accessibility | axe-core 4.10.2 (scratch install), WCAG 2.0/2.1 A+AA | ✅ 0 violations: import page with preview at 360 and 1366 px, empty import page at 1366 px (plus the 21 states of the stage-12 rerun) |
+| Screen readers, other browsers, real HTTPS, hosting, load | — | NOT RUN |
+
+Test-only setup outside the UI: trader approval and order placement/confirmation through the real API, moving one
+session's sign-in time back 16 minutes, and (HTTP tests) failure-injection triggers created and dropped in the
+disposable database. **Defects found and fixed:** post-reauthentication revalidation used the stale CSRF token
+(deferred until the identity refresh re-rendered); fieldsets widened the page on phones; per-record errors were
+off-screen on phones (plain error list added).
+
+### Mutation evidence (30 mutants, each restored)
+| Mutation | Result | Caught by |
+|---|---|---|
+| M01 idempotency after the binding · M02 different content replays · M03 binding not verified · M04 content digest ignored · M05 never expires · M06 admin ignored | caught | import HTTP tests |
+| M07 invalid records skipped (partial import) | caught | stale test — reported 500 because the independent intent/record count guard also refused it |
+| M08 commit-time cap re-check removed | **survived** | **equivalent here**: the in-transaction evaluation enforces the cap first (M09 removing that one too → caught) |
+| M10 batch audit missing · M13 preview without CSRF · M14 duplicate ids · M15 empty clears · M16 packaging lock · M17 reserved floor · M18 version not compared · M19 barcode zeros · M20 barcode in use | caught | import HTTP tests (M10/M18 also rejected by the type checker) |
+| M11 recent-auth pre-check removed | **survived** | **blocked by the in-transaction re-validation** (428) |
+| M12 in-transaction re-validation accepts any admin session | **survived first**, then caught | added test: authentication expires while the commit is in flight |
+| C01 UTF-8 replacement · C04 money third decimal · C05 leading zeros · C06 NUL · C07 unterminated quote | caught | parser tests |
+| C02 quote inside an unquoted cell | **survived first**, then caught | the test only checked the line number; added the balanced `ab"c"` case |
+| C03 final row check off by one | **survived** | **blocked by the streaming row bound** (the parser stops at 1 001 records) |
+| W01 coordinator replaces an unresolved operation · W02 retry with a new key · W03 late response resurrects a discarded one | caught | coordinator unit tests |
+
+Not mutation-tested (browser-verified only): navigation persistence wiring in the shell, the banner, post-reauth
+revalidation.
+
+## Limitations (known)
+See "known weaknesses" above. Not in this stage by design: export/reporting, settings administration,
+backup/recovery, deployment, synchronization with other sales systems, merchant/order/category/accounting imports.
+
+## Open questions
+None.
+
+## Remaining blockers
+None for stage 14. Stage 14 should add spreadsheet-safe export (formula neutralization) and may add prefilled
+import templates built on it.
+
+## Files changed in stage 13 (all under `alkhayr-b2b/`)
+New: `migrations/0006_import_operations.sql`, `src/server/import/csv.ts`, `src/server/services/imports.ts`,
+`src/server/routes/admin-imports.ts`, `src/web/admin/{coordinator.ts,operations.tsx}`,
+`src/web/pages/admin/{Imports,UnresolvedBanner}.tsx`, `docs/IMPORT_GUIDE_AR.md`,
+`tests/unit/csv.test.ts`, `tests/integration/{imports,imports-restart}.test.ts`.
+Modified: `src/server/{app.ts}`, `src/server/auth/{encryption,keys,rate-limit}.ts`, `src/server/services/{audit,inventory,products}.ts`,
+`src/shared/errors.ts`, `src/web/{App.tsx}`, `src/web/admin/unresolved.ts`, `src/web/api/admin.ts`, `src/web/components/Icon.tsx`,
+`src/web/hooks/useOperation.ts`, `src/web/layouts/Shells.tsx`, `src/web/pages/admin/{AdminOrders,Inventory,OperationNotice,Products}.tsx`,
+`src/web/styles/components.css`, `migrations/README.md`, tests `unit/{database-migrations,database-schema,web-admin}.test.ts`, docs.
+Not touched: migrations 0001–0005, package files.
+
+## How to continue
+Next: send **PROMPT 14**. Upgrading an existing database requires `db:migrate --confirm-backup` for 0006.
+
+---
+
+## Stage 12 record (retained)
+
+### Stage 12 — known weaknesses first
 - **Username-lockout availability risk is still open** (SECURITY §7, T40): anyone can lock a username's sign-in
   for 15 minutes, including an administrator's. Stage 16 / release gate.
 - **Stock inference** through repeated order or quote attempts (T57, T73) is slowed by per-merchant limits, not
@@ -60,7 +166,7 @@
 - Browser verification: Chromium only, plain HTTP test origin; axe-core automated rules only (no manual
   screen-reader test). Toast messages stay visible briefly after navigating to another screen.
 
-## Stage 12 — what works end to end (verified in Chromium against the production build)
+### Stage 12 — what works end to end (verified in Chromium against the production build)
 Administrator 1 created with the real `setup-admin` in a pseudo-terminal (TOTP proof); a second bootstrap is
 refused → two merchants register in the UI → both administrators sign in with password + OTP → landing page
 (links only, no figures) → merchant review: pending filter, approval, a **stale second administrator** gets
@@ -82,7 +188,7 @@ balances → 429 (Retry-After) and 5xx (request reference) shown as errors, neve
 filter response never replaces a newer one → sign-out with an unresolved operation asks first → traders get
 the forbidden view on `#/admin/*` and **made no `/api/v1/admin` request**.
 
-## Stage 12 — what was built
+### Stage 12 — what was built
 | Area | Files | Summary |
 |---|---|---|
 | **Catalog consistency (server)** | `src/server/services/products.ts` | Trader list, detail, brand filter and counts exclude products of **inactive categories** (detail → identical 404; `?category=<inactive>` → existing 400). Administrator views unchanged; snapshots/reservations untouched |
@@ -93,7 +199,7 @@ the forbidden view on `#/admin/*` and **made no `/api/v1/admin` request**.
 | Screens | `pages/admin/{AdminHome,Merchants,Products,Inventory,AdminOrders}.tsx` | landing, merchant list/detail/status, product list/create/edit/activation, inventory list/ledger/adjustment, order list/detail/transitions |
 | App | `App.tsx`, `layouts/Shells.tsx`, `hooks/useLoad.ts` (`useStickyLoad`), CSS | admin routes mounted only in the administrator shell; landing nav entry; record kept on screen while re-reading so drafts survive |
 
-## Checks run in stage 12 (2026-11-12 UTC, this container, Node 24.22.1 / npm 11.19.1)
+### Checks run in stage 12 (2026-11-12 UTC, this container, Node 24.22.1 / npm 11.19.1)
 | Check | Command | Result |
 |---|---|---|
 | Type check | `npm run typecheck` | ✅ 0 errors |
@@ -132,18 +238,18 @@ notice and a re-confirm button; the terminal-state message was missing after the
 Not mutation-tested (verified by the browser run only): no automatic execution after re-authentication, the
 sign-out guard, stale admin filter responses.
 
-## Limitations (known)
+### Limitations (known)
 See "known weaknesses" above. Not in this stage by design: CSV import, settings administration, reports,
 print/export, backup/recovery, password/MFA recovery, payments, deployment, category and administrator
 management.
 
-## Open questions
+### Open questions
 None.
 
-## Remaining blockers
+### Remaining blockers
 None for stage 13.
 
-## Files changed in stage 12 (all under `alkhayr-b2b/`)
+### Files changed in stage 12 (all under `alkhayr-b2b/`)
 Server: `src/server/services/products.ts`.
 Web new: `src/web/api/admin.ts`, `src/web/admin/{logic,unresolved}.ts`, `src/web/hooks/useOperation.ts`,
 `src/web/pages/admin/{AdminHome,AdminOrders,Inventory,Merchants,OperationNotice,Products,Reauth}.tsx`.
@@ -153,7 +259,7 @@ Tests: new `tests/unit/web-admin.test.ts`; modified `tests/integration/{products
 Docs: `README.md`, `docs/{API_CONTRACT,FRONTEND_API,DESIGN_SYSTEM,SECURITY,THREAT_MODEL,DECISIONS,MIGRATION,PROJECT_STATE}.md`.
 Not touched: migrations, package files, other server services.
 
-## How to continue
+### How to continue
 Next: send **PROMPT 13**. The administration screens are in place on the existing endpoints; later stages
 (import, settings, reports/print, backup, recovery, deployment) plug into the same shell, `useOperation`
 and the re-authentication panel.

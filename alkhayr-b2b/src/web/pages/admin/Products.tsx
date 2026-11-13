@@ -457,7 +457,7 @@ export function ProductEditPage({ id, csrf, created }: { id: string; csrf: Sessi
         <div>
           <h1 id="pd-title">{p.name}</h1>
           <p className="c-page-header__desc">
-            {p.brand} · الإصدار {p.version} · الرصيد: {formatCartons(p.stock.onHand)} (محجوز {formatInteger(p.stock.reserved)}، متاح {formatInteger(p.stock.available)})
+            {p.brand} · المعرّف <Ltr mono>{p.id}</Ltr> · الإصدار {p.version} · الرصيد: {formatCartons(p.stock.onHand)} (محجوز {formatInteger(p.stock.reserved)}، متاح {formatInteger(p.stock.available)})
           </p>
         </div>
         <ButtonLink href={href(`/admin/inventory/${p.id}`)} icon="inventory">

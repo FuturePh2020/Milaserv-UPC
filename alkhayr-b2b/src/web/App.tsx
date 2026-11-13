@@ -4,7 +4,10 @@ import type { MeResponse } from './api/contracts.ts';
 import { CartProvider, useCart } from './cart/CartContext.tsx';
 import { ToastProvider, useToast } from './components/Toast.tsx';
 import { AdminLayout, AuthLayout, MerchantLayout, type AccountView } from './layouts/Shells.tsx';
+import { OperationsProvider } from './admin/operations.tsx';
 import { hasUnresolved } from './admin/unresolved.ts';
+import { ImportPage } from './pages/admin/Imports.tsx';
+import { UnresolvedBanner } from './pages/admin/UnresolvedBanner.tsx';
 import { ForbiddenView, IdentityLoadingScreen, NetworkFailureView, NotFoundView, PendingApprovalView } from './layouts/States.tsx';
 import { AdminHomePage } from './pages/admin/AdminHome.tsx';
 import { AdminOrderDetailPage, AdminOrdersPage } from './pages/admin/AdminOrders.tsx';
@@ -59,6 +62,7 @@ function adminScreen(route: Route, csrf: SessionCsrfToken): ReactNode {
   if (path === '/admin/products/new') return <ProductCreatePage csrf={csrf} />;
   if (path === '/admin/inventory') return <InventoryPage query={query} />;
   if (path === '/admin/orders') return <AdminOrdersPage query={query} />;
+  if (path === '/admin/imports') return <ImportPage csrf={csrf} />;
   const merchant = id(/^\/admin\/merchants\/([^/]+)$/);
   if (merchant) return <MerchantDetailPage key={merchant} id={merchant} csrf={csrf} />;
   const product = id(/^\/admin\/products\/([^/]+)$/);
@@ -73,6 +77,7 @@ function adminScreen(route: Route, csrf: SessionCsrfToken): ReactNode {
 /** Shell for one verified identity. Everything inside is remounted for another identity (key). */
 function SignedInShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeResponse; csrf: SessionCsrfToken; route: Route; onLogout: () => void; logoutBusy: boolean }) {
   const cart = useCart();
+  const { handleAuthFailure } = useIdentity();
   const kind = shellKind(me);
   const account: AccountView = { businessName: me.merchant.businessName, username: me.user.username };
   if (kind === 'admin') {
@@ -80,16 +85,23 @@ function SignedInShell({ me, csrf, route, onLogout, logoutBusy }: { me: MeRespon
     const screen = purchasingScreen(r, me, csrf, '#/admin') ?? adminScreen(r, csrf);
     const recentExpired = me.session.recentAuthUntil !== null && me.session.recentAuthUntil <= Date.now();
     return (
-      <AdminLayout
-        account={account}
-        path={r.path}
-        onLogout={onLogout}
-        logoutBusy={logoutBusy}
-        cartCount={cart.cart.lines.length}
-        banner={recentExpired ? <p className="l-banner l-banner--warning">مضت أكثر من 15 دقيقة على آخر تحقق؛ ستحتاج لتسجيل الدخول من جديد قبل أي إجراء إداري.</p> : undefined}
-      >
-        {screen}
-      </AdminLayout>
+      <OperationsProvider onAuthFailure={handleAuthFailure}>
+        <AdminLayout
+          account={account}
+          path={r.path}
+          onLogout={onLogout}
+          logoutBusy={logoutBusy}
+          cartCount={cart.cart.lines.length}
+          banner={
+            <>
+              {recentExpired ? <p className="l-banner l-banner--warning">مضت أكثر من 15 دقيقة على آخر تحقق؛ ستحتاج لتسجيل الدخول من جديد قبل أي إجراء إداري.</p> : null}
+              <UnresolvedBanner path={r.path} />
+            </>
+          }
+        >
+          {screen}
+        </AdminLayout>
+      </OperationsProvider>
     );
   }
   const home = '#/catalog';

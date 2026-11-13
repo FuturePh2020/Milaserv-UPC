@@ -320,3 +320,18 @@ update (0003 pairing) — then the transition event → the order state/version 
 always be prepared, shipped or released. A buyer that is not approved blocks confirm/prepare/ship
 (database and service), never cancels or releases anything automatically; cancellation and delivery of an
 already shipped order stay possible.
+
+## 15. Migration 0006 — committed CSV imports (stage 13)
+- `import_operations` (STRICT): one row per COMMITTED batch — `id`, `actor_user_id`, `operation_key`,
+  `request_digest`, `mode` (4 values), `content_sha256`, `file_bytes` (1–1 048 576), `record_count` (1–1 000),
+  `created_at`. Unique `(actor_user_id, operation_key)`: the durable idempotency record. Append-only (no UPDATE/DELETE).
+- `import_operation_items` (STRICT, WITHOUT ROWID): `(import_id, record_no)` primary key, `line_no`, `product_id`,
+  `ledger_id` (unique), `product_version_after`; unique `(import_id, product_id)`. Append-only. A trigger requires
+  product modes to link no ledger row and stock modes to link exactly their own ledger row (same product, same
+  administrator, matching `adjustment_type` — `receipt` / `set_total` — and resulting product version).
+- Previews write nothing. The uploaded file is never stored (only its hash, size and record count).
+- Import stock movements are ordinary ledger rows (`kind` receipt/correction, `adjustment_type` receipt/set_total,
+  reason, reference, actor, `product_version_after`) without a per-row operation key; the batch record links them.
+  The 0003 pairing trigger applies unchanged. No existing table, trigger or migration was modified.
+- Rows are retained like the ledger (no purge in this stage). Growth is bounded by the commit rate limit
+  (20 per administrator per 10 minutes) and 1 000 items per batch.

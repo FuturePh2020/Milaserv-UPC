@@ -117,3 +117,35 @@ dialog and never stores credentials.
 outcome tells the operator to look at the current record (or search before creating again). Conflicts
 (`VERSION_CONFLICT`) keep the unsaved values and show the current record; the operator chooses to re-apply or
 discard. `useStickyLoad` keeps the last record on screen while re-reading, so drafts are not unmounted.
+
+## Unresolved operations and imports (stage 13)
+**Coordinator.** `admin/coordinator.ts` (`OperationCoordinator`) + `admin/operations.tsx` (`OperationsProvider`,
+mounted in the administrator shell, which is remounted per identity). `useOperation(slot, {label, href}, send)` keeps
+each operation under a slot (`inventory:<productId>`, `order:<orderId>`, `import`) with its operation key, exact
+payload, intended action (label), owning screen and status, so it **survives navigation between administration
+screens**. While a slot is sending or its outcome is unknown, a new run in that slot is refused (no silent
+replacement); the only actions are a same-key, same-payload retry (sent with the CURRENT CSRF token) or an explicit
+discard. A late response for a discarded operation is ignored. Results finished while the operator was elsewhere
+are handled once when the screen is reopened. `UnresolvedBanner` lists unresolved operations in the shell with a
+link back. The state is cleared on identity change and confirmed sign-out; it is never written to browser storage.
+
+Limits (stated in the UI): a refresh, closing the tab, a session that expires (the shell unmounts) or sign-out lose
+the in-memory key and payload. `beforeunload` is requested while something is unresolved, but browsers do not
+guarantee the prompt; sign-out asks first. The operator must then reconcile the ledger / order history / product
+list before repeating.
+
+**Correction of the stage-12 note on `expectedVersion`:** the expected version blocks a duplicate that is sent
+*with the old version* (e.g. a lost-response retry rebuilt with a new key from the same form). It does **not**
+prevent an operator from deliberately repeating the same business action after loading the new version (e.g.
+receiving the same delivery twice): only the same-key retry is protected against that, which is why the key and
+payload are now kept across navigation.
+
+**Imports.** `#/admin/imports` (`pages/admin/Imports.tsx`), functions `previewImport`, `commitImport`,
+`importTemplateUrl` in `api/admin.ts`. The browser reads the chosen `.csv` (≤ 1 MiB checked before sending) as
+bytes and sends them base64 — it never parses or edits the plan; the server validates. The preview shows mode, file
+summary, record counts, file errors, per-record errors (also as a plain list for phones), warnings and proposed
+changes/balances. Confirmation (dialog) creates one new key and sends the SAME bytes with the preview token through
+the coordinator. 428 → dedicated re-authentication panel → identity refresh → the same file is previewed again
+with the new token → a new explicit confirmation (new key). `IMPORT_REJECTED` / stale responses show the failing
+records; expired/invalid previews offer "re-preview". Success shows the import id, mode, record count, committed
+status and product/ledger links; a replay says "already recorded — not repeated".

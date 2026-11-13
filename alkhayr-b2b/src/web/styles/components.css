@@ -932,3 +932,42 @@
   margin: 0;
   padding: 0;
 }
+.c-unresolved-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  overflow-wrap: anywhere;
+}
+.c-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+  gap: var(--space-2);
+}
+.c-mode {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  background: var(--color-surface);
+}
+.c-mode--selected {
+  border-color: var(--color-primary);
+  box-shadow: inset 0 0 0 1px var(--color-primary);
+}
+.c-mode input {
+  margin-block-start: 0.3rem;
+}
+.c-change-list {
+  margin: 0;
+  padding-inline-start: 1.1rem;
+  overflow-wrap: anywhere;
+}
+/* Fieldsets default to min-width: min-content, which lets wide content (tables) widen the page. */
+fieldset {
+  min-width: 0;
+}
+fieldset.c-card {
+  margin: 0;
+}
