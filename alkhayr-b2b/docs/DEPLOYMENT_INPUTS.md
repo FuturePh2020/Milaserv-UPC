@@ -29,7 +29,10 @@ into files on the server (`deploy/secrets/*`, owner uid 1000, mode 0400).
 - [ ] A second person able to reach each, for emergencies.
 
 ## Monitoring
-- [ ] Alert recipient or channel, and **explicit permission to send a test alert**.
+- [ ] Alert channel: an **https webhook URL** (chat channel, paging service or mail gateway that accepts a JSON POST),
+      placed by the operator in `deploy/secrets/alert_webhook_url` — and **explicit permission to send one test alert**.
+- [ ] An external uptime check of `https://<domain>/readyz` from outside the server (the in-stack watcher cannot
+      report that the whole server is down).
 - [ ] Who reviews `ops:status` daily.
 
 ## Business configuration

@@ -7,12 +7,14 @@
 export interface CookieNames {
   readonly session: string;
   readonly preSession: string;
+  /** Long-lived proof that this browser signed in successfully before (never a session; see auth/device.ts). */
+  readonly device: string;
 }
 
 export function cookieNames(isProduction: boolean): CookieNames {
   return isProduction
-    ? { session: '__Host-alkhayr_session', preSession: '__Host-alkhayr_presession' }
-    : { session: 'alkhayr_session', preSession: 'alkhayr_presession' };
+    ? { session: '__Host-alkhayr_session', preSession: '__Host-alkhayr_presession', device: '__Host-alkhayr_device' }
+    : { session: 'alkhayr_session', preSession: 'alkhayr_presession', device: 'alkhayr_device' };
 }
 
 const MAX_COOKIE_HEADER = 8192;

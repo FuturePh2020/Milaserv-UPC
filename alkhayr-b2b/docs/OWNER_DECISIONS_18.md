@@ -1,4 +1,4 @@
-# Owner decision pack — stage 18 (supersedes the open items of RELEASE_DECISIONS_17)
+# Owner decision pack — stage 18, updated by hardening pass B (supersedes the open items of RELEASE_DECISIONS_17)
 
 These records prepare decisions. **None has been made on the owner's behalf.** Every approval status is **PENDING**.
 The public launch stays blocked until each one is answered in writing and the hosted checks pass
@@ -11,7 +11,8 @@ The public launch stays blocked until each one is answered in writing and the ho
 | DR-3 | Distributed sign-in denial of service | ☐ PENDING |
 | DR-4 | Off-server storage and secret custody | ☐ PENDING (inputs missing) |
 | DR-5 | Host and domain | ☐ PENDING (inputs missing) |
-| DR-6 | Residual vulnerabilities in the proxy image (Caddy 2.11.9) | ☐ PENDING |
+| DR-6 | Proxy: residual Caddy advisories, or switch to the tested Traefik alternative | ☐ PENDING |
+| DR-7 | Limited pilot: trader group, allocated stock, owners and pause criteria (`PILOT_PLAN.md`) | ☐ PENDING |
 
 ---
 
@@ -33,9 +34,39 @@ merchant, so this takes minutes.
 | **A. Accept and document** | No change. A determined approved trader can learn exact available stock per product. The exposure is limited to approved accounts, rate-limited, and visible in the request logs. |
 | **B. Commission a business-rule redesign** (separate scoped stage) | E.g. accept orders beyond stock as "pending availability" and decide at confirmation; or cap the quantity a single order may test. This changes the ordering rules, reservations, the UI and the tests, and needs its own review and sign-off. It removes or weakens the inference only when order acceptance stops depending on stock. |
 
+### Concrete comparison (pass B)
+
+**Option A — accept inference, but only for stock explicitly allocated to the portal.**
+- **What you do:**
+  - Keep in the portal only the quantity you are willing to sell there, set with an inventory correction ("set
+    total"). Your full warehouse stock stays outside.
+  - Refill as it sells.
+- **What a probing trader learns:** the portal allocation, not the warehouse total.
+- **What changes for customers:** nothing.
+- **Operational cost:** someone must top up the allocation; an order above the allocation is refused even if the
+  warehouse has more.
+- **Software change:** none. The procedure is in `OWNER_QUICKSTART_AR.md` §3.
+
+**Option B — redesign availability validation and ordering.** These are the rules and screens that would change:
+
+| Today | Under B (one possible design) |
+|---|---|
+| The quote and the order refuse a quantity above available stock (`INSUFFICIENT_STOCK`) | Quote and order accept any quantity up to a per-line cap; the trader is told "subject to confirmation" |
+| A created order means the quantity was available at that moment | A created order is a request; the administrator confirms fully, or cancels, or (new rule) proposes a reduced quantity |
+| Confirmation fails only if stock changed meanwhile | Confirmation failures become routine and need a customer-communication step |
+| Three availability labels driven by real stock | Labels must also be reconsidered: "low stock" itself leaks the threshold |
+| No partial fulfilment (out of scope) | Either stays out of scope (more cancellations) or enters scope (new allocation rules, UI and tests) |
+
+- **Affected areas:** order rules (`evaluateOrderLines`), fulfilment, reports, the trader's checkout messages, admin
+  order screens, tests and documents. It needs its own reviewed stage.
+- **What does not work:** removing the check from the quote alone does not help, because the order would still
+  reveal it.
+- **What limits do:** request limits slow probing; they do not prevent it. Today that is 60 quotes and 30 orders per
+  10 minutes per merchant; 17 probes sufficed.
+
 **Recommended next action:** decide whether competitors among your approved traders make exact stock levels
-sensitive. If they do not, A is reasonable. If they do, schedule B before launch; B cannot be done safely as a quick
-patch.
+sensitive. If they do not, A with a deliberate portal allocation is reasonable and costs nothing to build. If they do,
+schedule B before launch; B cannot be done safely as a quick patch. A pilot can run under A with a small allocation.
 
 **Owner decision:** ☐ A ☐ B ☐ other: ________ Name / date: ________
 
@@ -97,7 +128,21 @@ Choose the RTO after the hosting provider confirms how fast a replacement server
 - Before the fix, a burst of 70 logins left 21 users locked out for 15 min (429 on 525 responses).
 - After it, 70 of 70 signed in within 13.1 s, with retries and no lockouts.
 
+**Added in pass B — device cookie (implemented and tested; no account bypass):**
+- After a successful sign-in the browser keeps a signed, 90-day "this browser signed in before" cookie.
+- A sign-in from such a browser is no longer blocked by the account-wide limit that attackers with many addresses
+  can exhaust. It keeps the per-source limits and gets its own limit of 10 attempts per 15 minutes per cookie.
+- **Test** (attacker/victim from distinct sources): after 6 attacking addresses locked a username, the victim's
+  known browser signed in, even from a new address. A new browser, a forged cookie and a cookie for another
+  username were all refused. A stolen cookie gave 9 more guesses, then nothing.
+- **This changes the previously agreed policy:** a new long-lived cookie, and the 30-per-username backstop no
+  longer bounds attempts from browsers holding a valid cookie.
+- **Your choice:** if you prefer the old policy, the change can be disabled by reverting one commit. Please confirm
+  or reject it below.
+
 **Residual (not fixed, not accepted on your behalf):**
+- A user on a **new or cleared browser** can still be locked out for up to 15 minutes while an attack lasts
+  (operator remedy: wait, or the user uses their usual device).
 - ≥ 6 independent addresses (or IPv6 /64 prefixes) can make **one** username refuse sign-in for up to 15 minutes,
   with 30 wrong attempts.
 - Many sources together can keep the hashing queue full, so sign-ins get 503 while the attack lasts.
@@ -112,7 +157,11 @@ Choose the RTO after the hosting provider confirms how fast a replacement server
 **Recommended next action:** accept-with-monitoring is proportionate for a closed B2B portal *if* an alert channel
 exists (DR-5 and the monitoring item). Otherwise request provider filtering.
 
-**Owner decision:** ☐ accept with monitoring ☐ provider protection ☐ admin network restriction design · Name / date: ________
+**Owner decision:**
+- Device cookie: ☐ keep ☐ revert
+- Residual: ☐ accept with monitoring ☐ provider protection ☐ admin network restriction design
+
+Name / date: ________
 
 ---
 
@@ -170,7 +219,7 @@ verified.
 
 ---
 
-## DR-6 — Residual vulnerabilities in the proxy image (Caddy 2.11.9) — new in stage 18
+## DR-6 — Proxy: residual Caddy advisories or the tested Traefik alternative — updated in pass B
 
 Full analysis: `FINAL_ACCEPTANCE_18.md` §3.
 
@@ -189,7 +238,25 @@ Full analysis: `FINAL_ACCEPTANCE_18.md` §3.
 | Accept the residual until an official Caddy release built with Go ≥ 1.27.4, x/net ≥ 0.62 and a fixed go-jose ships | No change now; the operator re-scans monthly and upgrades when available (`MAINTENANCE_AR.md`). |
 | Commission a reviewed custom Caddy build (xcaddy, newer Go) | Cleaner scan, but you take on maintaining a non-official proxy build; needs its own review and tests. |
 
-**Recommended next action:** accept the residual **with** the monthly re-scan duty and the rule never to enable
-`acme_server`, the admin API, `encode zstd` or `request_body` without re-review.
+| **Switch to Traefik 3.7.19** (official image, added in pass B as `deploy/compose.traefik.yaml`) | Scanner-clean today: Trivy 0 critical / 0 high, and govulncheck "No vulnerabilities found" (built with Go 1.27.4). Locally verified the same as Caddy: TLS, HTTP→HTTPS, unknown host refused, 413 for declared and chunked oversized bodies, forged forwarding headers ignored, no cookies or query strings in logs, and all six browser suites. **Differences:** unknown Host gets 404 instead of 421; client IPs appear unmasked in access logs; bodies up to 3 MB are buffered by the proxy; ACME uses TLS-ALPN-01 on port 443. **ACME issuance is NOT RUN for either proxy.** |
 
-**Owner decision:** ☐ accept residual with monitoring ☐ commission custom build · Name / date: ________
+**Rechecked in pass B (2026-11-13/14):** no newer official Caddy than 2.11.9 exists, on Docker Hub or the Go module
+proxy, and go-jose v3 still has no fixed release. Of the other official images, nginx stable-alpine has 3 HIGH
+(libxslt) and HAProxy 3.4 LTS has 0 HIGH. HAProxy was not evaluated further.
+
+**Recommended next action:** use **Traefik** for the hosted staging and pilot, because it removes the open advisories
+without a custom build. Keep the Caddy configuration as the fallback. If you prefer Caddy, accept its residual
+**with** the monthly re-scan duty and the rule never to enable `acme_server`, the admin API, `encode zstd` or
+`request_body` without re-review.
+
+**Owner decision:** ☐ Traefik ☐ Caddy with accepted residual ☐ commission custom build · Name / date: ________
+
+---
+
+## DR-7 — Limited pilot (new in pass B)
+
+The proposal is in `PILOT_PLAN.md`: a small named trader group, an explicit stock allocation, named operational
+owners, and pause criteria. A pilot still needs the hosted gates (real HTTPS, verified off-server backup, restore
+drill, working alert path) and DR-1…DR-6 answered. **It does not start automatically.**
+
+**Owner decision:** ☐ approve pilot as proposed ☐ approve with changes: ________ ☐ not now · Name / date: ________

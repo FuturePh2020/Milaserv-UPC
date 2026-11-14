@@ -34,6 +34,11 @@ export const DEFAULT_RATE_LIMITS = {
    * Not reset by a successful login.
    */
   login_account: { limit: 30, windowMs: 15 * 60_000 },
+  /**
+   * Attempts per valid device cookie (auth/device.ts). Such attempts skip `login_account`, so a stolen cookie
+   * is worth at most this many extra guesses per window. Beyond it the attempt takes the normal path.
+   */
+  login_device: { limit: 10, windowMs: 15 * 60_000 },
   /** Registrations per client IP. */
   register_ip: { limit: 5, windowMs: 60 * 60_000 },
   /** Password-change attempts per account. */

@@ -293,3 +293,107 @@ describe('backup:schedule', () => {
       assert.ok(out.some((l) => l.includes('backup_next_run')));
     }));
 });
+
+describe('ops:watch alerting (fix B) — LOCAL loopback receiver only; nothing is sent to a real recipient', () => {
+  async function receiver(status: () => number) {
+    const got: Array<{ body: any; contentType: string | undefined }> = [];
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (c: Buffer) => chunks.push(c));
+      req.on('end', () => {
+        got.push({ body: JSON.parse(Buffer.concat(chunks).toString('utf8')), contentType: req.headers['content-type'] });
+        res.writeHead(status()).end();
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    return { got, url: `http://127.0.0.1:${(server.address() as { port: number }).port}/hook/TOKEN-not-real`, close: () => new Promise<void>((r) => server.close(() => r())) };
+  }
+
+  test('one message per change (problem → changed → recovered), reminder, no repeats; failed delivery stays due; secrets never leave', () =>
+    withJob(async ({ app, ctx, work }) => {
+      const { opsWatchCycle, opsWatch, opsAlertTest } = await import('../../src/server/cli/operator.ts');
+      let httpStatus = 200;
+      const rx = await receiver(() => httpStatus);
+      try {
+        const hookFile = path.join(work, 'creds', 'webhook');
+        writeFileSync(hookFile, `${rx.url}\n`, { mode: 0o400 });
+        let now = Date.now();
+        const out: string[] = [];
+        const octx = { config: { ...app.config, backupDir: path.join(work, 'backups') }, migrationsDir: MIGRATIONS_DIR, out: (l: string) => void out.push(l), err: (l: string) => void out.push(l), prompter: () => scriptedPrompter([]), now: () => now };
+        const env = { ALERT_WEBHOOK_URL_FILE: hookFile, ALERT_WEBHOOK_ALLOW_HTTP: '1', ALERT_LABEL: 'test-stack', MONITOR_REMINDER_HOURS: '24' };
+        const runtime = { lastConsistencyAt: 0, sleep: async () => undefined };
+        const cycle = () => opsWatchCycle(octx as never, env, runtime);
+
+        // 1. No verified backup yet → critical → ONE "problem" message.
+        let r = await cycle();
+        assert.deepEqual([r.sent, r.delivered], ['problem', true]);
+        assert.equal(rx.got.length, 1);
+        assert.equal(rx.got[0]!.body.overall, 'critical');
+        assert.match(rx.got[0]!.body.text, /^\[ALKHAYR test-stack\] PROBLEM: critical — .*local_backup=critical/);
+        assert.equal(rx.got[0]!.contentType, 'application/json');
+        // 2. Same condition again → nothing.
+        r = await cycle();
+        assert.equal(r.sent, null);
+        assert.equal(rx.got.length, 1);
+        // 3. Backup made → condition changes (off-server copy still missing → warn) → ONE "changed" message.
+        await runBackupJob(ctx());
+        r = await cycle();
+        assert.deepEqual([r.sent, r.report.overall], ['changed', 'warn']);
+        assert.equal(rx.got.length, 2);
+        // 4. Recovery mode appears while the receiver is DOWN (503): not delivered, stays due, recorded as failed.
+        app.fixtureDb.prepare("UPDATE system_state SET write_mode = 'recovery', recovery_epoch = 5, recovery_started_at = 1, version = version + 1").run();
+        httpStatus = 503;
+        r = await cycle();
+        assert.deepEqual([r.sent, r.delivered], ['changed', false]);
+        const failed = JSON.parse(readFileSync(path.join(work, 'backups', 'status', 'ops-watch.json'), 'utf8'));
+        assert.equal(failed.consecutiveDeliveryFailures, 1);
+        assert.equal(failed.lastDelivery.attempts, 3, 'bounded attempts');
+        const before = rx.got.length;
+        httpStatus = 200;
+        r = await cycle();
+        assert.deepEqual([r.sent, r.delivered], ['changed', true], 'the undelivered alert is sent on the next cycle');
+        assert.equal(rx.got.length, before + 1);
+        assert.ok(rx.got.at(-1)!.body.checks.some((c: any) => c.name === 'writes' && /RECOVERY MODE/.test(c.detail)));
+        // 5. Reminder only after MONITOR_REMINDER_HOURS while still not ok.
+        now += 23 * 3_600_000;
+        assert.equal((await cycle()).sent, null);
+        now += 2 * 3_600_000;
+        assert.equal((await cycle()).sent, 'reminder');
+        // 6. No secret or URL token in payloads, logs or the state file.
+        const everything = JSON.stringify(rx.got.map((g) => g.body)) + out.join('\n') + readFileSync(path.join(work, 'backups', 'status', 'ops-watch.json'), 'utf8');
+        assert.doesNotMatch(everything, /TOKEN-not-real/);
+        assert.doesNotMatch(everything, new RegExp(app.config.appSecret!.toString('base64url')));
+        // 7. ops:alert-test sends one marked TEST message; ops:watch --once runs a single cycle and returns.
+        const n = rx.got.length;
+        assert.equal(await opsAlertTest(octx as never, [], env), 0);
+        assert.equal(rx.got.length, n + 1);
+        assert.match(rx.got.at(-1)!.body.text, /TEST alert — no action needed/);
+        assert.equal(await opsWatch(octx as never, ['--once'], env), 0);
+        assert.ok(out.some((l) => l.includes('"ops_watch_started"') && l.includes('"webhookConfigured":true')));
+      } finally {
+        await rx.close();
+      }
+    }));
+
+  test('without a webhook nothing is claimed delivered; http and permissive files are refused; a 4xx is not retried', () =>
+    withJob(async ({ app, work }) => {
+      const { opsWatchCycle, opsAlertTest } = await import('../../src/server/cli/operator.ts');
+      const { deliver } = await import('../../src/server/ops/alerting.ts');
+      const out: string[] = [];
+      const octx = { config: { ...app.config, backupDir: path.join(work, 'backups') }, migrationsDir: MIGRATIONS_DIR, out: (l: string) => void out.push(l), err: (l: string) => void out.push(l), prompter: () => scriptedPrompter([]) };
+      const r = await opsWatchCycle(octx as never, {}, { lastConsistencyAt: 0 });
+      assert.deepEqual([r.sent, r.delivered], ['problem', null]);
+      assert.ok(out.some((l) => l.includes('"alert_not_configured"')));
+      assert.equal(await opsAlertTest(octx as never, [], {}), 1);
+      const hook = path.join(work, 'creds', 'hook2');
+      writeFileSync(hook, 'http://alerts.example.invalid/x\n', { mode: 0o400 });
+      assert.equal(await opsAlertTest(octx as never, [], { ALERT_WEBHOOK_URL_FILE: hook }), 1, 'plain http refused');
+      assert.ok(out.some((l) => /must use https/.test(l)));
+      assert.ok(!out.join('\n').includes('alerts.example.invalid'), 'the URL is not echoed');
+      writeFileSync(path.join(work, 'creds', 'hook3'), 'https://alerts.example.invalid/x\n', { mode: 0o644 });
+      assert.equal(await opsAlertTest(octx as never, [], { ALERT_WEBHOOK_URL_FILE: path.join(work, 'creds', 'hook3') }), 1, 'world-readable file refused');
+      let calls = 0;
+      const res = await deliver('https://alerts.example.invalid/x', {}, { fetchImpl: (async () => (calls++, new Response('', { status: 404 }))) as never, sleep: async () => undefined });
+      assert.deepEqual([res.ok, res.attempts, calls], [false, 1, 1]);
+    }));
+});

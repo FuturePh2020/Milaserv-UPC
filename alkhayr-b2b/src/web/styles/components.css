@@ -53,6 +53,12 @@
   padding-inline: var(--space-4);
   font-size: var(--text-sm);
 }
+/* Touch screens: small buttons keep the full tap target (found in pass B: 38 px on a phone). */
+@media (pointer: coarse) {
+  .c-button--small {
+    min-block-size: var(--tap-target);
+  }
+}
 .c-button--block {
   inline-size: 100%;
 }

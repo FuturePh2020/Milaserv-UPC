@@ -1,0 +1,52 @@
+# ALKHAYR B2B — Traefik dynamic configuration (alternative proxy, see deploy/compose.traefik.yaml).
+# Rendered by Traefik's file provider (Go template; values come from the container environment).
+http:
+  routers:
+    portal:
+      # Only the exact public host is routed; anything else gets Traefik's 404 and never reaches the application.
+      rule: 'Host(`{{ env "PUBLIC_HOST" }}`)'
+      entryPoints: [websecure]
+      service: app
+      middlewares: [forwarding-hygiene, body-limit]
+{{- if eq (env "TLS_MODE") "acme" }}
+      tls:
+        certResolver: le
+{{- else }}
+      tls: {}
+{{- end }}
+  middlewares:
+    # Traefik (forwardedHeaders.insecure=false, no trusted IPs) discards client-supplied X-Forwarded-* and writes
+    # X-Forwarded-For with the address it observed. The RFC 7239 `Forwarded` header is removed here as well.
+    forwarding-hygiene:
+      headers:
+        customRequestHeaders:
+          Forwarded: ""
+    # Bodies ≥ 3 000 000 bytes are refused with 413 (declared or chunked). The application enforces the exact
+    # per-route limits (64 KiB default, 2 MiB imports).
+    body-limit:
+      buffering:
+        maxRequestBodyBytes: 3000000
+        memRequestBodyBytes: 1048576
+  services:
+    app:
+      loadBalancer:
+        passHostHeader: true
+        serversTransport: app-transport
+        servers:
+          - url: 'http://{{ env "APP_UPSTREAM" }}'
+  serversTransports:
+    app-transport:
+      forwardingTimeouts:
+        dialTimeout: 5s
+        responseHeaderTimeout: 300s
+tls:
+  options:
+    default:
+      sniStrict: true
+      minVersion: VersionTLS12
+{{- if eq (env "TLS_MODE") "file" }}
+  # LOCAL staging/testing only: a certificate supplied as files (e.g. from a private test CA; NOT publicly trusted).
+  certificates:
+    - certFile: /certs/tls.crt
+      keyFile: /certs/tls.key
+{{- end }}

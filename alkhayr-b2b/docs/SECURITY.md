@@ -487,6 +487,25 @@ the earlier 2.0.1 project (22 tests / zero advisories) do **not** apply to this 
   - Later checks cost one, like a real verification.
   - Status codes and messages now match. **Response timing is not claimed indistinguishable.**
 
+## 7p. Hardening pass B (after fix A)
+- **Device cookie (`src/server/auth/device.ts`, D-179):**
+  - **Purpose:** keeps a browser that has signed in before usable while many attacking sources exhaust the
+    account-wide login limit.
+  - **Value:** `v1.<expiry>.<HMAC(device key, username, expiry)>`. It contains no identity and grants no access.
+  - **Issued:** only after a full successful sign-in (password, plus TOTP for administrators).
+  - **Attributes:** `__Host-alkhayr_device`; Secure; HttpOnly; SameSite=Strict; Max-Age 90 days.
+  - **Not cleared** by logout or password change: it is not a credential.
+  - **Limits:** attempts with a valid cookie skip `login_account` and are bounded by `login_device` (10 / 15 min).
+    They still pass `login_ip`, `login_source_account`, the credential-concurrency gate and the hashing queue.
+  - **Residual:** new or cleared browsers remain subject to the account-wide lockout; hashing-queue saturation
+    (503) is unchanged.
+- **Alerting (`ops:watch`, D-180):** see DEPLOYMENT_AR §8. No remediation is automated. Recovery mode and
+  consistency holds raise one alert and never restart anything.
+- **Alternative proxy (D-181):** Traefik 3.7.19.
+  - Forwarding headers from clients are discarded; `Forwarded` is removed.
+  - Bodies ≥ 3 000 000 bytes → 413.
+  - Access logs keep no headers and no query strings, but they do keep full client addresses.
+
 ## 8. Headers
 `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' https: data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'`
 (any `style-src 'unsafe-inline'` exception must be justified in DECISIONS.md),

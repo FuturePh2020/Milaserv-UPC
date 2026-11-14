@@ -426,3 +426,10 @@ changed the account's credentials while the request was in flight.
   against the login attempt limits. Refusals after a credential check are unchanged.
 - At the proxy (not the application): a declared `Content-Length` of 3 000 000 bytes or more is answered 413 by Caddy
   with an empty body (no JSON error envelope); smaller oversized bodies get the application's 413 `PAYLOAD_TOO_LARGE`.
+
+## Hardening pass B changes
+- `POST /auth/login` success additionally sets the cookie `__Host-alkhayr_device` (`alkhayr_device` outside production):
+  HttpOnly, Secure, SameSite=Strict, Path=/, Max-Age 7 776 000. Clients do nothing with it. A later login attempt
+  that presents a valid one for the same username is limited by `login_device` (10 / 15 min per cookie) instead of
+  the per-username limit (30 / 15 min). Responses and error codes are unchanged.
+- No endpoint, request or response body changed.

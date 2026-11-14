@@ -111,6 +111,33 @@ services:
       resources:
         limits: { cpus: "1.0", memory: 768M, pids: 128 }
 
+  # Monitoring watcher (fix B): computes the ops status on a timer and posts ONE webhook message per change.
+  # It never restarts or changes anything. Without a webhook URL in the secret file it only logs.
+  monitor:
+    <<: [*app-image, *hardening]
+    user: "1000:1000"
+    entrypoint: ["/nodejs/bin/node", "dist/server/cli.js", "ops:watch"]
+    healthcheck: { disable: true }
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: https://${PUBLIC_HOST:?set PUBLIC_HOST}
+      APP_SECRET_FILE: /run/secrets/app_secret
+      ALERT_WEBHOOK_URL_FILE: /run/secrets/alert_webhook_url
+      ALERT_LABEL: ${ALERT_LABEL:-portal}
+      MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-300}
+      MONITOR_REMINDER_HOURS: ${MONITOR_REMINDER_HOURS:-24}
+      MONITOR_TLS_HOST: ${MONITOR_TLS_HOST:-}
+    secrets: [app_secret, alert_webhook_url]
+    volumes:
+      - alkhayr-data:/data
+      - alkhayr-backups:/backups
+    networks: [monitor_net]
+    stop_grace_period: 15s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 384M, pids: 64 }
+
   # Operator commands (profile "ops"): no network at all; interactive commands need `-it` via `run`.
   cli:
     <<: [*app-image, *hardening]
@@ -136,6 +163,7 @@ networks:
       config: [{ subnet: "${APP_NET_SUBNET:-172.30.10.0/24}" }]
   edge: {}
   backup_net: {}
+  monitor_net: {}
 
 volumes:
   alkhayr-data: {}
@@ -148,3 +176,4 @@ secrets:
   backup_key: { file: "${SECRETS_DIR:-./secrets}/backup.key" }
   offsite_access_key: { file: "${SECRETS_DIR:-./secrets}/offsite_access_key" }
   offsite_secret_key: { file: "${SECRETS_DIR:-./secrets}/offsite_secret_key" }
+  alert_webhook_url: { file: "${SECRETS_DIR:-./secrets}/alert_webhook_url" }

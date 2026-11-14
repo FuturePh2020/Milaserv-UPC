@@ -46,7 +46,7 @@ describe('client IP resolution (TRUST_PROXY)', () => {
 
 describe('cookies', () => {
   test('production names use __Host-; attributes are Secure, HttpOnly, SameSite=Strict, Path=/ and no Domain', () => {
-    assert.deepEqual(cookieNames(true), { session: '__Host-alkhayr_session', preSession: '__Host-alkhayr_presession' });
+    assert.deepEqual(cookieNames(true), { session: '__Host-alkhayr_session', preSession: '__Host-alkhayr_presession', device: '__Host-alkhayr_device' });
     const c = serializeCookie('__Host-alkhayr_session', 'abc', { secure: true, maxAge: 28800 });
     assert.match(c, /; Path=\/; HttpOnly; SameSite=Strict; Max-Age=28800; Secure$/);
     assert.ok(!/Domain=/i.test(c));

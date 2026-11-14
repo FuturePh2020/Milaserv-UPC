@@ -1,0 +1,67 @@
+# ALKHAYR B2B — ALTERNATIVE reverse proxy: Traefik (official image, pinned by digest) instead of Caddy.
+# Evaluated in fix B because the newest official Caddy (2.11.9) still carries unfixed advisories (OWNER_DECISIONS DR-6).
+# Use EITHER `proxy` (Caddy) OR `proxy-traefik`, never both (same ports, same fixed address):
+#
+#   docker compose --env-file .env -f compose.yaml -f compose.traefik.yaml up -d app proxy-traefik backup monitor
+#
+# TLS_MODE=acme → publicly trusted certificate via ACME TLS-ALPN-01 (needs public DNS and port 443); NOT RUN here.
+# TLS_MODE=file → certificate files from ${TLS_CERT_DIR} (tls.crt, tls.key): local staging only.
+services:
+  proxy-traefik:
+    image: traefik:v3.7.19@sha256:b7b1b31e6440de0b1f7c4e0f6cf0a0f3f004866761d30c025fe00c80daaf7d9c
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:size=16m"]
+    command:
+      - --global.checknewversion=false
+      - --global.sendanonymoususage=false
+      - --providers.file.filename=/etc/traefik/dynamic.yaml
+      - --providers.file.watch=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.transport.respondingtimeouts.readtimeout=120s
+      - --entrypoints.websecure.transport.respondingtimeouts.writetimeout=300s
+      - --entrypoints.websecure.transport.respondingtimeouts.idletimeout=120s
+      - --certificatesresolvers.le.acme.email=${ACME_EMAIL:-}
+      - --certificatesresolvers.le.acme.storage=/data/acme.json
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --log.level=INFO
+      - --log.format=json
+      # Access log: JSON; request/response headers are dropped by default (no Cookie, Authorization, CSRF token or
+      # Set-Cookie); the fields that contain the query string are dropped too. Client addresses are logged in full
+      # (Traefik cannot mask them) — treat these logs as personal data.
+      - --accesslog=true
+      - --accesslog.format=json
+      - --accesslog.fields.names.RequestPath=drop
+      - --accesslog.fields.names.RequestLine=drop
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST}
+      TLS_MODE: ${TLS_MODE:-acme}
+      APP_UPSTREAM: "${APP_IP:-172.30.10.3}:3000"
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./traefik/dynamic.yaml:/etc/traefik/dynamic.yaml:ro
+      - traefik-data:/data
+      - "${TLS_CERT_DIR:-./traefik/no-certs}:/certs:ro"
+    networks:
+      app_net: { ipv4_address: "${PROXY_IP:-172.30.10.2}" }
+      edge: {}
+    depends_on: [app]
+    stop_grace_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 256M, pids: 128 }
+
+volumes:
+  traefik-data: {}

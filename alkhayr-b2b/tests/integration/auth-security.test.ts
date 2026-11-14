@@ -243,6 +243,74 @@ describe('abuse limits before expensive work', () => {
       { hasher: new PasswordHasher({ maxConcurrent: 1, maxQueue: 1 }) },
     ));
 
+  test('fix B: distributed lockout — a browser with a device cookie still signs in; attackers and unknown devices stay limited', () =>
+    withApp(async (app) => {
+      const t = await createTrader(app);
+      const other = await createTrader(app);
+      // The victim signs in once from their usual browser and receives the device cookie.
+      const victim = new Client(app, '203.0.113.200');
+      assert.equal((await victim.login(t.username, t.password)).status, 200);
+      const deviceCookie = victim.cookies.get('alkhayr_device')!;
+      assert.match(deviceCookie, /^v1\.\d+\.[A-Za-z0-9_-]{43}$/);
+      assert.ok(!deviceCookie.includes(t.username) && !deviceCookie.includes(t.id), 'no identity inside the cookie');
+      await victim.request('POST', '/api/v1/auth/logout', {});
+      assert.ok(victim.cookies.has('alkhayr_device'), 'logout keeps the device cookie (it is not a session)');
+      // Attackers: 6 distinct sources × 5 wrong passwords exhaust the account-wide limit (30 / 15 min).
+      // (The victim's own first sign-in counted 1, so the attackers get 29 answers and then the lockout.)
+      const attack: number[] = [];
+      for (let src = 0; src < 6; src++) for (let i = 0; i < 5; i++) attack.push((await new Client(app, `198.18.7.${src + 1}`).login(t.username, 'Wrong-Password-000')).status);
+      assert.deepEqual(attack, [...Array(29).fill(401), 429]);
+      // A NEW browser of the same user (no device cookie), from a fresh address: still refused (residual).
+      expectCode(await new Client(app, '203.0.113.201').login(t.username, t.password), 429, 'RATE_LIMITED');
+      // The attacker's next guess from yet another source: refused.
+      expectCode(await new Client(app, '198.18.7.50').login(t.username, 'Wrong-Password-000'), 429, 'RATE_LIMITED');
+      // The victim's known browser, even from a NEW address (mobile network change): signs in.
+      const moved = new Client(app, '203.0.113.202');
+      moved.cookies.set('alkhayr_device', deviceCookie);
+      assert.equal((await moved.login(t.username, t.password)).status, 200, 'known device is not locked out');
+      // The cookie is bound to the username: it does not exempt another account…
+      for (let src = 0; src < 6; src++) for (let i = 0; i < 5; i++) await new Client(app, `198.18.8.${src + 1}`).login(other.username, 'Wrong-Password-000');
+      const cross = new Client(app, '203.0.113.203');
+      cross.cookies.set('alkhayr_device', deviceCookie);
+      expectCode(await cross.login(other.username, other.password), 429, 'RATE_LIMITED');
+      // …a forged or tampered cookie is worth nothing…
+      const forged = new Client(app, '203.0.113.204');
+      forged.cookies.set('alkhayr_device', deviceCookie.slice(0, -2) + (deviceCookie.endsWith('AA') ? 'BB' : 'AA'));
+      expectCode(await forged.login(t.username, t.password), 429, 'RATE_LIMITED');
+      // …and a STOLEN cookie gives bounded guesses: per (source, username) 5, per cookie 10 per window in total.
+      let refusedAt = -1;
+      for (let i = 0; i < 12 && refusedAt < 0; i++) {
+        const thief = new Client(app, `198.18.9.${i + 1}`);
+        thief.cookies.set('alkhayr_device', deviceCookie);
+        const r = await thief.login(t.username, 'Wrong-Password-000');
+        if (r.status === 429) refusedAt = i;
+        else expectCode(r, 401, 'INVALID_CREDENTIALS');
+      }
+      assert.equal(refusedAt, 9, 'the moved login used 1 of 10; 9 more guesses, then the cookie path is closed and the account limit applies');
+      // One source with the cookie is still held to 5 wrong guesses per (source, username).
+    }));
+
+  test('fix B: a device cookie does not weaken the per-source limits, and expires', () =>
+    withApp(async (app) => {
+      const t = await createTrader(app);
+      const c = new Client(app, '203.0.113.210');
+      assert.equal((await c.login(t.username, t.password)).status, 200);
+      const cookie = c.cookies.get('alkhayr_device')!;
+      const same = () => {
+        const x = new Client(app, '203.0.113.211');
+        x.cookies.set('alkhayr_device', cookie);
+        return x;
+      };
+      for (let i = 0; i < 5; i++) expectCode(await same().login(t.username, 'Wrong-Password-000'), 401, 'INVALID_CREDENTIALS');
+      expectCode(await same().login(t.username, t.password), 429, 'RATE_LIMITED');
+      // After 91 days the cookie is no longer accepted (falls back to the normal path; here the account is locked).
+      app.clock.advance(91 * 24 * 60 * MIN);
+      for (let src = 0; src < 6; src++) for (let i = 0; i < 5; i++) await new Client(app, `198.18.10.${src + 1}`).login(t.username, 'Wrong-Password-000');
+      const old = new Client(app, '203.0.113.212');
+      old.cookies.set('alkhayr_device', cookie);
+      expectCode(await old.login(t.username, t.password), 429, 'RATE_LIMITED');
+    }));
+
   test('prompt A: a dummy-hash initialization refused under load recovers; afterwards unknown and existing usernames fail identically', async () => {
     // Real PasswordHasher, DEFAULT limits (2 active / 32 waiting). New hashes use reduced cost for speed; the two
     // jobs that hold the active slots verify against a PRODUCTION-cost (REFERENCE_PARAMS) hash so the queue stays

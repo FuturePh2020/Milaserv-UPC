@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { appendSetCookie, clearSessionCookie, requireSession, requireSessionCsrf, type AuthenticatedRequest } from '../auth/authorization.ts';
 import { cookieNames, parseCookies, serializeCookie } from '../auth/cookies.ts';
 import { newPreSessionNonce, PRELOGIN_TTL_MS, PRESESSION_NONCE_PATTERN, preLoginToken, sessionCsrfToken, verifyPreLoginToken } from '../auth/csrf.ts';
+import { DEVICE_COOKIE_TTL_MS, issueDeviceCookie, verifyDeviceCookie } from '../auth/device.ts';
 import { decryptSecret, totpAad } from '../auth/encryption.ts';
 import { hmacHex } from '../auth/keys.ts';
 import { checkPasswordPolicy, PASSWORD_POLICY, PasswordHasherBusyError, UnsupportedPasswordHashError, type PasswordPolicyIssue } from '../auth/passwords.ts';
@@ -250,7 +251,12 @@ export async function login(ctx: RequestContext): Promise<void> {
   };
   count('login_ip', source);
   count('login_source_account', `${source}\u0000${username}`);
-  count('login_account', username);
+  // Fix B: a browser that signed in successfully as this username before (valid device cookie) is not blocked by
+  // the account-wide limit that many attacking sources can exhaust. It has its own per-cookie limit instead.
+  const names = cookieNames(ctx.config.isProduction);
+  const device = verifyDeviceCookie(ctx.services.keys.device, parseCookies(ctx.req.headers.cookie).get(names.device), username, ctx.services.now());
+  if (device && ctx.services.rateLimiter.consume('login_device', device).allowed) counted.push(['login_device', device]);
+  else count('login_account', username);
   // Stage 18: a refusal for CAPACITY (per-source credential concurrency, or a full hashing queue → 503) happens
   // before any password or code is checked, so it gives the attempts back. Otherwise a legitimate user retrying
   // during a sign-in surge — or while an attacker keeps the queue full — would lock themselves out for 15 minutes.
@@ -353,6 +359,7 @@ async function loginAdmitted(ctx: RequestContext, body: z.infer<typeof loginSche
   if (!outcome.ok) loginFailed(ctx, outcome.reason, user.id);
 
   appendSetCookie(ctx.res, sessionCookie(ctx, outcome.session.token));
+  appendSetCookie(ctx.res, serializeCookie(cookieNames(ctx.config.isProduction).device, issueDeviceCookie(keys.device, username, now()), { secure: ctx.config.isProduction, maxAge: DEVICE_COOKIE_TTL_MS / 1000 }));
   clearPreSessionCookie(ctx);
   sendJson(ctx.res, 200, {
     user: { id: user.id, username: user.username, role: user.role },

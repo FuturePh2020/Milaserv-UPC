@@ -10,6 +10,8 @@ export interface ServerKeys {
   readonly cursor: Buffer;
   /** Signs import previews (binding of administrator, mode, content and target versions; stage 13). */
   readonly importPreview: Buffer;
+  /** Signs device cookies (proof of an earlier successful sign-in from this browser; fix B). */
+  readonly device: Buffer;
 }
 
 export function deriveServerKeys(appSecret: Buffer | null): ServerKeys {
@@ -21,6 +23,7 @@ export function deriveServerKeys(appSecret: Buffer | null): ServerKeys {
     ip: deriveKey(appSecret, 'ip'),
     cursor: deriveKey(appSecret, 'cursor'),
     importPreview: deriveKey(appSecret, 'import_preview'),
+    device: deriveKey(appSecret, 'device'),
   });
 }
 

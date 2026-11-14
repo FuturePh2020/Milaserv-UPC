@@ -75,6 +75,7 @@ install -d -m 0700 -o 1000 -g 1000 secrets
 umask 077
 openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' > secrets/app_secret
 : > secrets/offsite_access_key; : > secrets/offsite_secret_key      # فارغة حتى يُعدّ التخزين الخارجي
+: > secrets/alert_webhook_url                                       # فارغ حتى تعتمد الإدارة قناة تنبيه
 chown 1000:1000 secrets/*; chmod 0400 secrets/*                    # قبل أي أمر في الحاويات
 docker compose --env-file .env run --rm -v "$PWD/secrets:/k" cli backup:keygen --out /k/backup.key
 chmod 0400 secrets/backup.key
@@ -90,7 +91,7 @@ cd deploy && cp env.example .env && nano .env              # PUBLIC_HOST, ACME_E
 docker compose --env-file .env config --quiet              # التحقق من الإعداد
 docker compose --env-file .env run --rm cli db:init        # مرة واحدة فقط
 docker compose --env-file .env run --rm -it cli setup-admin   # المدير الأول (طرفية تفاعلية)
-docker compose --env-file .env up -d app proxy backup
+docker compose --env-file .env up -d app proxy backup monitor
 ```
 - **قبل** `db:init` يرفض التطبيق البدء (`DATABASE_MISSING`)، فلا تُفتح خدمة غير مُعدّة.
 - لا يُنشئ التطبيق القاعدة ولا يُرحّلها تلقائيًا أبدًا.
@@ -209,7 +210,49 @@ docker compose --env-file .env run --rm cli db:check
   - `capacity_exceeded`، `rate_limited` (بأعداد كبيرة)؛
   - `backup_job_failed`، `abandoned_staging_removed`؛
   - `connection_refused` (اتصال تجاوز الـ proxy).
-- **لم يُعَدّ أي قناة تنبيه** (بريد أو رسائل). اربط مخرجات `ops:status` بالقناة التي تعتمدها الإدارة واختبرها بنفسك.
+### خدمة المراقبة والتنبيه `monitor` (أُضيفت في جولة التقوية B)
+- **ماذا تفعل:**
+  - تشغّل `ops:watch`: كل `MONITOR_INTERVAL_SECONDS` (افتراضيًا 300 ثانية) تحسب الحالة نفسها التي يحسبها `ops:status`.
+  - ترسل **رسالة واحدة** إلى webhook عند كل تغيّر (مشكلة، ثم تغيّر، ثم تعافٍ)، وتذكيرًا كل `MONITOR_REMINDER_HOURS`
+    ما دامت المشكلة قائمة.
+  - لا تعيد تشغيل شيئًا ولا تعدّل شيئًا.
+- **عنوان الـ webhook سرّ:**
+  - ضعه في `deploy/secrets/alert_webhook_url` (https فقط، والمالك uid 1000، والصلاحية 0400).
+  - إن كان الملف فارغًا فالخدمة تسجّل فقط (`alert_not_configured`)، **ولا يُعدّ ذلك تنبيهًا مُسلَّمًا**.
+- **الرسالة:**
+  - JSON فيه `text` (سطر ملخص تفهمه معظم قنوات الدردشة)، وأسماء الفحوص ومستوياتها.
+  - لا أسرار فيها ولا بيانات عملاء.
+- **شهادة TLS:** اضبط `MONITOR_TLS_HOST=portal.example.com:443` ليُفحص تاريخ انتهاء الشهادة العامة.
+- **اختبار التسليم (بعد تصريح صاحب العمل فقط):**
+  ```sh
+  docker compose --env-file .env run --rm --entrypoint /nodejs/bin/node monitor dist/server/cli.js ops:alert-test
+  ```
+  ثم تأكد من وصول رسالة «TEST alert» إلى القناة، وسجّل ذلك في `RELEASE_CHECKLIST.md`.
+- **فشل التسليم:** ثلاث محاولات محدودة. يبقى التنبيه مستحقًا للدورة التالية، ويُسجَّل `alert_failed`، ويظهر عدد الإخفاقات في
+  `/backups/status/ops-watch.json`.
+- **ما لا تغطيه:**
+  - **توقف الخادم كله أو خدمة المراقبة نفسها.** استخدم فاحصًا خارجيًا بسيطًا لـ `https://<النطاق>/readyz` من خارج الخادم.
+  - **معدلات 429/503،** وهي تُقرأ من السجلات:
+    ```sh
+    docker compose --env-file .env logs --since 15m app | grep -cE '"event":"(rate_limited|capacity_exceeded)"'
+    ```
+  - **ضغط CPU والذاكرة:** `docker stats --no-stream`.
+- **حالة الاختبار:** اختُبرت محليًا مقابل مستقبِل اختباري على الجهاز نفسه فقط. **لم تُرسَل أي رسالة إلى أي جهة حقيقية.**
+
+### بديل الـ proxy: Traefik (جولة التقوية B، القرار DR-6)
+- **الملفان:** `deploy/compose.traefik.yaml` و`deploy/traefik/dynamic.yaml`. الصورة Traefik 3.7.19 الرسمية، مثبتة بالـ digest،
+  وبلا ثغرات عالية معروفة يوم الفحص.
+- **التشغيل** (بدل `proxy`، وليس معه أبدًا):
+  ```sh
+  docker compose --env-file .env -f compose.yaml -f compose.traefik.yaml up -d app proxy-traefik backup monitor
+  ```
+- **الفروق عن Caddy:**
+  - Host غير معروف يأخذ 404 (بدل 421)؛
+  - عناوين العملاء تظهر كاملة في سجل الوصول، فعامِل السجل كبيانات شخصية؛
+  - الأجسام حتى 3MB تُخزَّن مؤقتًا في الـ proxy قبل تمريرها؛
+  - الشهادة العامة تصدر عبر ACME TLS-ALPN-01 على المنفذ 443.
+- **للاختبار المحلي فقط:** `TLS_MODE=file` مع `TLS_CERT_DIR` يحتوي `tls.crt` و`tls.key` من جهة اختبار خاصة، غير موثوقة عامة.
+- **لم يُختبر:** إصدار الشهادة العامة لأيٍّ من الوكيلين.
 
 ---
 

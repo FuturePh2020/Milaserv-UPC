@@ -10,7 +10,7 @@ import { OPERATOR_COMMANDS } from '../database/runtime.ts';
 import { createTerminalPrompter, NotInteractiveError, type Prompter } from './prompt.ts';
 import type { PasswordHasher } from '../auth/passwords.ts';
 import { setupAdmin } from './setup-admin.ts';
-import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, backupOffsiteGet, backupRun, backupSchedule, opsStatus, dbCheck, recoveryReopen, recoveryStatus, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
+import { accountResetMfa, accountResetPassword, accountRevokeSessions, adminCreate, backupOffsiteGet, backupRun, backupSchedule, opsStatus, opsWatch, opsAlertTest, dbCheck, recoveryReopen, recoveryStatus, backupCreate, backupInspect, backupKeygen, backupPrune, backupRestore, backupStatusCommand, backupVerify, type OperatorContext } from './operator.ts';
 
 /**
  * Trusted-operator command line. Runs on the server host only; nothing here is
@@ -64,6 +64,10 @@ Commands:
   backup:schedule              Long-running scheduler for backup:run (BACKUP_SCHEDULE "HH:MM,…" in BACKUP_TZ).
   ops:status [--tls-host h[:p]] [--tls-ca f] [--skip-consistency]
                                Private monitoring status as JSON (exit 0 ok, 3 warning, 1 critical).
+  ops:watch [--once]           Long-running monitor: runs the ops status every MONITOR_INTERVAL_SECONDS and posts ONE
+                               webhook message per change (problem / changed / recovered) and a daily reminder while
+                               not ok. Webhook URL from the protected file ALERT_WEBHOOK_URL_FILE; without it, logs only.
+  ops:alert-test               Send one marked TEST message to the configured webhook (only with the owner's authorization).
   help                         Show this help.
 
 Initialization sequence: db:init -> setup-admin -> start the server.
@@ -256,6 +260,10 @@ export async function runCli(argv: readonly string[], ctx: CliContext): Promise<
         return await backupSchedule(operatorCtx(ctx), args);
       case 'ops:status':
         return await opsStatus(operatorCtx(ctx), args);
+      case 'ops:watch':
+        return await opsWatch(operatorCtx(ctx), args);
+      case 'ops:alert-test':
+        return await opsAlertTest(operatorCtx(ctx), args);
       case 'recovery:status':
         return await recoveryStatus(operatorCtx(ctx), args);
       case 'recovery:reopen':

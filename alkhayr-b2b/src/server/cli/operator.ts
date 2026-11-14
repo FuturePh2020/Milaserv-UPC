@@ -9,6 +9,7 @@ import { appSecretId, backupStatus, BackupError, filesystemError, createBackup, 
 import { openDatabase } from '../database/connection.ts';
 import { loadJobSettings, readJobStatus, runBackupJob, type JobContext, type JobSettings } from '../ops/backup-job.ts';
 import { nextRun } from '../ops/schedule.ts';
+import { alertDue, buildPayload, checkWebhookUrl, deliver, fingerprint, readState, writeState, type StatusReport } from '../ops/alerting.ts';
 import { S3Client, S3Error } from '../ops/s3.ts';
 import { readSecretFile } from '../config.ts';
 import { verifyConsistency } from '../database/consistency.ts';
@@ -756,6 +757,17 @@ async function tlsDaysLeft(hostPort: string, caFile: string | undefined): Promis
 export async function opsStatus(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
   try {
     const a = parseArgs(args, { options: ['--tls-host', '--tls-ca'], flags: ['--skip-consistency'] });
+    const report = await collectOpsStatus(ctx, { tlsHost: a.options.get('--tls-host'), tlsCa: a.options.get('--tls-ca'), skipConsistency: a.flags.has('--skip-consistency') }, env);
+    ctx.out(JSON.stringify(report, null, 2));
+    return report.overall === 'critical' ? 1 : report.overall === 'warn' ? 3 : 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+/** Computes the monitoring report (shared by ops:status and ops:watch). Read-only. */
+export async function collectOpsStatus(ctx: OperatorContext, o: { tlsHost?: string | undefined; tlsCa?: string | undefined; skipConsistency?: boolean; readyUrl?: string | undefined }, env: NodeJS.ProcessEnv = process.env): Promise<StatusReport> {
+  {
     const num = (k: string, d: number) => (env[k] && Number.isFinite(Number(env[k])) ? Number(env[k]) : d);
     const now = (ctx.now ?? Date.now)();
     const checks: Check[] = [];
@@ -766,7 +778,7 @@ export async function opsStatus(ctx: OperatorContext, args: readonly string[], e
       try {
         const st = readSystemState(db);
         add('writes', st.writeMode === 'recovery' ? 'warn' : 'ok', st.writeMode === 'recovery' ? 'RECOVERY MODE: new business writes refused until recovery:reopen' : 'open');
-        if (!a.flags.has('--skip-consistency')) {
+        if (!o.skipConsistency) {
           const rep = verifyConsistency(db, { maxSamples: 0 });
           add('consistency', rep.ok ? (rep.warnings ? 'warn' : 'ok') : 'critical', rep.ok ? `${rep.warnings} warning(s), ${rep.durationMs} ms` : `errors: ${rep.issues.filter((i) => i.severity === 'error').map((i) => `${i.code}×${i.count}`).join(', ')}`);
         }
@@ -796,16 +808,133 @@ export async function opsStatus(ctx: OperatorContext, args: readonly string[], e
         add(name, 'warn', 'not measurable');
       }
     }
-    const tlsHost = a.options.get('--tls-host');
+    const tlsHost = o.tlsHost;
     if (tlsHost) {
-      const t = await tlsDaysLeft(tlsHost, a.options.get('--tls-ca'));
+      const t = await tlsDaysLeft(tlsHost, o.tlsCa);
       const minDays = num('MONITOR_CERT_MIN_DAYS', 14);
       if ('error' in t && t.error) add('tls_certificate', 'critical', t.error);
       else if (!('error' in t)) add('tls_certificate', t.daysLeft < 3 ? 'critical' : t.daysLeft < minDays ? 'warn' : 'ok', `${t.daysLeft} day(s) left`);
     }
     const overall: Level = checks.some((c) => c.status === 'critical') ? 'critical' : checks.some((c) => c.status === 'warn') ? 'warn' : 'ok';
-    ctx.out(JSON.stringify({ time: new Date(now).toISOString(), overall, checks }, null, 2));
-    return overall === 'critical' ? 1 : overall === 'warn' ? 3 : 0;
+    return { time: new Date(now).toISOString(), overall, checks };
+  }
+}
+
+function watchSettings(env: NodeJS.ProcessEnv) {
+  const num = (k: string, d: number, min: number) => (env[k] && Number.isFinite(Number(env[k])) ? Math.max(min, Number(env[k])) : d);
+  const allowHttp = env.ALERT_WEBHOOK_ALLOW_HTTP === '1'; // tests / loopback receivers only
+  let webhook: string | null = null;
+  const file = env.ALERT_WEBHOOK_URL_FILE;
+  if (file) {
+    const r = readSecretFile('ALERT_WEBHOOK_URL_FILE', file);
+    if (!r.ok) throw new BackupError('CONFIG_INVALID', r.issue);
+    if (r.value.trim() !== '') {
+      const u = checkWebhookUrl(r.value.trim(), allowHttp);
+      if (!u.ok) throw new BackupError('CONFIG_INVALID', u.issue);
+      webhook = u.url;
+    }
+  }
+  return {
+    webhook,
+    label: (env.ALERT_LABEL ?? 'portal').replace(/[^A-Za-z0-9 ._-]/g, '').slice(0, 40) || 'portal',
+    intervalMs: num('MONITOR_INTERVAL_SECONDS', 300, 30) * 1000,
+    reminderMs: num('MONITOR_REMINDER_HOURS', 24, 1) * 3_600_000,
+    consistencyEveryMs: num('MONITOR_CONSISTENCY_EVERY_MINUTES', 60, 5) * 60_000,
+    tlsHost: env.MONITOR_TLS_HOST || undefined,
+    tlsCa: env.MONITOR_TLS_CA_FILE || undefined,
+  };
+}
+
+/** One watcher cycle: compute the report, decide whether a message is due, deliver, persist state. */
+export async function opsWatchCycle(ctx: OperatorContext, env: NodeJS.ProcessEnv, runtime: { lastConsistencyAt: number; fetchImpl?: typeof fetch; sleep?: (ms: number) => Promise<void> }): Promise<{ report: StatusReport; sent: string | null; delivered: boolean | null }> {
+  const s = watchSettings(env);
+  const now = (ctx.now ?? Date.now)();
+  const log = (event: string, fields: Record<string, unknown> = {}) => ctx.out(JSON.stringify({ time: new Date().toISOString(), event, ...fields }));
+  // The full consistency scan is the expensive check: run it at most every MONITOR_CONSISTENCY_EVERY_MINUTES.
+  const withConsistency = now - runtime.lastConsistencyAt >= s.consistencyEveryMs;
+  if (withConsistency) runtime.lastConsistencyAt = now;
+  let report: StatusReport;
+  try {
+    report = await collectOpsStatus(ctx, { tlsHost: s.tlsHost, tlsCa: s.tlsCa, skipConsistency: !withConsistency }, env);
+  } catch (err) {
+    report = { time: new Date(now).toISOString(), overall: 'critical', checks: [{ name: 'monitor', status: 'critical', detail: `status could not be computed (${err instanceof Error ? err.name : 'error'})` }] };
+  }
+  const state = readState(ctx.config.backupDir);
+  const due = alertDue(state, report, now, s.reminderMs);
+  log('ops_watch_cycle', { overall: report.overall, notOk: report.checks.filter((c) => c.status !== 'ok').map((c) => `${c.name}:${c.status}`), due: due.due ? due.kind : null });
+  if (!due.due) {
+    if (state.lastFingerprint === null) writeState(ctx.config.backupDir, { ...state, lastFingerprint: fingerprint(report), lastOverall: report.overall });
+    return { report, sent: null, delivered: null };
+  }
+  if (!s.webhook) {
+    // No channel configured: the condition is recorded and logged; nothing is claimed as delivered.
+    log('alert_not_configured', { kind: due.kind, overall: report.overall });
+    writeState(ctx.config.backupDir, { ...state, lastFingerprint: fingerprint(report), lastOverall: report.overall, lastNotifiedAt: now });
+    return { report, sent: due.kind, delivered: null };
+  }
+  const result = await deliver(s.webhook, buildPayload(s.label, due.kind, report, state.lastOverall), { ...(runtime.fetchImpl ? { fetchImpl: runtime.fetchImpl } : {}), ...(runtime.sleep ? { sleep: runtime.sleep } : {}) });
+  log(result.ok ? 'alert_delivered' : 'alert_failed', { kind: due.kind, httpStatus: result.httpStatus, attempts: result.attempts });
+  writeState(ctx.config.backupDir, result.ok
+    ? { ...state, lastFingerprint: fingerprint(report), lastOverall: report.overall, lastNotifiedAt: now, lastDelivery: { at: now, ...result }, consecutiveDeliveryFailures: 0 }
+    // Not delivered: keep the previous fingerprint so the alert stays due on the next cycle.
+    : { ...state, lastDelivery: { at: now, ...result }, consecutiveDeliveryFailures: state.consecutiveDeliveryFailures + 1 });
+  return { report, sent: due.kind, delivered: result.ok };
+}
+
+/**
+ * `ops:watch` — long-running monitor: every MONITOR_INTERVAL_SECONDS computes the ops status and sends ONE webhook
+ * message when the condition changes (problem, changed, recovered) plus a reminder every MONITOR_REMINDER_HOURS
+ * while not ok. Never restarts or modifies anything. Without ALERT_WEBHOOK_URL_FILE it only logs.
+ */
+export async function opsWatch(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env, signals: NodeJS.EventEmitter = process): Promise<number> {
+  try {
+    const a = parseArgs(args, { flags: ['--once'] });
+    const s = watchSettings(env); // validates the configuration before the loop
+    const runtime = { lastConsistencyAt: 0 };
+    let stopping = false;
+    let wake: (() => void) | null = null;
+    let timer: NodeJS.Timeout | null = null;
+    const stop = () => {
+      stopping = true;
+      if (timer) clearTimeout(timer);
+      wake?.();
+    };
+    signals.on('SIGTERM', stop);
+    signals.on('SIGINT', stop);
+    try {
+      ctx.out(JSON.stringify({ time: new Date().toISOString(), event: 'ops_watch_started', intervalSeconds: s.intervalMs / 1000, webhookConfigured: Boolean(s.webhook), tlsHost: s.tlsHost ?? null }));
+      while (!stopping) {
+        await opsWatchCycle(ctx, env, runtime);
+        if (a.flags.has('--once')) break;
+        await new Promise<void>((r) => {
+          wake = r;
+          timer = setTimeout(r, s.intervalMs);
+        });
+        timer = null;
+      }
+    } finally {
+      signals.off('SIGTERM', stop);
+      signals.off('SIGINT', stop);
+    }
+    return 0;
+  } catch (err) {
+    return handleKnown(ctx, err);
+  }
+}
+
+/**
+ * `ops:alert-test` — sends ONE clearly marked test message to the configured webhook and reports the HTTP result.
+ * Run it only when the owner has authorized a test to that recipient/channel.
+ */
+export async function opsAlertTest(ctx: OperatorContext, args: readonly string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
+  try {
+    parseArgs(args, {});
+    const s = watchSettings(env);
+    if (!s.webhook) throw new BackupError('CONFIG_INVALID', 'No alert webhook is configured (ALERT_WEBHOOK_URL_FILE is unset or the file is empty).');
+    const now = (ctx.now ?? Date.now)();
+    const r = await deliver(s.webhook, buildPayload(s.label, 'test', { time: new Date(now).toISOString(), overall: 'ok', checks: [] }, null));
+    ctx.out(JSON.stringify({ time: new Date(now).toISOString(), event: r.ok ? 'alert_test_delivered' : 'alert_test_failed', httpStatus: r.httpStatus, attempts: r.attempts }));
+    return r.ok ? 0 : 1;
   } catch (err) {
     return handleKnown(ctx, err);
   }
