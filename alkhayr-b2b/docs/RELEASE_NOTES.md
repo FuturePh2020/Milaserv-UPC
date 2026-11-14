@@ -1,5 +1,54 @@
 # Release notes
 
+## 1.0.0-rc.2 — release candidate (fix A + hardening pass B, 2026-11-14)
+
+**Status: release candidate for hosted staging.**
+- The local package is accepted.
+- **Public launch is blocked:** hosted checks are NOT RUN and DR-1…DR-7 are pending.
+- Assessment and scores: `READINESS_B.md`.
+
+### Identification
+| Item | Value |
+|---|---|
+| Version | `1.0.0-rc.2` |
+| Source | Branch `ccr-b8f31a52-xk6wqg`, the commit "Hardening pass B: readiness evidence…" (parents: checkpoint `5e7387f`, fix A `71e2dd1`) |
+| Application image | `alkhayr-b2b:1.0.0-rc.2`, local Id `sha256:b91a7ab4efb2706c509f246fe3c6ce95585cb8fc54e8ae97f0dd1fc74901575f` (built 2026-11-14 03:35 UTC; not pushed to a registry; image Ids are not reproducible) |
+| `/app/dist` manifest | `1114e6db03c696fb052ff6ab5c763a165ed5ffe23e8402bb1f67fbb9c77c6916` |
+| Base images | unchanged from rc.1 (Node 24.22.3 build image; distroless runtime) |
+| Proxy (default) | `caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0` |
+| Proxy (alternative) | `traefik:v3.7.19@sha256:b7b1b31e6440de0b1f7c4e0f6cf0a0f3f004866761d30c025fe00c80daaf7d9c` |
+| `deploy/compose.yaml` | `995ab18614e58ee0aaec976dedf280a1a36c60934ab15263261938502afec9e4` |
+| `deploy/compose.traefik.yaml` | `903403c4235f35aff47834b09e4aaaafbb4f5f7b5b17b8fabdb95aaba73e68cb` |
+| `deploy/caddy/Caddyfile` | `9b5cf48825b1c6d14601f44a560461b50a0551ecf60f47bc2d355a52fb55c97b` (unchanged) |
+| `deploy/traefik/dynamic.yaml` | `84b24ae6e36080b8ef315731fea3015a621879e5c0ce1deba549909a12240945` |
+| `deploy/env.example` | `25cc2d141c8cf5ff64cd02e8ffaa0c026b75579fbfb6044bf37b603e1a2324c2` |
+| `deploy/hosted-smoke.sh` | `7ddb71abe0b116b004029d3d5bd9dfb734c402eb8b3b690b10b402b42b2eb845` |
+| `Dockerfile` | `ec98c6845502c827cec83d56dd132640d2d2bf04d1736a0dbed09b6d82c75d5f` (unchanged) |
+| `package-lock.json` | `59bc3c918d5229e1a87239f8adb7d5167b620ab7af235acf6574e411b0986256` (version field only) |
+| Migrations | unchanged (0001–0008, hashes below) |
+
+Hashes identify files; they do not prove who published them.
+
+### Changes since rc.1
+- **Security:**
+  - A failed first creation of the dummy password hash is no longer cached (fix A). Before, it made unknown
+    usernames answer 503 while known ones answered 401.
+  - Device cookie: browsers that signed in before are not blocked by the account-wide login limit (owner
+    confirmation requested, DR-3).
+- **Operations:**
+  - `ops:watch`, `ops:alert-test` and a `monitor` service for webhook alerts.
+  - New required secret file `secrets/alert_webhook_url` (may be empty).
+  - `deploy/hosted-smoke.sh`.
+- **Proxy:** Traefik 3.7.19 as a tested alternative (`deploy/compose.traefik.yaml`).
+- **UI:** small buttons keep a 44 px tap target on touch screens.
+- **Documents:** `READINESS_B.md`, `PILOT_PLAN.md`, updated decision pack, guides, checklist and limitations.
+
+### Upgrade notes (rc.1 → rc.2)
+- No migration.
+- Create the empty file `deploy/secrets/alert_webhook_url` (owner uid 1000, mode 0400) before `up`.
+- Switch `ALKHAYR_VERSION`, recreate `app` and `backup`, and start `monitor`.
+- Existing sessions stay valid. Users receive the device cookie at their next sign-in.
+
 ## 1.0.0-rc.1 — release candidate (stage 18, 2026-11-13)
 
 **Status: release candidate, accepted for the LOCAL deployment package only.**

@@ -1,4 +1,4 @@
-# Release checklist — 1.0.0-rc.1
+# Release checklist — 1.0.0-rc.2
 
 **Legend:**
 - **PASS / FAIL / NOT RUN / PENDING** (owner decision).
@@ -18,7 +18,10 @@ A launch to traders requires **every row in sections B and C to be PASS or appro
 | Upgrade from schema 7 + rollback (`upgrade18`) | STACK | PASS |
 | HTTPS browser regressions (6 suites) | STACK | PASS |
 | Backup → isolated restore → recovery mode → reopen; stale operations refused | STACK | PASS |
-| Bounded mixed load + consistency afterwards | STACK | PASS (local observation only) |
+| Bounded mixed load + consistency afterwards | STACK | PASS (local observation only; through both proxies in pass B) |
+| Fix A (dummy-hash enumeration) and pass B (device cookie, alert watcher, Traefik option) regression | UNIT + STACK | PASS (`READINESS_B.md`) |
+| Mobile emulation, keyboard-only sign-in, Arabic print PDF, LibreOffice round-trip | STACK | PASS (Chromium + LibreOffice only) |
+| Alert delivery to a LOCAL test receiver | UNIT | PASS (not a real recipient) |
 
 ## B. Hosted technical gates
 | Item | Env | Status |
@@ -29,7 +32,9 @@ A launch to traders requires **every row in sections B and C to be PASS or appro
 | Persistent local disk; non-root permissions; reboot → services return, data intact | HOSTED | NOT RUN |
 | Real off-server copy: upload → download → decrypt → consistency (`offsite_copy` verified) | HOSTED | NOT RUN |
 | Restore drill on a separate machine from the downloaded copy, times recorded | HOSTED | NOT RUN |
-| Monitoring + one authorized test alert received | HOSTED | NOT RUN |
+| `deploy/hosted-smoke.sh <domain>` from outside the server: all PASS | HOSTED | NOT RUN (rehearsed locally with a private CA) |
+| Monitoring: webhook configured, `ops:alert-test` authorized and the message received; external uptime check | HOSTED | NOT RUN |
+| Independent security review (recommended) | — | NOT RUN |
 | Production secrets newly generated; custody holders named | HOSTED | NOT RUN |
 
 ## C. Owner decisions
@@ -40,7 +45,8 @@ A launch to traders requires **every row in sections B and C to be PASS or appro
 | DR-3 distributed sign-in DoS | PENDING |
 | DR-4 off-server storage + custody | PENDING (inputs missing) |
 | DR-5 host + domain | PENDING (inputs missing) |
-| DR-6 proxy residual vulnerabilities | PENDING |
+| DR-6 proxy choice (Traefik, or Caddy with accepted residual) | PENDING |
+| DR-7 limited pilot scope, owners, pause criteria | PENDING |
 | Tax, shipping and minimum order configured by the business | PENDING |
 
 ## D. Launch

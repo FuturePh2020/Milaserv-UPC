@@ -126,6 +126,17 @@ Status values: **PASS** · **FAIL** · **NOT RUN** · **DEFERRED** (deliberately
 | J7 | Clean install, upgrade from schema 7, rollback | `DEPLOYMENT_AR.md` §2–§7 | `accept18`, `upgrade18` | STACK | PASS | Repeat on the host |
 | J8 | Graceful shutdown, restart and persistence | `main.ts` shutdown | `upgrade18`: SIGTERM → `shutdown_complete`, exit 0 in 187 ms; data intact after `down`/`up`. Stage 17: daemon restart | STACK | PASS | Real host reboot NOT RUN |
 
+## J2. Fix A and hardening pass B (after stage 18; release candidate 1.0.0-rc.2)
+
+| # | Requirement | Implementation | Evidence | Env | Status | Remaining action / owner |
+|---|---|---|---|---|---|---|
+| P1 | A failed dummy-hash creation must not cause unknown/known usernames to answer differently | `PasswordHasher.#dummy()` | 4 tests (unit + HTTP); all fail with the old caching | UNIT | PASS | Timing equality not claimed |
+| P2 | A known browser can sign in while distributed sources lock the username; no bypass, no discovery | `auth/device.ts`, `login()` | Attacker/victim tests from distinct sources; stolen/forged/cross-user cookie cases; 6 browser suites | UNIT, STACK | PASS | Owner confirms the policy change (DR-3); new browsers still lockable |
+| P3 | Alerts on status change, bounded and secret-safe | `ops/alerting.ts`, `ops:watch`, `monitor` service | 2 tests against a loopback receiver (problem/changed/reminder, failed delivery stays due, no secret leaks) | UNIT | PASS (local) | Real recipient + authorized test: HOSTED NOT RUN |
+| P4 | A supported proxy without open HIGH advisories is available | `deploy/compose.traefik.yaml`, `deploy/traefik/dynamic.yaml` | Trivy 0 C/0 H, govulncheck clean; local proxy checks; 6 browser suites; load run | STACK | PASS (local) | Owner chooses (DR-6); ACME NOT RUN |
+| P5 | Repeatable hosted verification | `deploy/hosted-smoke.sh` | Local rehearsal with a private CA against both proxies | STACK | PASS (rehearsal) | Run against the real domain |
+| P6 | Mobile, keyboard, print, spreadsheet checks | — | `ua19` run (Pixel 7 emulation, Tab/Enter sign-in with focus rings, A4 PDF with embedded Arabic font, LibreOffice round-trip into import) | STACK | PASS (Chromium, LibreOffice) | Real devices, other engines, Excel: NOT RUN |
+
 ## K. Hosted / production (stage 17 → 18)
 
 | # | Requirement | Status | Missing input |
@@ -148,3 +159,4 @@ Status values: **PASS** · **FAIL** · **NOT RUN** · **DEFERRED** (deliberately
 | L5 | DR-5 host and domain | **Pending owner input** |
 | L6 | DR-6 proxy residual vulnerabilities | **Pending owner** |
 | L7 | Tax/shipping/minimum configuration is a business choice | Pending owner (configure before launch) |
+| L8 | DR-7 limited pilot | **Pending owner** |

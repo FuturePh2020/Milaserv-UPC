@@ -40,8 +40,9 @@ case "$SC" in *Secure*) case "$SC" in *HttpOnly*SameSite=Strict*|*SameSite=Stric
 t "mutation without CSRF token/Origin refused" "$($C -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' "$U/api/v1/auth/login" 2>/dev/null)" "403"
 t "foreign Origin refused" "$($C -o /dev/null -w '%{http_code}' -X POST -H 'Origin: https://evil.example' -H 'Content-Type: application/json' -d '{}' "$U/api/v1/auth/login" 2>/dev/null)" "403"
 BIG=$(mktemp); head -c 3500000 /dev/zero | tr '\0' 'a' > "$BIG"
-t "declared 3.5 MB body → 413" "$($C -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' --data-binary @"$BIG" "$U/api/v1/auth/login" 2>/dev/null)" "413"
-t "chunked 3.5 MB body → 413" "$($C -o /dev/null -w '%{http_code}' -X POST -H 'Transfer-Encoding: chunked' -H 'Content-Type: application/json' --data-binary @"$BIG" "$U/api/v1/auth/login" 2>/dev/null)" "413"
+# Same-origin requests, so the body limit itself is what refuses them (a missing Origin would be refused earlier with 403).
+t "declared 3.5 MB body → 413" "$($C -o /dev/null -w '%{http_code}' -X POST -H "Origin: $U" -H 'Content-Type: application/json' --data-binary @"$BIG" "$U/api/v1/auth/login" 2>/dev/null)" "413"
+t "chunked 3.5 MB body → 413" "$($C -o /dev/null -w '%{http_code}' -X POST -H "Origin: $U" -H 'Transfer-Encoding: chunked' -H 'Content-Type: application/json' --data-binary @"$BIG" "$U/api/v1/auth/login" 2>/dev/null)" "413"
 rm -f "$BIG"
 t "application port 3000 not reachable on the public host" "$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' "http://$HOST:3000/healthz" 2>/dev/null)" "000"
 [ -n "$APP_IP" ] && t "application address $APP_IP:3000 not reachable" "$(curl -s --noproxy '*' --max-time 5 -o /dev/null -w '%{http_code}' -H "Host: $HOST" "http://$APP_IP:3000/healthz" 2>/dev/null)" "000"

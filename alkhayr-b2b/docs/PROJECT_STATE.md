@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Last updated | 2026-11-13 |
-| Current stage | **18 — Final acceptance, release evidence and owner handover: COMPLETE** — release candidate 1.0.0-rc.1; **ACCEPTANCE PASSED FOR LOCAL DEPLOYMENT PACKAGE; PUBLIC LAUNCH BLOCKED** |
+| Current stage | **Hardening pass B complete** — release candidate 1.0.0-rc.2; local package accepted; overall production readiness ≈ 5/10 (`READINESS_B.md`); **PUBLIC LAUNCH BLOCKED** |
 | Next stage | None planned by the implementer. Next actions are the owner's: answer DR-1…DR-6 (`docs/OWNER_DECISIONS_18.md`) and provide `docs/DEPLOYMENT_INPUTS.md`; then hosted acceptance |
 | Execution mode | BUILD_NEW (D-001) |
 | Project root | `alkhayr-b2b/` (self-contained) in repo `FuturePh2020/Milaserv-UPC`, branch `ccr-b8f31a52-xk6wqg` |
@@ -34,6 +34,50 @@
 | 16 | ✅ Done (adversarial review, consistency, recovery gate) | Commit `6389115` — 610/610 tests ×3 clean-copy runs, 19/19 + 87/87 + 125/125 + 44/44 + 67/67 browser checks, 21/21 mutants caught (after fixes to the tests) — below |
 | 17 | ✅ Done (packaging + local production-like verification) | 617/617 tests, 3 clean copies 617/617 each, HTTPS browser runs 87+125+44+67+19+19 via Caddy, restore drill 23/23, upgrade + load rehearsals — below |
 | 18 | ✅ Done (final acceptance, local package only) | Stage-18 commit ("Stage 18: final acceptance…"): 618/618 tests, 3 clean copies 618/618 each, `accept18` 123/123, `upgrade18` 36/36, HTTPS browser 87+126+44+67+19+19, load + consistency — below |
+
+## Hardening pass B (after fix A) — 1.0.0-rc.2
+Full report with blockers, live checklist and scores: [`READINESS_B.md`](READINESS_B.md).
+- **Blockers (first):**
+  - B-1…B-6 are open.
+  - B-7 is new: there is no authorized alert recipient.
+  - Every hosted check is NOT RUN.
+  - DR-1…DR-7 are pending; DR-7 (the pilot) is new.
+  - No independent security review.
+- **Built:**
+  - device cookie against distributed username lockout (D-179; owner confirmation requested);
+  - `ops:watch` / `ops:alert-test` and the `monitor` service (D-180);
+  - Traefik 3.7.19 alternative proxy (D-181);
+  - `deploy/hosted-smoke.sh` (D-182);
+  - 44 px tap target for small buttons on touch screens;
+  - `PILOT_PLAN.md`; updated decision pack and guides.
+- **Checks (2026-11-14, same container):**
+  - `npm run check` 626/626; fresh copy 626/626; `npm audit` 0;
+  - `accept18` on rc.2: 125/125;
+  - six browser suites through Caddy and through Traefik: 87/126/44/67/19/19 each;
+  - `ua19` (mobile emulation, keyboard, print PDF, LibreOffice round-trip): 20/20;
+  - smoke rehearsal: 17/17 on each proxy;
+  - load through each proxy with 71 distinct source addresses: 0 errors; orders exactly once; `db:check` clean;
+  - Trivy: app 0 critical / 0 high; Traefik 0 high; Caddy unchanged.
+- **NOT RUN:**
+  - all hosted checks;
+  - real alert delivery;
+  - backup during the pass-B load runs (test-script error);
+  - Excel, WebKit/Firefox and real devices;
+  - human operator dry-run; independent review;
+  - `upgrade18` re-run (no schema change).
+- **Scores:**
+
+| Area | Score |
+|---|---|
+| Application correctness | 9 |
+| Authentication and authorization | 8 |
+| Infrastructure / TLS | 4 |
+| Backup and disaster recovery | 4 |
+| Monitoring and incident response | 5 |
+| Capacity and resilience | 6 |
+| Operator and user acceptance | 6 |
+| Residual business decisions | 2 |
+| **Overall** | **≈ 5** |
 
 ## Fix A (after stage 18) — cached dummy-hash failure (authentication enumeration)
 - **Root cause:** `verifyDummy()` memoized `this.hash(...)` with `??=`. A busy-queue rejection of the first

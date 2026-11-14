@@ -2,7 +2,7 @@
 
 Independent Arabic (RTL) B2B wholesale ordering portal for an Egyptian sweets & chocolate importer.
 
-**Status:** Release candidate **1.0.0-rc.1** — stage 18 final acceptance: **ACCEPTANCE PASSED FOR LOCAL DEPLOYMENT PACKAGE; PUBLIC LAUNCH BLOCKED** (no hosted checks; owner decisions DR-1…DR-6 pending; see [`docs/FINAL_ACCEPTANCE_18.md`](docs/FINAL_ACCEPTANCE_18.md)) — foundation, SQLite schema/migrations, security primitives, local
+**Status:** Release candidate **1.0.0-rc.2** — local package accepted; **PUBLIC LAUNCH BLOCKED** (no hosted checks; owner decisions DR-1…DR-7 pending; readiness assessment in [`docs/READINESS_B.md`](docs/READINESS_B.md), acceptance in [`docs/FINAL_ACCEPTANCE_18.md`](docs/FINAL_ACCEPTANCE_18.md)) — foundation, SQLite schema/migrations, security primitives, local
 administrator enrollment, and the authentication API (register, login with admin TOTP, sessions,
 CSRF, rate limits, logout, password change) and the merchant lifecycle (own profile, administrator
 review/approval/suspension), product administration, the approved catalog, inventory
@@ -58,6 +58,8 @@ contracts · `migrations` SQL · `scripts` build/dev · `tests` unit/integration
 | `docs/SECURITY.md` | Security policy and verification status |
 | `docs/DEPLOYMENT_AR.md` | Deployment/operations guide (Arabic): architecture, secrets, commands, backups, monitoring, upgrades, incidents |
 | `docs/FINAL_ACCEPTANCE_18.md` | Stage-18 final acceptance report: blockers first, proxy findings, evidence, performance, launch status |
+| `docs/READINESS_B.md` | Readiness assessment after hardening pass B: blockers, live checklist, evidence, scores |
+| `docs/PILOT_PLAN.md` | Proposed limited pilot (not started; needs owner approval) |
 | `docs/REQUIREMENTS_EVIDENCE.md` | Requirements → implementation → evidence → environment → status matrix (stages 00–17) |
 | `docs/OWNER_DECISIONS_18.md` | Owner decision pack DR-1…DR-6 (all pending) |
 | `docs/RELEASE_CHECKLIST.md` | Release / launch gates with PASS · NOT RUN · PENDING |

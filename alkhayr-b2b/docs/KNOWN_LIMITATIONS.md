@@ -1,4 +1,4 @@
-# Known limitations and open blockers — 1.0.0-rc.1
+# Known limitations and open blockers — 1.0.0-rc.2
 
 ## Open release blockers
 | # | Blocker | Decision / input |
@@ -7,8 +7,9 @@
 | B-2 | No verified copy on real off-server storage | DR-4 (inputs missing) |
 | B-3 | No hosted environment, public DNS or publicly trusted certificate tested | DR-5 (inputs missing) |
 | B-4 | RPO / RTO unapproved; transfer and reconciliation times unmeasured | DR-2 (pending) |
-| B-5 | Distributed sign-in DoS residual (reduced in stage 18) | DR-3 (pending) |
-| B-6 | Caddy 2.11.9 image carries HIGH advisories without an official fixed build (reachable one mitigated) | DR-6 (pending) |
+| B-5 | Distributed sign-in DoS residual: known browsers protected by the device cookie (pass B); new browsers and queue saturation still affected | DR-3 (pending, incl. confirmation of the device cookie) |
+| B-6 | Caddy 2.11.9 image carries HIGH advisories without an official fixed build (reachable one mitigated). A scanner-clean Traefik alternative is tested locally | DR-6 (pending: choose proxy) |
+| B-7 | No authorized alert recipient; alert delivery to a real channel never tested | Owner input (webhook + permission) |
 
 ## Product limitations (by design or out of scope)
 - **Out of scope:**
@@ -49,3 +50,18 @@
 - The merchant status screen now disables its controls until the current record is shown (stage 18).
 - A browser tab left open across an upgrade keeps its old script; compatibility was verified for the stage-15
   client only.
+
+## Added in hardening pass B
+- **Device cookie:**
+  - It protects only browsers that signed in before. It is lost when the user clears cookies or uses another
+    browser.
+  - It is bound to the username, not to the password. A stolen cookie gives at most 10 extra guesses per 15 minutes.
+- **Alerting:**
+  - The watcher runs inside the same host, so it cannot report that the whole host is down. An external uptime
+    check is required.
+  - 429/503 rates and CPU/memory pressure are not alert conditions; they are read from logs and `docker stats`.
+- **Traefik alternative:** access logs contain full client IP addresses (no masking). An unknown Host gets 404, not
+  421. Request bodies up to 3 MB are buffered by the proxy.
+- **Spreadsheet round-trip:** verified with LibreOffice Calc 24.2 headless conversion only. Microsoft Excel and
+  interactive editing are NOT RUN.
+- **Mobile:** verified with Chromium's Pixel 7 emulation only. No real device, Safari/WebKit or Firefox.
